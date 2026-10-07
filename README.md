@@ -11,7 +11,9 @@ Desarrollado con metodología **SDD (Spec-Driven Development)**. Documentos del 
 1. [`docs/constitucion.md`](./docs/constitucion.md) — principios rectores, alcance del MVP, stack y no-negociables.
 2. [`docs/spec.md`](./docs/spec.md) — qué se construye y por qué: requisitos EARS numerados, fuera de alcance y criterios de finalización.
 3. [`docs/plan.md`](./docs/plan.md) — plan técnico: módulos, modelo de datos, decisiones y tests.
-4. `docs/tasks.md` — desglose en tareas (pendiente).
+4. [`docs/tasks.md`](./docs/tasks.md) — desglose en tareas, por fases, con los RF que cubre cada una.
+
+Las reglas de trabajo para implementar están en [`CLAUDE.md`](./CLAUDE.md).
 
 ## Stack técnico
 
@@ -54,7 +56,14 @@ No incluye (por ahora): recordatorios al paciente, cobros o facturación, portal
 
 ## Setup
 
-_Pendiente — se completa una vez desglosado `tasks.md`, con la estructura del repo, variables de entorno y comandos de instalación/ejecución._
+_Se completa en T-31._ Requisitos previstos: Node.js LTS, Docker (para PostgreSQL) y las variables de entorno de `docs/plan.md` §5.2 (`.env.example`).
+
+Primer arranque previsto:
+
+1. `docker compose up -d` — levanta PostgreSQL.
+2. Migraciones de Prisma en `backend/`.
+3. Comando de instalación — crea la cuenta de administrador (contraseña temporal, se muestra una sola vez) y los datos del consultorio.
+4. Levantar backend y frontend, e ingresar como administrador para elegir la contraseña definitiva.
 
 ## Estructura del repo
 
@@ -64,8 +73,11 @@ _Pendiente — se completa una vez desglosado `tasks.md`, con la estructura del 
 │   ├── constitucion.md
 │   ├── spec.md
 │   ├── plan.md
-│   └── tasks.md     (pendiente)
+│   └── tasks.md
+├── CLAUDE.md
 ├── README.md
-├── backend/         (pendiente)
-└── frontend/        (pendiente)
+├── backend/            (T-02) Express + Prisma + Socket.io
+├── frontend/           (T-05) Angular
+├── e2e/                (T-30) Playwright
+└── docker-compose.yml  (T-01) PostgreSQL
 ```

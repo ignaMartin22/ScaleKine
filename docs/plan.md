@@ -148,7 +148,7 @@ saca al turno de `en_espera` la conserva; una que lo devuelve a `reservado` la l
 - **RF-01**: el backend devuelve rol y perfil; la redirección es del frontend. El backend nunca
   confía en un rol enviado por el cliente.
 - **RF-03**: la autorización se declara por módulo y rol, no por endpoint (§4.8):
-  `administrador` escribe en todos los módulos; `secretaria`, solo en pacientes y turnos;
+  `administrador` escribe en todos los módulos; `secretaria`, solo en pacientes, datos del consultorio y turnos;
   `kinesiologo` no escribe en ningún lado y solo lee sus propios turnos.
 - **RF-04 / RF-14**: la cuenta de secretaría se crea sola; la de kinesiólogo, junto con su perfil
   en una transacción (M2). Ambas nacen con la marca de cambio de contraseña.
@@ -317,7 +317,7 @@ no escribe. No hay escenario realista de dos escrituras cruzadas sobre el mismo 
 ### 4.8 Autorización por rol a nivel de método, en lugar de por endpoint
 
 **Elegido:** cada rol tiene declarado en qué módulos puede escribir (todos para `administrador`;
-M2 pacientes y M3 para `secretaria`; ninguno para `kinesiologo`), y esa declaración se aplica en un
+M2 pacientes y consultorio, y M3, para `secretaria`; ninguno para `kinesiologo`), y esa declaración se aplica en un
 único middleware.
 
 *Descartado:* declarar permisos endpoint por endpoint. Es más flexible, pero cada endpoint nuevo
@@ -351,6 +351,30 @@ es lo que pide RF-28.
 y el paciente no es usuario del sistema (sección 4 de la spec). El texto plano se lee con cualquier
 celular sin conexión al sistema.
 
+### 4.12 TypeScript en backend y frontend
+
+**Elegido:** TypeScript en los dos lados, con los tipos de dominio (estados, roles, bloques) definidos
+una vez en el backend y reflejados en el frontend.
+
+*Descartado:* JavaScript en el backend. Angular ya impone TypeScript; usar JS solo en el servidor
+deja sin chequeo de tipos justamente la tabla de transiciones y las proyecciones por rol, que es
+donde un error de nombre de campo pasa desapercibido.
+
+### 4.13 Herramientas de prueba
+
+**Elegido:** Vitest para unidad e integración del backend, Supertest para la API, un PostgreSQL real
+en Docker para integración, `socket.io-client` para el contrato de tiempo real y Playwright para
+E2E con dos contextos de navegador (secretaría y kinesiólogo).
+
+*Descartado:* una base en memoria o SQLite para integración. Los índices únicos parciales (§2.3)
+son la garantía central de RF-24, RF-25 y RF-37, y tienen que probarse en el motor que los ejecuta.
+
+### 4.14 Índices parciales en una migración SQL manual
+
+Prisma no expresa índices únicos parciales en su esquema. Se crean en una migración SQL escrita a
+mano dentro de `prisma/migrations`, y una prueba de integración verifica que existen. Es la única
+parte del esquema que no sale de `schema.prisma`.
+
 ---
 
 ## 5. Fronteras del sistema
@@ -363,6 +387,39 @@ celular sin conexión al sistema.
 - **El rol se toma de la sesión, nunca de la petición.**
 - **El frontend detecta su propia conexión caída** (RF-45), porque el servidor no puede afirmar que
   un cliente está desconectado.
+
+### 5.1 Estructura del repositorio
+
+```
+/
+├── backend/            Express + Prisma + Socket.io (TypeScript)
+│   ├── prisma/         schema.prisma y migraciones (incluida la de índices parciales)
+│   ├── src/
+│   │   ├── modulos/    m1-identidad, m2-maestros, m3-turnos, m4-agenda, m5-tiempo-real, m6-auditoria
+│   │   ├── comun/      reloj inyectable, errores de negocio, autorización, configuración
+│   │   └── cli/        comando de instalación (administrador y consultorio)
+│   └── test/           unidad e integración
+├── frontend/           Angular
+├── e2e/                Playwright
+├── docker-compose.yml  PostgreSQL de desarrollo y de pruebas
+└── docs/
+```
+
+Cada módulo de `backend/src/modulos` expone sus rutas y su servicio. Ningún módulo importa el
+repositorio de otro: se comunican por los servicios, y los turnos solo se escriben desde
+`m3-turnos`.
+
+### 5.2 Configuración
+
+| Variable | Uso |
+|---|---|
+| `DATABASE_URL` | Conexión a PostgreSQL |
+| `ZONA_HORARIA` | Zona IANA del consultorio, p. ej. `America/Argentina/Buenos_Aires` (RF-12) |
+| `PORT` | Puerto del backend |
+| `FRONTEND_ORIGIN` | Origen permitido para CORS y para el handshake de Socket.io |
+| `COOKIE_SECURE` | `true` en producción (cookie de sesión solo por HTTPS) |
+
+Los datos del consultorio no son variables de entorno: viven en la tabla `Consultorio` (RF-13).
 
 ---
 
