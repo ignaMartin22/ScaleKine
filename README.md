@@ -71,9 +71,34 @@ No incluye (por ahora): recordatorios al paciente, cobros o facturación, portal
 
 ## Setup
 
-_Se completa en T-40._ Requisitos previstos: Node.js LTS, Docker (para PostgreSQL) y las variables de entorno de `docs/plan.md` §5.2 (`.env.example`).
+_La guía completa se termina en T-40._
 
-Primer arranque previsto:
+### Requisitos
+
+- Node.js 24 LTS (versión fijada en `.nvmrc`; con nvm: `nvm use`).
+- Docker con el plugin Compose.
+
+### Base de datos de desarrollo
+
+1. Copiar `.env.example` a `.env` y cambiar las contraseñas. `.env` no se versiona.
+2. Levantar PostgreSQL:
+
+   ```sh
+   docker compose up -d
+   docker compose ps        # el servicio postgres debe figurar como "healthy"
+   ```
+
+   Se crean dos bases en el mismo servidor: `scalekine_desarrollo` y `scalekine_pruebas` (para las
+   pruebas de integración). El puerto solo escucha en `127.0.0.1` (por defecto, 5432; se cambia con
+   `POSTGRES_PORT`).
+
+3. Para entrar a la base: `docker compose exec postgres psql -U scalekine scalekine_desarrollo`.
+4. Para apagarla: `docker compose down`. Para borrar también los datos y volver a ejecutar los
+   scripts de `infra/postgres/init/`: `docker compose down -v`.
+
+Nunca se cargan datos reales de pacientes en desarrollo ni en pruebas.
+
+### Primer arranque previsto
 
 1. `docker compose up -d` — levanta PostgreSQL.
 2. Migraciones de Prisma en `backend/`.
@@ -95,6 +120,8 @@ Primer arranque previsto:
 ├── backend/            (T-02) Express + Prisma + Socket.io
 ├── frontend/           (T-05) Angular
 ├── e2e/                (T-33) Playwright
-├── infra/              (T-36) aprovisionamiento, respaldo y verificación de restauración
-└── docker-compose.yml  (T-01) PostgreSQL
+├── infra/              postgres/init: bases de desarrollo; (T-36) aprovisionamiento, respaldo y restauración
+├── docker-compose.yml  PostgreSQL de desarrollo y de pruebas
+├── .env.example        variables de entorno con valores ficticios
+└── .nvmrc              versión de Node
 ```

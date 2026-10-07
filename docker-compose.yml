@@ -1,0 +1,27 @@
+# PostgreSQL de desarrollo y de pruebas. Solo para la máquina de trabajo: producción usa la base
+# administrada de DigitalOcean (docs/despliegue.md §7).
+name: scalekine
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?Falta POSTGRES_USER en .env (copiar .env.example)}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Falta POSTGRES_PASSWORD en .env (copiar .env.example)}
+      POSTGRES_DB: scalekine_desarrollo
+    ports:
+      # Solo en la interfaz local: Docker publica puertos por encima del firewall del sistema.
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_datos:/var/lib/postgresql
+      # Se ejecuta solo al crear el volumen por primera vez.
+      - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d scalekine_desarrollo"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+
+volumes:
+  postgres_datos:

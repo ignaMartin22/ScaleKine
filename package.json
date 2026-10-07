@@ -1,0 +1,8 @@
+{
+  "name": "scalekine",
+  "private": true,
+  "description": "Sistema de turnos para un consultorio de kinesiología",
+  "engines": {
+    "node": ">=24 <25"
+  }
+}

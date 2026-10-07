@@ -1,0 +1,26 @@
+# Dependencias y compilados
+node_modules/
+dist/
+coverage/
+.angular/
+*.tsbuildinfo
+
+# Variables de entorno: nunca se versionan, salvo los ejemplos con valores ficticios
+.env*
+!.env.example
+!**/.env.example
+
+# Playwright
+e2e/test-results/
+e2e/playwright-report/
+e2e/blob-report/
+
+# Logs y archivos del sistema
+*.log
+.DS_Store
+Thumbs.db
+
+# Editores
+.idea/
+.vscode/*
+!.vscode/extensions.json

@@ -1,0 +1,9 @@
+# Finales de línea LF en todo el repositorio: los scripts de infra/ y los contenedores corren en Linux.
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.ico binary
+*.pdf binary
+*.woff binary
+*.woff2 binary
