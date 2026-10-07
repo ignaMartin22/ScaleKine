@@ -2,9 +2,9 @@ import { Router } from 'express';
 import request from 'supertest';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import { ErrorNegocio } from '../../src/comun/errores.js';
+import { ErrorNegocio, errorParaLog } from '../../src/comun/errores.js';
 import { datosValidados, validar } from '../../src/comun/validacion.js';
-import { appDePrueba, ORIGEN_APP } from '../ayudantes.js';
+import { appDePrueba, loggerCapturado, ORIGEN_APP } from '../ayudantes.js';
 
 const esquemaAlta = { body: z.object({ cantidad: z.number().int().positive() }) };
 
@@ -66,6 +66,25 @@ describe('manejo centralizado de errores (RNF-10)', () => {
 
     expect(res.status).toBe(404);
     expect(res.body.error.codigo).toBe('no_encontrado');
+  });
+});
+
+describe('errores de Prisma en el log (RNF-08)', () => {
+  it('se registran sin el mensaje, que puede copiar los argumentos de la consulta', () => {
+    const error = new Error('Invalid `prisma.paciente.create()` invocation: { dni: "30111222" }');
+    error.name = 'PrismaClientValidationError';
+    const { logger, texto } = loggerCapturado();
+
+    logger.error({ err: errorParaLog(error) }, 'error no controlado');
+
+    expect(texto()).not.toContain('30111222');
+    expect(texto()).toContain('PrismaClientValidationError');
+  });
+
+  it('los demás errores se registran completos', () => {
+    const error = new Error('detalle útil para depurar');
+
+    expect(errorParaLog(error)).toBe(error);
   });
 });
 

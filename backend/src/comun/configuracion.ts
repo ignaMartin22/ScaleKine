@@ -29,6 +29,9 @@ const esquema = z
   .object({
     NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
     PORT: z.coerce.number().int().min(1).max(65535).default(3000),
+    DATABASE_URL: z
+      .string({ error: 'Falta DATABASE_URL.' })
+      .refine((v) => /^postgres(ql)?:\/\//.test(v), 'DATABASE_URL debe ser una URL postgresql://.'),
     ZONA_HORARIA: z
       .string({ error: 'Falta ZONA_HORARIA (zona IANA del consultorio, RF-12).' })
       .refine(esZonaHorariaValida, 'ZONA_HORARIA no es una zona IANA válida.'),
@@ -69,6 +72,7 @@ const esquema = z
 export interface Configuracion {
   entorno: 'development' | 'test' | 'production';
   puerto: number;
+  urlBaseDeDatos: string;
   zonaHoraria: string;
   origenFrontend: string;
   cookieSegura: boolean;
@@ -99,6 +103,7 @@ export function cargarConfiguracion(entorno: Record<string, string | undefined>)
   return {
     entorno: c.NODE_ENV,
     puerto: c.PORT,
+    urlBaseDeDatos: c.DATABASE_URL,
     zonaHoraria: c.ZONA_HORARIA,
     origenFrontend: c.FRONTEND_ORIGIN,
     cookieSegura: c.COOKIE_SECURE,

@@ -1,26 +1,43 @@
 import { crearApp } from './app.js';
+import { crearBaseDeDatos } from './comun/baseDeDatos.js';
 import { cargarConfiguracion, ErrorConfiguracion } from './comun/configuracion.js';
 import { crearLogger } from './comun/logger.js';
 import { relojDelSistema } from './comun/reloj.js';
 
-function iniciar(): void {
+async function iniciar(): Promise<void> {
   const config = cargarConfiguracion(process.env);
   const logger = crearLogger(config.nivelLog);
   const reloj = relojDelSistema(config.zonaHoraria);
+  const db = crearBaseDeDatos(config.urlBaseDeDatos);
+
+  // Falla al arrancar si la base no responde, en lugar de en la primera petición.
+  const [{ usuario }] = await db.$queryRaw<[{ usuario: string }]>`SELECT current_user AS usuario`;
+  logger.info({ usuarioBase: usuario }, 'conectado a la base');
 
   const app = crearApp({ config, logger, reloj });
-  app.listen(config.puerto, () => {
+  const servidor = app.listen(config.puerto, () => {
     logger.info({ puerto: config.puerto, entorno: config.entorno }, 'backend escuchando');
   });
+
+  const apagar = (senal: string) => {
+    logger.info({ senal }, 'apagando');
+    servidor.close(() => {
+      void db.$disconnect().finally(() => process.exit(0));
+    });
+  };
+  process.once('SIGTERM', apagar);
+  process.once('SIGINT', apagar);
 }
 
-try {
-  iniciar();
-} catch (error) {
+iniciar().catch((error: unknown) => {
   if (error instanceof ErrorConfiguracion) {
     // Todavía no hay logger configurado: se informa por stderr sin valores de las variables.
     process.stderr.write(`${error.message}\n`);
-    process.exit(1);
+  } else {
+    // Solo tipo y código: el mensaje de un error de base podría incluir datos de la consulta.
+    const tipo = error instanceof Error ? error.name : typeof error;
+    const codigo = (error as { code?: unknown } | null)?.code;
+    process.stderr.write(`No se pudo iniciar el backend (${tipo}${codigo ? `, ${String(codigo)}` : ''}).\n`);
   }
-  throw error;
-}
+  process.exit(1);
+});

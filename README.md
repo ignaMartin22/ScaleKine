@@ -90,10 +90,30 @@ _La guía completa se termina en T-40._
 
    Se crean dos bases en el mismo servidor: `scalekine_desarrollo` y `scalekine_pruebas` (para las
    pruebas de integración). El puerto solo escucha en `127.0.0.1` (por defecto, 5432; se cambia con
-   `POSTGRES_PORT`).
+   `POSTGRES_PORT`). También se crean los mismos tres usuarios que en producción
+   (`docs/despliegue.md` §7):
 
-3. Para entrar a la base: `docker compose exec postgres psql -U scalekine scalekine_desarrollo`.
-4. Para apagarla: `docker compose down`. Para borrar también los datos y volver a ejecutar los
+   | Usuario | Para qué |
+   |---|---|
+   | `scalekine_migraciones` | Dueño del esquema; solo lo usan las migraciones |
+   | `scalekine_app` | El backend: lee, inserta y actualiza; no altera el esquema ni borra turnos |
+   | `scalekine_respaldo` | Solo lectura, para las copias |
+
+   Si la base se creó antes de agregar un script en `infra/postgres/init/`, hay que recrearla con
+   `docker compose down -v` (se pierden los datos de desarrollo).
+
+3. Aplicar las migraciones (desde `backend/`, con `npm install` hecho):
+
+   ```sh
+   npm run db:migrar                        # aplica las migraciones pendientes
+   npm run db:nueva-migracion -- --name x   # genera una migración nueva sin aplicarla
+   ```
+
+   Los índices únicos parciales y los permisos viven en migraciones SQL escritas a mano. Al generar
+   una migración nueva, revisar que no los borre.
+
+4. Para entrar a la base: `docker compose exec postgres psql -U scalekine scalekine_desarrollo`.
+5. Para apagarla: `docker compose down`. Para borrar también los datos y volver a ejecutar los
    scripts de `infra/postgres/init/`: `docker compose down -v`.
 
 Nunca se cargan datos reales de pacientes en desarrollo ni en pruebas.

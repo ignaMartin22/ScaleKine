@@ -1,0 +1,172 @@
+// Modelo de datos (plan.md §2). Los índices únicos parciales y los permisos de los usuarios de la
+// base no se pueden expresar acá: viven en migraciones SQL escritas a mano (plan.md §4.14,
+// despliegue.md §7). Al generar una migración nueva, revisar que no intente borrarlos.
+//
+// Las marcas de tiempo no tienen valor por defecto de la base: las escribe la aplicación con el
+// reloj inyectable (plan.md §6.2).
+
+generator client {
+  provider               = "prisma-client"
+  output                 = "../src/generado/prisma"
+  runtime                = "nodejs"
+  moduleFormat           = "esm"
+  importFileExtension    = "js"
+  generatedFileExtension = "ts"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Rol {
+  administrador
+  secretaria
+  kinesiologo
+}
+
+enum Bloque {
+  manana
+  tarde
+}
+
+enum EstadoTurno {
+  reservado
+  en_espera
+  asistio
+  no_asistio
+  anulado
+}
+
+enum TipoEvento {
+  asignacion
+  cambio_estado
+  correccion
+  reprogramacion
+}
+
+/// Cuenta de una persona del consultorio (M1). No se borra: se desactiva (RF-09).
+model Usuario {
+  id                    Int      @id @default(autoincrement())
+  nombreUsuario         String   @unique @db.VarChar(64)
+  hashContrasena        String
+  rol                   Rol
+  activo                Boolean  @default(true)
+  /// Se enciende al crear o restablecer la cuenta y se apaga al elegir la contraseña (RF-04, RF-06, RF-08).
+  debeCambiarContrasena Boolean  @default(true)
+  /// Límite de intentos por cuenta (RNF-02).
+  ingresosFallidos      Int      @default(0)
+  bloqueadoHasta        DateTime? @db.Timestamptz(3)
+  bloqueosConsecutivos  Int      @default(0)
+  /// Secreto TOTP cifrado con CLAVE_CIFRADO (AES-256-GCM). Solo el administrador lo usa (RNF-04).
+  secretoTotpCifrado    String?
+  totpActivo            Boolean  @default(false)
+  /// Hashes de los códigos de recuperación sin usar; un código usado se quita de la lista (RNF-04).
+  codigosRecuperacion   String[] @default([])
+  creadoEn              DateTime @db.Timestamptz(3)
+
+  kinesiologo   Kinesiologo?
+  sesiones      Sesion[]
+  turnosCreados Turno[]       @relation("TurnoCreadoPor")
+  eventos       TurnoEvento[]
+}
+
+/// Sesión persistida (plan.md §4.1). Se guarda el hash del token, nunca el token.
+model Sesion {
+  id                      Int       @id @default(autoincrement())
+  hashToken               String    @unique
+  usuarioId               Int
+  creadaEn                DateTime  @db.Timestamptz(3)
+  /// creadaEn + 12 horas (RF-11).
+  venceEn                 DateTime  @db.Timestamptz(3)
+  revocadaEn              DateTime? @db.Timestamptz(3)
+  /// Solo relevante para el administrador (RNF-04).
+  segundoFactorVerificado Boolean   @default(false)
+
+  usuario Usuario @relation(fields: [usuarioId], references: [id])
+
+  @@index([usuarioId])
+}
+
+/// Datos del consultorio que muestra el ticket (RF-13). Fila única: la migración restringe id = 1.
+model Consultorio {
+  id        Int    @id @default(1)
+  nombre    String
+  direccion String
+  telefono  String
+}
+
+/// Perfil del kinesiólogo, 1:1 con su cuenta (RF-14).
+model Kinesiologo {
+  id        Int    @id @default(autoincrement())
+  usuarioId Int    @unique
+  nombre    String
+  bloque    Bloque
+
+  usuario Usuario @relation(fields: [usuarioId], references: [id])
+  turnos  Turno[]
+}
+
+model Paciente {
+  id          Int    @id @default(autoincrement())
+  /// Formato validado por la aplicación (RF-18).
+  dni         String @unique @db.VarChar(10)
+  /// Nombre y apellido.
+  nombre      String
+  telefono    String
+  /// "Particular" si no tiene (RF-17).
+  obraSocial  String
+
+  turnos Turno[]
+}
+
+/// Turno (M3). El id es el número de turno del ticket (RF-28). No se borra (RF-39).
+model Turno {
+  id                 Int         @id @default(autoincrement())
+  pacienteId         Int
+  kinesiologoId      Int
+  fecha              DateTime    @db.Date
+  /// Hora de inicio de la franja, "HH:MM" en la zona del consultorio (RF-12).
+  horaInicio         String      @db.VarChar(5)
+  estado             EstadoTurno @default(reservado)
+  /// Momento en que pasó a en_espera (RF-30, RF-40).
+  llegadaEn          DateTime?   @db.Timestamptz(3)
+  coseguroObraSocial Decimal?    @db.Decimal(12, 2)
+  coseguroAdicional  Decimal?    @db.Decimal(12, 2)
+  creadoPorId        Int
+  creadoEn           DateTime    @db.Timestamptz(3)
+
+  paciente    Paciente      @relation(fields: [pacienteId], references: [id])
+  kinesiologo Kinesiologo   @relation(fields: [kinesiologoId], references: [id])
+  creadoPor   Usuario       @relation("TurnoCreadoPor", fields: [creadoPorId], references: [id])
+  eventos     TurnoEvento[]
+
+  @@index([fecha])
+  @@index([pacienteId])
+}
+
+/// Auditoría de cada escritura sobre un turno (RF-46).
+model TurnoEvento {
+  id             Int          @id @default(autoincrement())
+  turnoId        Int
+  tipo           TipoEvento
+  /// Solo en cambio_estado y correccion.
+  estadoAnterior EstadoTurno?
+  estadoNuevo    EstadoTurno?
+  autorId        Int
+  ocurridoEn     DateTime     @db.Timestamptz(3)
+
+  turno Turno   @relation(fields: [turnoId], references: [id])
+  autor Usuario @relation(fields: [autorId], references: [id])
+
+  @@index([turnoId])
+}
+
+/// Límite de intentos por dirección IP (RNF-02), en el formato que espera rate-limiter-flexible.
+/// La tabla la crea esta migración porque scalekine_app no puede crear tablas.
+model LimiteIntentos {
+  key    String  @id @db.VarChar(255)
+  points Int     @default(0)
+  expire BigInt?
+
+  @@map("limite_intentos")
+}

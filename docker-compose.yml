@@ -9,6 +9,10 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:?Falta POSTGRES_USER en .env (copiar .env.example)}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Falta POSTGRES_PASSWORD en .env (copiar .env.example)}
       POSTGRES_DB: scalekine_desarrollo
+      # Contraseñas de los usuarios de la aplicación, para infra/postgres/init/02-usuarios.sh.
+      SCALEKINE_CLAVE_MIGRACIONES: ${SCALEKINE_CLAVE_MIGRACIONES:?Falta SCALEKINE_CLAVE_MIGRACIONES en .env}
+      SCALEKINE_CLAVE_APP: ${SCALEKINE_CLAVE_APP:?Falta SCALEKINE_CLAVE_APP en .env}
+      SCALEKINE_CLAVE_RESPALDO: ${SCALEKINE_CLAVE_RESPALDO:?Falta SCALEKINE_CLAVE_RESPALDO en .env}
     ports:
       # Solo en la interfaz local: Docker publica puertos por encima del firewall del sistema.
       - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"

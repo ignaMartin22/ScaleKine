@@ -8,6 +8,8 @@ export const ORIGEN_APP = 'http://localhost:4200';
 
 export const ENTORNO_PRUEBA = {
   NODE_ENV: 'test',
+  // La app de prueba no se conecta: las pruebas de integración usan su propia conexión.
+  DATABASE_URL: 'postgresql://scalekine_app:clave-ficticia@localhost:5432/scalekine_pruebas',
   ZONA_HORARIA: 'America/Argentina/Buenos_Aires',
   FRONTEND_ORIGIN: ORIGEN_APP,
   LOG_LEVEL: 'info',

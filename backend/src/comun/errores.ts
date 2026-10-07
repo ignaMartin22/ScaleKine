@@ -40,6 +40,20 @@ function esErrorDeCuerpo(err: unknown): err is { type: string; status: number } 
 }
 
 /**
+ * Los errores de Prisma pueden copiar en su mensaje los argumentos de la consulta (DNI, nombres),
+ * que la redacción por campo no alcanza (RNF-08). De esos se registra solo el tipo, el código y la
+ * traza sin la primera línea.
+ */
+export function errorParaLog(err: unknown): unknown {
+  if (!(err instanceof Error) || !err.name.startsWith('PrismaClient')) return err;
+  return {
+    type: err.name,
+    code: (err as { code?: unknown }).code,
+    stack: err.stack?.split('\n').filter((linea) => linea.trimStart().startsWith('at ')).join('\n'),
+  };
+}
+
+/**
  * Manejador central (plan.md §4.15, RNF-10): responde siempre un código y un mensaje de negocio.
  * El detalle técnico, con la traza, va solo al log del servidor.
  */
@@ -72,7 +86,7 @@ export function manejadorErrores(logger: Logger): ErrorRequestHandler {
       }
     }
 
-    logger.error({ err, metodo: req.method, ruta: req.path }, 'error no controlado');
+    logger.error({ err: errorParaLog(err), metodo: req.method, ruta: req.path }, 'error no controlado');
     res.status(500).json(cuerpo('error_interno', 'Ocurrió un error inesperado. Intentá de nuevo.'));
   };
 }
