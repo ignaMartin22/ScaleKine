@@ -23,9 +23,10 @@ Inventario de servicios: todo servicio nuevo se agrega a esta tabla antes de usa
 |---|---|---|---|
 | DigitalOcean Droplet | Caddy, backend, frontend, tarea de respaldo | FRA1 (UE) | Sí, en tránsito y en memoria |
 | DigitalOcean Managed PostgreSQL | Base de datos | FRA1 (UE) | Sí |
-| Backblaze B2, región EU Central **[verificar al contratar]** — alternativa: Hetzner Storage Box (Alemania) | Copia externa diaria | UE | Sí, **cifrados antes de salir del servidor** |
+| Backblaze B2, región EU Central (Ámsterdam, Países Bajos) | Copia externa diaria | UE | Sí, **cifrados antes de salir del servidor** |
 | GitHub (repositorio, Actions, Container Registry privado) | Código, CI/CD, imágenes | EE. UU. | **No.** Nunca se usan datos de producción en CI ni en imágenes |
-| Monitor de disponibilidad externo (p. ej., UptimeRobot o Better Stack) | Chequeo de `/api/salud` y latido de backups | Cualquiera | **No.** Solo consulta un endpoint sin datos |
+| Better Stack, plan gratuito | Chequeo de `/api/salud` y del certificado TLS | Cualquiera | **No.** Solo consulta un endpoint sin datos |
+| healthchecks.io, plan gratuito | Latido de la copia diaria | Cualquiera | **No.** Solo recibe una petición vacía |
 | Registrador del dominio y DNS | Dominio y registros DNS | Cualquiera | No |
 | Gestor de contraseñas del administrador | Secretos y claves de recuperación | Cualquiera | No (solo secretos técnicos) |
 
@@ -33,6 +34,15 @@ Inventario de servicios: todo servicio nuevo se agrega a esta tabla antes de usa
 adecuado. Los servicios de la tabla marcados con **No** quedan fuera de esa restricción porque nunca
 reciben datos de pacientes. No se usa Cloudflare ni otro proxy que descifre el tráfico, ni un
 servicio SaaS de errores en el MVP.
+
+**Notas de contratación:**
+- La región de B2 se elige al crear la cuenta y no se puede cambiar después. Hay que elegir EU
+  Central.
+- Los servicios gratuitos se usan solo si sus términos permiten el uso comercial. Por eso no se usa
+  el plan gratuito de UptimeRobot: está limitado a uso personal y no incluye latidos ni control del
+  certificado.
+- Better Stack: confirmar al contratar el intervalo de chequeo y que el plan gratuito incluya el
+  control del certificado **[verificar al contratar]**.
 
 ---
 
@@ -77,20 +87,37 @@ servicio SaaS de errores en el MVP.
 
 ## 3. Recursos y costos
 
-Precios de lista de DigitalOcean a octubre de 2026, en USD por mes.
+Precios de lista a octubre de 2026, en USD por mes y sin impuestos.
 
 | Recurso | Plan | Costo |
 |---|---|---|
-| Droplet Basic | 1 vCPU, 2 GB RAM, 50 GB SSD, 2 TB de transferencia | 12,00 |
+| Droplet Basic | 1 vCPU, 1 GB RAM, 25 GB SSD, 1 TB de transferencia | 6,00 |
 | Managed PostgreSQL | 1 vCPU, 1 GB RAM, 10 GB, 1 nodo | 15,15 |
-| Backblaze B2 | Unos pocos GB de copias cifradas | < 1 |
+| Backblaze B2 | 30 copias cifradas; los primeros 10 GB son gratis | 0 |
 | Dominio `.com.ar` | NIC Argentina | Anual, bajo |
-| Monitor externo | Plan gratuito | 0 |
-| **Total aproximado** | | **≈ 28–30** |
+| Better Stack y healthchecks.io | Planes gratuitos | 0 |
+| **Subtotal** | | **21,15** |
+| IVA sobre servicios digitales del exterior | 21 % | 4,44 |
+| **Total aproximado** | | **≈ 26** |
 
-**Crecimiento:** si la base supera el 70 % de su memoria o de su disco de forma sostenida, se pasa al
-plan de 2 GB (30,45 USD). Los nodos de base de respaldo (*standby*) están fuera del alcance (spec §4,
-"Alta disponibilidad").
+El banco o la tarjeta pueden aplicar además percepciones sobre los pagos al exterior. Confirmarlo
+con el contador de la clínica.
+
+**Por qué alcanza 1 GB de RAM.** Las imágenes se construyen en CI, no en el servidor. Angular se
+sirve como archivos estáticos y la base corre fuera del Droplet. La tarea de respaldo no queda
+corriendo: se lanza una vez por día (§8.2). En el servidor solo viven Caddy, la API y Docker, con
+1 GB de swap como margen (§5).
+
+**Crecimiento:**
+- **Droplet:** si la memoria supera el 80 % de forma sostenida (alerta de §11) o el swap se usa de
+  manera continua, se pasa al plan de 2 GB (12 USD).
+  - El cambio se hace eligiendo **solo CPU y RAM**, sin ampliar el disco. Así se puede volver al
+    plan anterior.
+  - Requiere apagar el Droplet unos minutos: se hace fuera del horario de atención.
+- **Base:** si supera el 70 % de su memoria o de su disco de forma sostenida, se pasa al plan de
+  2 GB (30,45 USD).
+- Los nodos de base de respaldo (*standby*) están fuera del alcance (spec §4, "Alta
+  disponibilidad").
 
 ---
 
@@ -136,9 +163,11 @@ que reconstruir el servidor no dependa de la memoria de nadie.
 4. En el Droplet: crear el usuario `deploy`, endurecer `sshd`, instalar `unattended-upgrades`,
    `fail2ban`, `ufw` y Docker Engine con el plugin Compose.
 5. Configurar la rotación de logs de Docker (`max-size: 10m`, `max-file: 5`).
-6. Apuntar el registro DNS `A` del dominio al Droplet.
-7. Crear los usuarios de la base (§7) y el archivo `.env` (§9).
-8. Primer despliegue (§10) y comando de instalación (administrador y consultorio).
+6. Crear un archivo de swap de 1 GB con `vm.swappiness=10`, para que solo se use como margen.
+7. Instalar el temporizador de systemd de la copia diaria (§8.2).
+8. Apuntar el registro DNS `A` del dominio al Droplet.
+9. Crear los usuarios de la base (§7) y el archivo `.env` (§9).
+10. Primer despliegue (§10) y comando de instalación (administrador y consultorio).
 
 ---
 
@@ -162,13 +191,15 @@ services:
     read_only: true
     user: "node"
     restart: unless-stopped
-  respaldo:   # tarea diaria de copia externa (§8.2)
+  respaldo:   # copia externa diaria (§8.2); la lanza un temporizador de systemd
     image: ghcr.io/<org>/scalekine-respaldo:${VERSION}
     env_file: .env.respaldo
-    restart: unless-stopped
+    profiles: ["tareas"]
 volumes: { caddy_data: {}, caddy_config: {} }
 ```
 
+- `respaldo` está en el perfil `tareas`, así que `docker compose up -d` no lo levanta. Corre solo
+  cuando el temporizador lo lanza y termina al subir la copia. No ocupa memoria el resto del día.
 - `api` no publica puertos al host: solo `web` la alcanza por la red interna de Compose.
 - Los contenedores corren sin root y, el de la API, con sistema de archivos de solo lectura.
 - Cada servicio recibe solo las variables que necesita (`.env.web`, `.env.api`, `.env.respaldo`).
@@ -253,21 +284,36 @@ clúster. Se restaura a un clúster nuevo y se actualiza `DATABASE_URL`.
 
 Cubre la pérdida de la cuenta o de la región de DigitalOcean.
 
+**Ejecución:** un temporizador de systemd en el host ejecuta `docker compose run --rm respaldo`
+todos los días a las 03:30 hora argentina
+(`OnCalendar=*-*-* 03:30 America/Argentina/Buenos_Aires`, con `Persistent=true` para que corra al
+encender si el servidor estaba apagado a esa hora). El contenedor ejecuta:
+
 ```sh
-# tarea diaria a las 03:30 hora argentina, en el contenedor `respaldo` (esquema)
+# script del contenedor `respaldo` (esquema)
+set -eu -o pipefail   # si falla pg_dump, falla todo y no se envía el latido
 pg_dump --format=custom "$DATABASE_URL_RESPALDO" \
   | age -r "$AGE_DESTINATARIO" \
-  | rclone rcat "b2:$BUCKET/scalekine-$(date -u +%Y-%m-%dT%H%M).dump.age" \
-  && curl -fsS "$LATIDO_URL"
+  | rclone rcat "b2:$BUCKET/scalekine-$(date -u +%Y-%m-%dT%H%M).dump.age"
+curl -fsS "$LATIDO_URL"
 ```
 
 - **Cifrado antes de salir del servidor** con `age`. La clave pública vive en el servidor; la clave
   **privada solo la tiene el administrador**, en su gestor de contraseñas y en una copia impresa
   guardada en la clínica. Quien robe el bucket o el servidor no puede leer las copias (RNF-06).
-- **Bucket con retención de 30 días**, aplicada por una regla de ciclo de vida del propio bucket.
-- **La clave de B2 del servidor solo puede escribir.** No puede listar ni borrar, así que un
-  servidor comprometido no puede destruir las copias.
-- **Latido:** si la tarea falla, no se envía el aviso al monitor externo y el administrador recibe
+- **Versión de `pg_dump`.** La imagen `respaldo` usa un cliente de PostgreSQL de la misma versión
+  mayor que el clúster, o superior. Se actualiza junto con la versión mayor anual (§13).
+- **Bucket con Object Lock de 30 días**, en modo de cumplimiento (*compliance*) y habilitado al
+  crear el bucket. Ninguna clave puede borrar ni sobrescribir una copia antes de que venza, ni
+  siquiera la del administrador. Esa es la garantía de que un servidor comprometido no destruye las
+  copias.
+- **Retención de 30 días**, aplicada por una regla de ciclo de vida del bucket que elimina las copias
+  cuando vence su bloqueo.
+- **Clave de B2 del servidor con mínimo permiso:** escribir en ese bucket y nada más.
+  - Si `rclone` necesita listar archivos para subir, se le agrega solo ese permiso
+    **[verificar en T-37]**.
+  - Nunca recibe permiso de borrado.
+- **Latido:** si la tarea falla, no se envía el aviso a healthchecks.io y el administrador recibe
   una alerta (RNF-12).
 
 ### 8.3 Prueba de restauración mensual
@@ -290,7 +336,11 @@ Si el paso 3 falla, se trata como incidente (§12).
 |---|---|---|
 | Error humano o corrupción | Restaurar el clúster a un punto anterior (§8.1) | Minutos |
 | Falla del Droplet | Crear un Droplet nuevo con `infra/provision.sh`, recuperar `.env` del gestor de contraseñas y redesplegar | Ninguna (el estado está en la base) |
-| Pérdida de la cuenta o de la región de DigitalOcean | Levantar un servidor en otro proveedor de la UE (p. ej., Hetzner), instalar PostgreSQL, restaurar la última copia de B2, redesplegar con Compose y actualizar el DNS | Hasta 24 h |
+| Pérdida de la cuenta o de la región de DigitalOcean | Levantar un servidor en otro proveedor de la UE (p. ej., Scaleway, en Francia), instalar PostgreSQL, restaurar la última copia de B2, redesplegar con Compose y actualizar el DNS | Hasta 24 h |
+
+El proveedor alternativo se confirma en la revisión anual (§13): hay que verificar que tenga planes
+disponibles para contratar en el momento. En octubre de 2026, por ejemplo, Hetzner no ofrecía sus
+planes económicos por falta de hardware.
 
 ---
 
@@ -338,10 +388,10 @@ Si el paso 3 falla, se trata como incidente (§12).
 
 | Señal | Herramienta | Alerta al administrador |
 |---|---|---|
-| Disponibilidad | Monitor externo cada 1 minuto sobre `/api/salud` (responde `ok`, sin datos) | 2 fallas seguidas |
-| Copia diaria | Latido del monitor externo | Si no llega el latido en 26 horas |
-| CPU, memoria y disco del Droplet y de la base | Alertas nativas de DigitalOcean | Más del 80 % sostenido 10 minutos |
-| Certificado TLS | Monitor externo | Menos de 14 días para vencer |
+| Disponibilidad | Better Stack, cada 3 minutos o menos, sobre `/api/salud` (responde `ok`, sin datos) | 2 fallas seguidas |
+| Copia diaria | Latido en healthchecks.io | Si no llega el latido en 26 horas |
+| CPU, memoria y disco del Droplet y de la base | Alertas nativas de DigitalOcean | Más del 80 % sostenido 10 minutos; en la memoria del Droplet, es el criterio para ampliarlo (§3) |
+| Certificado TLS | Better Stack | Menos de 14 días para vencer |
 
 **Logs de la aplicación:**
 - JSON de `pino`, con redacción de datos personales (plan §4.15), en la salida estándar de Docker.
@@ -374,7 +424,7 @@ Un incidente es cualquier sospecha de acceso no autorizado, pérdida de datos o 
 | Diaria (automática) | Copia externa, parches del sistema operativo, monitoreo |
 | Semanal (automática) | PR de Dependabot; ventana de mantenimiento de la base |
 | Mensual | Prueba de restauración (§8.3); revisión de alertas y de los PR de dependencias; revisión de cuentas activas con la clínica |
-| Anual | Rotación de credenciales (§9); actualización de versión mayor de PostgreSQL y de Node LTS; revisión de este documento y del inventario de §1 |
+| Anual | Rotación de credenciales (§9); actualización de versión mayor de PostgreSQL (con el cliente de la imagen `respaldo`) y de Node LTS; revisión de este documento, del inventario de §1, de los precios de §3 y del proveedor alternativo de §8.4 |
 
 ---
 
@@ -413,6 +463,8 @@ ellas (Res. AAIP 47/2018).
 - [ ] `ssh` con contraseña rechazado; `unattended-upgrades` activo (RNF-13).
 - [ ] HTTPS con certificado válido, redirección desde HTTP, HSTS y CSP presentes (RNF-01, RNF-10).
 - [ ] Primera copia externa subida y **restaurada con éxito** (RNF-07).
+- [ ] Object Lock activo: un intento de borrar una copia, incluso con la clave del administrador,
+      falla (RNF-07).
 - [ ] Alertas probadas: con la API detenida y con el latido de copia omitido (RNF-12).
 - [ ] Comando de instalación ejecutado; el administrador cambió la contraseña y activó el segundo
       factor (RF-05, RNF-04).

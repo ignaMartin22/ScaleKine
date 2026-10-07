@@ -416,12 +416,22 @@ más la verificación de `Origin` cubren el mismo riesgo con menos piezas.
 ### 4.16 Producción en DigitalOcean, región Frankfurt
 
 **Elegido:** un Droplet en Frankfurt con Docker Compose (Caddy + backend + frontend estático) y
-PostgreSQL administrado de DigitalOcean en la misma región, conectados por red privada. Copia
-externa diaria en un proveedor distinto, también dentro de la Unión Europea. El detalle, los costos
-y la operación están en [`despliegue.md`](./despliegue.md).
+PostgreSQL administrado de DigitalOcean en la misma región, conectados por red privada. El Droplet
+arranca en 1 GB de RAM y se amplía si la memoria lo pide. Copia externa diaria en un proveedor
+distinto, también dentro de la Unión Europea. El detalle, los costos y la operación están en
+[`despliegue.md`](./despliegue.md).
 
-*Descartado:* Hetzner (UE) con PostgreSQL propio. Es más barato, pero los backups, los parches y la
-recuperación a un punto en el tiempo (RNF-07) quedarían a cargo de un único desarrollador.
+*Descartado por ahora:* PostgreSQL propio en el mismo Droplet, con el registro de transacciones
+cifrado en el bucket externo. Baja el costo a la mitad, pero los backups, los parches y la
+recuperación a un punto en el tiempo (RNF-07) quedarían a cargo de un único desarrollador. Se
+reconsidera si el costo pasa a ser decisivo para la clínica.
+
+*Descartado:* Hetzner (UE) con PostgreSQL propio. Tiene la misma carga operativa que la opción
+anterior y ya no es más barato: en junio de 2026 subió sus precios y, en octubre de 2026, sus planes
+económicos no se pueden contratar.
+
+*Descartado:* Scaleway (Francia) con base administrada. Cuesta lo mismo que la opción elegida, pero
+su base solo tiene copias diarias, sin recuperación a un punto en el tiempo (RNF-07).
 
 *Descartado:* DonWeb (Argentina). Evita la transferencia internacional, pero no ofrece PostgreSQL
 administrado y su backup semanal no alcanza RNF-07.

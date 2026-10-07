@@ -342,16 +342,18 @@ criterio de "hecho". Una tarea no está terminada si sus pruebas no pasan.
   - Proyecto con 2FA, VPC, Droplet y Cloud Firewall en FRA1.
   - PostgreSQL administrado con fuentes de confianza y ventana de mantenimiento.
   - Los tres usuarios de la base.
-  - SSH endurecido, `unattended-upgrades`, `fail2ban` y rotación de logs.
+  - SSH endurecido, `unattended-upgrades`, `fail2ban`, rotación de logs y swap de 1 GB.
 - **RF/RNF:** RNF-05, RNF-06, RNF-09, RNF-13.
 - **Hecho:** los ítems de la lista de `despliegue.md` §15 correspondientes a red, base y servidor
   verificados.
 
 ### T-37 · Copias externas y restauración
-- Bucket en la UE con retención de 30 días y clave de solo escritura, par de claves `age`, tarea
-  diaria con latido, `infra/verificar-restauracion.sh` y `docs/operacion/restauraciones.md`.
+- Bucket en la UE con Object Lock y retención de 30 días, y clave con el mínimo permiso. Par de
+  claves `age`, temporizador de systemd de la tarea diaria con latido,
+  `infra/verificar-restauracion.sh` y `docs/operacion/restauraciones.md`.
 - **RF/RNF:** RNF-05, RNF-06, RNF-07, RNF-12.
 - **Hecho:** primera copia subida, descargada, descifrada, restaurada y verificada, con su registro.
+  Un intento de borrarla falla por el Object Lock.
 
 ### T-38 · Monitoreo y alertas
 - Monitor externo de `/api/salud` y del certificado, latido de copias y alertas de DigitalOcean,
