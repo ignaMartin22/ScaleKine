@@ -135,6 +135,22 @@ npm run build              # compila a dist/
 El backend no arranca si falta `ZONA_HORARIA` o, en producción, `CLAVE_CIFRADO`. `GET /api/salud`
 responde `ok`.
 
+### Frontend
+
+```sh
+cd frontend
+npm install
+npm start                  # http://localhost:4200, con /api y /socket.io redirigidos al backend
+npm test                   # pruebas unitarias (Vitest)
+npm run build              # build de producción en dist/
+npm run verificar-csp      # sirve el build con la CSP de producción y busca violaciones
+```
+
+El build de producción no puede tener scripts en línea, porque la CSP de producción
+(`docs/despliegue.md` §6.2) los bloquea. Por eso `angular.json` desactiva la incrustación de CSS
+crítico (`inlineCritical: false`). `verificar-csp` usa el Chrome o Edge instalado (variable
+`NAVEGADOR`).
+
 ### Primer arranque previsto
 
 1. `docker compose up -d` — levanta PostgreSQL.

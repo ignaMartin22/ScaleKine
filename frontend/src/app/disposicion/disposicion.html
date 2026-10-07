@@ -1,0 +1,10 @@
+<header class="encabezado">
+  <span class="marca">ScaleKine</span>
+  <span class="seccion">{{ seccion() }}</span>
+  @if (usuario(); as u) {
+    <span class="usuario">{{ u.nombreUsuario }} · {{ nombreDelRol() }}</span>
+  }
+</header>
+<main class="contenido">
+  <router-outlet />
+</main>

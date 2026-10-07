@@ -1,0 +1,24 @@
+:root {
+  --texto: #1d2329;
+  --texto-tenue: #5b6670;
+  --fondo: #f6f7f8;
+  --superficie: #ffffff;
+  --borde: #dde1e5;
+  color-scheme: light;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  color: var(--texto);
+  background: var(--fondo);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+h1 {
+  font-size: 1.5rem;
+  margin: 0 0 0.5rem;
+}
