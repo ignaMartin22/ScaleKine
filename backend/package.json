@@ -12,6 +12,8 @@
     "typecheck": "tsc -p tsconfig.json",
     "lint": "eslint .",
     "test": "vitest run",
+    "test:unidad": "vitest run --project unidad",
+    "test:integracion": "vitest run --project integracion",
     "prisma:generar": "prisma generate",
     "db:migrar": "prisma migrate deploy",
     "db:nueva-migracion": "prisma migrate dev --create-only",

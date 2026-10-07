@@ -123,11 +123,13 @@ Nunca se cargan datos reales de pacientes en desarrollo ni en pruebas.
 ```sh
 cd backend
 npm install
-npm run dev         # servidor con recarga, lee ../.env
-npm test            # pruebas (Vitest)
-npm run lint        # ESLint
-npm run typecheck   # chequeo de tipos
-npm run build       # compila a dist/
+npm run dev                # servidor con recarga, lee ../.env
+npm test                   # todas las pruebas (Vitest)
+npm run test:unidad        # sin base de datos
+npm run test:integracion   # contra scalekine_pruebas (requiere la base levantada)
+npm run lint               # ESLint
+npm run typecheck          # chequeo de tipos
+npm run build              # compila a dist/
 ```
 
 El backend no arranca si falta `ZONA_HORARIA` o, en producción, `CLAVE_CIFRADO`. `GET /api/salud`
