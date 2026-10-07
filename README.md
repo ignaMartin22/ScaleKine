@@ -98,6 +98,21 @@ _La guía completa se termina en T-40._
 
 Nunca se cargan datos reales de pacientes en desarrollo ni en pruebas.
 
+### Backend
+
+```sh
+cd backend
+npm install
+npm run dev         # servidor con recarga, lee ../.env
+npm test            # pruebas (Vitest)
+npm run lint        # ESLint
+npm run typecheck   # chequeo de tipos
+npm run build       # compila a dist/
+```
+
+El backend no arranca si falta `ZONA_HORARIA` o, en producción, `CLAVE_CIFRADO`. `GET /api/salud`
+responde `ok`.
+
 ### Primer arranque previsto
 
 1. `docker compose up -d` — levanta PostgreSQL.
