@@ -1,513 +1,421 @@
 # Plan técnico — Sistema de Turnos para Kinesiología
 
 Deriva de [`spec.md`](./spec.md) y respeta el stack fijado en
-[`constitucion.md`](./constitucion.md): Angular, Node.js + Express, PostgreSQL vía Prisma,
-Socket.io y un servicio externo de email.
+[`constitucion.md`](./constitucion.md): Angular, Node.js + Express, PostgreSQL vía Prisma y
+Socket.io.
 
 Este documento describe **cómo** se implementa lo que la spec define como **qué**. Cada módulo
 declara los RF que le corresponden, y la sección 8 cierra la trazabilidad en ambos sentidos.
 
-> **Bloqueo de partida.** Los cuatro pendientes de `spec.md:382-389` (gestión de contraseñas,
-> primera cuenta de recepción, contenido del email, duración de la franja) no están resueltos.
-> Cada decisión de este plan que dependa de ellos está marcada con **[supuesto]** y hay que
-> confirmarla antes de escribir código.
+> **Sin pendientes de negocio.** `spec.md` §5.1 está vacío. Lo que sigue marcado **[supuesto]** son
+> detalles técnicos que el plan fija por defecto y se pueden ajustar sin tocar la spec.
 
 ---
 
 ## 1. Estructura de módulos
 
-El sistema se separa en siete módulos. La frontera entre ellos sigue quién es responsable de la
-acción, no la tabla que toca, para que un cambio de estado (el núcleo del producto) no dependa de
-cuatro módulos distintos.
-
 | # | Módulo | Responsabilidad | RF que cubre |
 |---|---|---|---|
-| M1 | **Identidad y acceso** | Cuentas, autenticación, sesión, roles, zona horaria del sistema | RF-01 … RF-08 |
-| M2 | **Datos maestros** | Alta, edición, búsqueda y horario de pacientes y médicos | RF-14 … RF-19 |
-| M3 | **Agenda** | Disponibilidad, filtros, campos mostrados, orden de la espera, contador de inasistencias | RF-09 … RF-13, RF-20 |
-| M4 | **Ciclo de vida del turno** | Máquina de estados, creación, disponibilidad de franja, reglas de rol | RF-21 … RF-37 |
-| M5 | **Tiempo real** | Difusión de cambios a las agendas abiertas y resincronización | RF-38 … RF-40 |
-| M6 | **Recordatorios** | Programación, envío, reintento y supresión | RF-41 … RF-45 |
-| M7 | **Auditoría e historial** | Registro de altas y cambios, consulta de historial | RF-46 … RF-49 |
+| M1 | **Identidad y acceso** | Cuentas, contraseñas, autenticación, sesión, roles, zona horaria | RF-01 … RF-12 |
+| M2 | **Datos maestros** | Datos del consultorio, kinesiólogos y su bloque, grilla de franjas, pacientes | RF-13 … RF-21 |
+| M3 | **Ciclo de vida del turno** | Asignación, coseguros, ticket con QR, estados, corrección, reprogramación | RF-22 … RF-39 |
+| M4 | **Agenda** | Vistas por rol, disponibilidad, aviso de pendientes de marcar | RF-40 … RF-42 |
+| M5 | **Tiempo real** | Difusión de cambios y resincronización | RF-43 … RF-45 |
+| M6 | **Auditoría e historial** | Registro de cambios y consulta de historial | RF-46, RF-47 |
 
-**Dependencias:** M4 no depende de nadie; todos los demás dependen de M4 (un turno no se crea ni se
-consulta sin pasar por la máquina de estados). M5 y M6 se enganchan a M4 como efectos
-secundarios: M4 decide, M5 difunde y M6 programa. Ninguno de los dos puede alterar un turno.
+**Dependencias:** M3 es el núcleo; solo él escribe turnos. M4 y M6 leen turnos, y M5 difunde los
+cambios que M3 emite. Ninguno de ellos puede alterar un turno.
 
-**Por qué un módulo de ciclo de vida separado:** M3, M6 y M7 necesitan conocer el estado de un
-turno, pero ninguno tiene permiso para cambiarlo. Concentrar las transiciones en M4 garantiza que
-RF-25, RF-26, RF-31 y RF-33 tengan un único lugar donde ser verdad, en lugar de cuatro
-implementaciones que podrían divergir.
+**Por qué un único módulo que escribe turnos:** asignación, cambio de estado, corrección y
+reprogramación comparten las mismas dos reglas (franja libre para el kinesiólogo y para el
+paciente, RF-24/RF-25/RF-37) y el mismo registro de auditoría (RF-46). Concentrarlas en M3 evita
+cuatro implementaciones que podrían divergir.
 
 ---
 
 ## 2. Modelo de datos
 
-Entidades persistidas, con sus relaciones. Sin dialecto SQL: la forma física se define en las
-migraciones de Prisma.
+Entidades persistidas y sus relaciones. La forma física se define en las migraciones de Prisma.
 
 ### 2.1 Entidades
 
-**`Usuario`** — identidad y acceso (M1)
+**`Usuario`** (M1)
 - Identificador
-- Email de acceso, único
+- Nombre de usuario, único
 - Contraseña (hash)
-- Rol: `recepcion` | `medico`
+- Rol: `administrador` | `secretaria` | `kinesiologo`
 - Activo
-- La sesión vive aparte: las sesiones no expiran (RF-07), por lo que no hay marca de vencimiento
-  que se agote sola.
+- Debe cambiar contraseña: marca que se enciende al crear o restablecer la cuenta (RF-04, RF-08) y
+  se apaga cuando el usuario elige la suya (RF-06)
 
-**`Sesion`** — registro de las sesiones abiertas
+**`Sesion`** (M1)
 - Token opaco
 - Usuario asociado
 - Creada y revocada
-- Existe como tabla propia, y no como columna en `Usuario`, para que RF-06 (cerrar sesión) sea una
-  revocación real y no un borrado de estado de usuario. Permitir revocar una sola sesión sin
-  tocar la cuenta es lo que hace posible el "salir" sin bloquear a los demás usuarios del
-  consultorio.
 
-**`Medico`** — perfil profesional, relación 1:1 con `Usuario` (M2)
+Tabla propia para que cerrar sesión (RF-10) sea una revocación real, para que restablecer o
+desactivar una cuenta pueda cerrar todas sus sesiones (RF-08, RF-09), y para que las sesiones
+sobrevivan a un reinicio del servidor (RF-11, §4.1).
+
+**`Kinesiologo`** — perfil 1:1 con `Usuario` (M2)
 - Usuario asociado
 - Nombre
-- Horario de atención vigente
+- Bloque: `manana` | `tarde`
 
-**`HorarioMedico`** — historial de horarios, para que el cambio a futuro (RF-17) no borre el pasado
-- Médico
-- Día de la semana
-- Hora de inicio y hora de fin
-- Vigente desde
+El bloque es una columna y no una tabla versionada: RF-16 pide que un cambio de bloque no altere
+los turnos ya asignados, y eso ya se cumple porque cada turno guarda su propia fecha y hora de
+inicio (§4.3).
 
-`HorarioMedico` es una tabla aparte y no un par de columnas en `Medico` porque RF-17 exige que un
-cambio de horario no altere los turnos ya registrados, y la Constitución exige que toda transición
-quede registrada. Con una tabla versionada, el horario vigente se resuelve por "la fila con
-`vigente_desde` más reciente no posterior a la fecha consultada", y el horario de una fecha pasada
-sigue siendo consultable. Con dos columnas, el horario de ayer habría quedado sobrescrito.
+**`Consultorio`** — fila única (M2)
+- Nombre
+- Dirección
+- Teléfono
 
-**[supuesto]** El horario se define por día de la semana. Si un consultorio tiene horarios
-irregulares por fecha concreta, hace falta una tabla de excepciones por fecha.
+Va en la base y no en variables de entorno porque la secretaría la edita (RF-13).
 
 **`Paciente`** (M2)
 - Identificador
-- Nombre
-- DNI, único y con formato validado (RF-15)
-- Email, opcional
-- Teléfono, opcional
+- DNI, único y con formato validado (RF-18)
+- Nombre y apellido
+- Teléfono
+- Obra social (texto; "Particular" si no tiene)
 
-**`Turno`** (M4)
+**`Turno`** (M3)
 - Identificador
-- Paciente y médico
+- Paciente y kinesiólogo
 - Fecha
 - Hora de inicio de la franja
-- Estado
+- Estado: `reservado` | `en_espera` | `asistio` | `no_asistio` | `anulado`
 - `llegada_en`: momento en que pasó a `en_espera`
+- Coseguro según obra social (monto, opcional)
+- Coseguro adicional (monto, opcional)
 - Creado por y creado en
 
-**`TurnoEvento`** — auditoría de altas y cambios (M7)
+**`TurnoEvento`** — auditoría (M6)
 - Turno
-- Estado anterior, nulo en la creación
-- Estado nuevo
-- Autor: usuario **o** origen `sistema`
+- Tipo: `asignacion` | `cambio_estado` | `correccion` | `reprogramacion`
+- Estado anterior y estado nuevo (solo en `cambio_estado` y `correccion`)
+- Autor
 - Ocurrido en
 
-**`EnvioRecordatorio`** — bandeja de salida de email (M6)
-- Turno
-- Estado: `pendiente` | `enviado` | `descartado`
-- Intentos
-- Próximo intento
-- Último error
+En `reprogramacion` no se guarda la fecha ni la franja anteriores (D-9).
 
-### 2.2 Reglas que el modelo debe garantizar por sí solo
+### 2.2 La grilla no se persiste
 
-Estas cuatro reglas se implementan en el esquema, no solo en el código de aplicación. Si el modelo
-las garantiza, la sección 3 puede asumir que se cumplen.
+La grilla de franjas (`spec.md` §2) es configuración del sistema, no datos: duración de 45 minutos
+y la lista de horas de inicio por bloque. Las franjas disponibles se calculan a partir de ella
+(§4.2).
+
+La grilla aplica de lunes a viernes para todos los kinesiólogos (D-21). Los días se modelan como
+parámetro para que cambiarlos no requiera migración.
+
+### 2.3 Reglas que el modelo garantiza por sí solo
 
 | Regla | Cómo se garantiza | RF |
 |---|---|---|
-| No hay dos turnos activos del mismo médico en la misma franja | Índice único parcial sobre (médico, fecha, hora de inicio) filtrado a los estados activos | RF-22 |
-| No hay dos turnos activos del mismo paciente en la misma franja | Índice único parcial sobre (paciente, fecha, hora de inicio) filtrado a los estados activos | RF-23 |
-| Un turno no cambia de estado por fuera de la tabla | Restricción de dominio sobre los valores de estado, más la tabla de transiciones en M4 | RF-25, RF-26 |
-| El turno conserva su registro siempre | Ausencia de toda vía de borrado en la aplicación y en el esquema | RF-36 |
+| No hay dos turnos activos del mismo kinesiólogo en la misma franja | Índice único parcial sobre (kinesiólogo, fecha, hora de inicio) filtrado a `reservado` y `en_espera` | RF-24, RF-37 |
+| No hay dos turnos activos del mismo paciente en la misma franja | Índice único parcial sobre (paciente, fecha, hora de inicio) filtrado a los estados activos | RF-25, RF-37 |
+| Solo existen los cinco estados | Enum en el esquema | RF-29 |
+| Un turno no se elimina | Ausencia de toda vía de borrado en la aplicación | RF-39 |
 
-**Por qué índices parciales y no una comprobación en el código:** RF-37 dice que dos acciones
-simultáneas se resuelven aplicando la última, no rechazando. Con una comprobación en el código,
-ambas acciones pasan el chequeo y la segunda inserta encima de la primera: el turno queda duplicado
-y la franja doblemente ocupada. El índice parcial convierte la colisión en un error de la base que
-la segunda acción reporta como "franja ocupada", yRF-22 y RF-23 se cumplen sin importar cuántas
-peticiones llegan a la vez. La Constitución ya argumentaba que el modelo relacional da integridad
-"gratis"; este es el caso donde eso decide la arquitectura.
+**Por qué índices parciales:** cubren de una sola vez las cuatro formas de ocupar una franja
+—asignar, corregir hacia un estado activo, reprogramar y corregir una reprogramación— sin que cada
+operación tenga que repetir el chequeo. Liberar una franja (RF-38) no requiere ninguna operación:
+es la ausencia de fila activa.
 
-**Por qué `llegada_en` además de `TurnoEvento`:** RF-12 ordena la cola del médico por hora de
-llegada, y esa consulta corre en cada push de RF-38. `TurnoEvento` es append-only y requiere
-agregar y desagregar para obtener el valor. `llegada_en` en `Turno` es una proyección del mismo
-hecho, escrita en la misma transacción; `TurnoEvento` sigue siendo la fuente de verdad. La
-duplicación solo puede divergir por la acción que escribe ambas, que es la misma transacción.
+**Por qué la igualdad de hora de inicio alcanza para el paciente:** los dos kinesiólogos de la
+mañana comparten grilla, así que dos turnos simultáneos siempre tienen la misma hora de inicio.
+Si algún día los bloques tuvieran grillas desfasadas, esta regla es la primera que hay que revisar
+(§4.4).
 
-**Por qué `EnvioRecordatorio` y no un envío directo:** RF-45 exige reintento automático, y un
-reintento que no sobrevive a un reinicio del proceso no es un reintento. La bandeja persiste la
-intención de enviar y su estado; el proceso la consume. Además permite implementar RF-44 —descartar
-el envío de un turno que se canceló— sin enviar nada: el registro queda `descartado` y se puede
-auditar que el recordatorio no salió.
+**Por qué `llegada_en` en `Turno`:** RF-40 ordena la espera por hora de llegada en cada push de
+tiempo real. Se escribe en la misma transacción que el evento de auditoría. Una corrección que
+saca al turno de `en_espera` la conserva; una que lo devuelve a `reservado` la limpia.
 
-### 2.3 Lo que no está en el modelo
+### 2.4 Lo que no está en el modelo
 
-- **Ficha clínica, notas, evolución.** Fuera de alcance.
-- **Tabla de franjas materializadas.** Las franjas se derivan del horario vigente del médico
-  (§4.2).
-- **Columna de zona horaria por registro.** La zona es única del sistema (RF-08), no por dato.
-- **Auditoría de navegación.** Fuera de alcance.
+- Ficha clínica, cobros, catálogo de obras sociales: fuera de alcance.
+- Tabla de franjas materializadas: se derivan de la grilla.
+- Ubicación anterior de un turno reprogramado: fuera de alcance (D-9).
+- Bandeja de envíos o recordatorios: el recordatorio salió del alcance (D-6).
 
 ---
 
 ## 3. Módulo por módulo
 
-### M1 · Identidad y acceso — RF-01 … RF-08
+### M1 · Identidad y acceso — RF-01 … RF-12
 
-Funciones: autenticar, cerrar sesión, crear cuentas, resolver el rol de quien actúa, exponer la
-zona horaria del sistema.
+- **RF-01**: el backend devuelve rol y perfil; la redirección es del frontend. El backend nunca
+  confía en un rol enviado por el cliente.
+- **RF-03**: la autorización se declara por módulo y rol, no por endpoint (§4.8):
+  `administrador` escribe en todos los módulos; `secretaria`, solo en pacientes y turnos;
+  `kinesiologo` no escribe en ningún lado y solo lee sus propios turnos.
+- **RF-04 / RF-14**: la cuenta de secretaría se crea sola; la de kinesiólogo, junto con su perfil
+  en una transacción (M2). Ambas nacen con la marca de cambio de contraseña.
+- **RF-05**: un comando de instalación crea la cuenta de administrador con una contraseña temporal
+  que imprime una sola vez por consola. No hay cuenta por defecto con una contraseña conocida.
+- **RF-06**: mientras la sesión pertenezca a una cuenta marcada, el backend rechaza toda petición
+  salvo el cambio de contraseña y el cierre de sesión. El bloqueo vive en el servidor, no en una
+  redirección del frontend.
+- **RF-07**: el cambio exige la contraseña actual; en el primer ingreso, la actual es la temporal.
+- **RF-08 / RF-09**: restablecer y desactivar revocan todas las sesiones de la cuenta en la misma
+  transacción. Una cuenta desactivada conserva su fila, porque `Turno` y `TurnoEvento` la
+  referencian como autor.
+- **Contraseñas:** se guardan con un hash lento con sal (bcrypt o argon2). **[supuesto]** Longitud
+  mínima de 8 caracteres, sin otras reglas de composición.
 
-Puntos donde la spec deja elección al plan:
+### M2 · Datos maestros — RF-13 … RF-21
 
-- **RF-01 (redirección por rol)**: el backend devuelve el rol y el perfil; la redirección es
-  responsabilidad del frontend. El backend nunca confía en un rol enviado por el cliente.
-- **RF-03 (permisos)**: el control es del backend. Ocultar botones es RF-35, que es de
-  presentación, pero la garantía real de RF-03 requiere que el servidor rechace.
-- **RF-07 (sin expiración)**: la sesión no lleva vencimiento. El único límite es el reinicio del
-  proceso si las sesiones viven en memoria (§4.5).
+- **RF-13**: una sola fila de `Consultorio`, creada por el comando de instalación y editable por
+  `secretaria` y `administrador`. El ticket la lee al generarse, así que un cambio rige desde el
+  próximo ticket sin invalidar nada.
+- **RF-14**: alta de `Usuario` con rol `kinesiologo` y de `Kinesiologo` en la misma transacción,
+  ejecutada por el administrador.
+- **RF-15 / RF-16**: el bloque determina qué horas de inicio ofrece la grilla. Un cambio de bloque
+  solo afecta los cálculos de disponibilidad; los turnos existentes no se tocan.
+- **RF-18**: formato de DNI validado en el backend; unicidad garantizada por el esquema.
+- **RF-19**: un único endpoint de búsqueda exacta por DNI que la pantalla de asignación consulta
+  apenas se completa el campo. Si no hay coincidencia, el mismo formulario pasa al alta.
+- **RF-21**: búsqueda por nombre con coincidencias parciales; por DNI, exacta. La ficha del paciente
+  es una sola pantalla que combina sus datos (M2) y su historial (M6, RF-47). Solo para
+  `secretaria` y `administrador`.
 
-**[supuesto]** Enquanto los cuatro pendientes de `spec.md:382-389` no se resuelvan, M1 no tiene
-cambio de contraseña, recuperación ni desactivación. Se implementa solo el alta de cuentas
-(RF-04) y la creación de la primera cuenta (RF-05). Cualquier médico que pierda su clave queda
-inaccesible y recepción no tiene forma de ayudarlo: es un agujero conocido, no una decisión.
+### M3 · Ciclo de vida del turno — RF-22 … RF-39
 
-### M2 · Datos maestros — RF-14 … RF-19
+Es el núcleo. Expone cinco operaciones de escritura, para `secretaria` y `administrador`, y una
+de lectura (el ticket):
 
-Funciones: alta y edición de pacientes y médicos, validación de DNI, búsqueda, gestión del
-horario con vigencia.
+| Operación | Efecto | RF |
+|---|---|---|
+| `asignar` | Crea el turno en `reservado` con sus coseguros | RF-23 … RF-26 |
+| `modificarCoseguros` | Cambia los montos; no toca estado ni franja | RF-27 |
+| `transicionar` | Aplica una acción del flujo normal | RF-30 … RF-33 |
+| `corregir` | Lleva el turno a cualquier estado | RF-35 |
+| `reprogramar` | Cambia fecha, franja y/o kinesiólogo de un turno `reservado` | RF-36 |
+| `ticket` | Devuelve el PDF del ticket con QR, generado con los datos vigentes | RF-28 |
 
-- **RF-15 (DNI)**: la validación de formato ocurre en el backend. La unicidad la garantiza el
-  modelo (§2.2). La revalidación en RF-18 es la misma regla aplicada a una edición, no un caso
-  aparte.
-- **RF-17 (horario a futuro)**: una edición cierra la vigencia anterior con la fecha de corte y abre
-  una nueva. Los turnos existentes guardan fecha y hora de inicio propias, no una referencia al
-  horario, así que no se ven afectados por construcción.
-- **RF-19 (búsqueda)**: la búsqueda por nombre es por coincidencias parciales; la por DNI es
-  exacta. No se implementa búsqueda difusa: recepción conoce el DNI cuando lo busca.
+**Tabla del flujo normal en un solo lugar.** Las cuatro transiciones de `spec.md` §3.5 viven en
+una tabla declarativa en el código. `transicionar` solo acepta lo que está en la tabla, y la misma
+tabla responde qué acciones mostrar para un estado (RF-34). El frontend no la conoce: recibe la
+lista de acciones disponibles con cada turno.
 
-### M3 · Agenda — RF-09 … RF-13, RF-20
+**Corrección separada del flujo.** `corregir` es otra operación, no una fila comodín de la tabla.
+Así el flujo normal sigue siendo estricto y verificable, y la auditoría distingue sin ambigüedad
+un "no asistió" del día a día de uno corregido (`TurnoEvento.tipo`).
 
-Funciones: calcular franjas disponibles, filtrar, proyectar los campos de un turno, ordenar la
-espera, contar inasistencias.
+**Ocupación de franja.** `asignar`, `reprogramar` y `corregir` hacia un estado activo pueden chocar
+con los índices de §2.3. El error de la base se traduce a un rechazo de negocio con el motivo
+(RF-24, RF-25, RF-37).
 
-- **RF-20 (disponibilidad)**: se calculan todas las franjas del horario vigente y se descartan las
-  que tienen un turno activo, del médico y del paciente. La consulta ya trae la lista de turnos
-  activos de la franja, así que el descarte es en memoria.
-- **RF-11 (campos)**: la proyección es una función del rol y del estado, en un solo lugar. Que M4
-  exponga la lista de acciones disponibles por estado y rol evita que M3 y el frontend calculen la
-  misma regla y se desincronicen (RF-35).
-- **RF-12 (orden de la espera)**: orden por `llegada_en`. Los empates se resuelven por orden de
-  llegada al sistema, que es la misma columna.
-- **RF-13 (contador de inasistencias)**: cuenta de `no_asistio` por fecha y por médico. Se calcula
-  en la misma consulta que la agenda, no en una aparte.
+**Ticket con QR (RF-28).** El ticket no se guarda: se genera en el backend cada vez que se pide, a
+partir del turno actual. Así una reprogramación no deja un ticket viejo almacenado, y no hace falta
+invalidar nada. Al asignar, el frontend ofrece la descarga inmediatamente con el identificador que
+devuelve `asignar`. El QR lleva texto plano (número de turno, paciente, kinesiólogo, fecha y hora),
+no un enlace (§4.11).
 
-### M4 · Ciclo de vida del turno — RF-21 … RF-37
+**Cada operación escribe su evento** de `TurnoEvento` en la misma transacción (RF-46) y, tras el
+commit, emite un evento de dominio que M5 difunde.
 
-Es el módulo central. **Una sola tabla de transiciones en el código**, declarada explícitamente
-—origen, destino, rol autorizado, condición— y usada por todo el sistema.
+### M4 · Agenda — RF-40 … RF-42
 
-Funciones: crear turno, aplicar transición, calcular disponibilidad de franja, resolver qué acciones
-ve el usuario.
+- **RF-40 (kinesiólogo)**: consulta filtrada al kinesiólogo de la sesión, nunca a un parámetro del
+  cliente. La proyección es la misma que la de la secretaría, sin la lista de acciones (D-15).
+  Todos los endpoints de lectura que acepta el rol `kinesiologo` filtran por el kinesiólogo de la
+  sesión; los de búsqueda de pacientes e historial lo rechazan (D-16).
+- **RF-41 (secretaría)**: todos los turnos, filtrables por fecha y kinesiólogo, con la proyección
+  completa y la lista de acciones disponibles de M3.
+- **RF-22 (disponibilidad)**: dada una fecha y un bloque, devuelve los kinesiólogos de ese bloque y,
+  para cada uno, las horas de inicio de la grilla menos las que tienen un turno activo suyo o del
+  paciente. Es una única consulta de los turnos activos de la fecha, resuelta en memoria.
+- **RF-42 (aviso)**: consulta de turnos activos cuya franja terminó (`fecha + hora de inicio + 45 min
+  < ahora`). Se calcula al leer: no hay proceso en segundo plano, porque el sistema nunca cambia un
+  estado por su cuenta (§4.5).
 
-La tabla de transiciones es la implementación directa de la tabla de `spec.md:180-185`, y las tres
-reglas que la gobiernan salen de ella, no de condicionales repartidos:
+### M5 · Tiempo real — RF-43 … RF-45
 
-- **RF-26 / RF-34 (rechazo)**: una transición ausente de la tabla se rechaza, y el mensaje se
-  construye a partir de la misma tabla: si hay una transición de salida, se nombra; si el estado
-  es terminal, la tabla no tiene salida y el mensaje dice que el turno está cerrado. Es lo que
-  resolvió D-7 sin necesidad de un caso especial en el mensaje.
-- **RF-33 (rol)**: la tabla declara el rol, y el chequeo de rol es parte de la misma consulta. El
-  rechazo por rol y el rechazo por transición salen del mismo lugar.
-- **RF-35 (acciones)**: la tabla tiene un método inverso que devuelve las transiciones disponibles
-  desde un estado para un rol. RF-35 se cumple por construcción en lugar de por sincronización
-  con el frontend.
+- **Salas**: una por kinesiólogo y una de secretaría. Un cambio va a la sala del kinesiólogo del
+  turno y a la de secretaría. Una reprogramación que cambia de kinesiólogo va a ambas salas de
+  kinesiólogo.
+- **Proyección**: todas las salas reciben la misma proyección del turno; la lista de acciones
+  disponibles solo viaja a la sala de secretaría (que incluye al administrador).
+- **RF-45**: el frontend detecta la pérdida de conexión y lo marca en pantalla. Al reconectar vuelve
+  a pedir la agenda en vez de confiar en lo que tenía en memoria.
 
-**RF-32 (franja liberada)**: un turno terminal deja de ocupar su franja porque el índice parcial
-solo considera los estados activos. No hay ninguna operación de "liberar": liberar es la ausencia
-de fila activa.
+### M6 · Auditoría e historial — RF-46, RF-47
 
-**RF-36 (no borrar)**: no existe endpoint de borrado de turno. Un turno mal creado se cancela
-(RF-29) y se crea el correcto.
-
-### M5 · Tiempo real — RF-38 … RF-40
-
-Funciones: difundir cambios de estado, emitir advertencia de conexión, resincronizar al reconectar.
-
-- **Salas**: una sala por médico y una sala global para recepción. Un turno pertenece a la sala de
-  su médico; recepción recibe todos los eventos. La separación permite que M4 difunda sin saber
-  quién está mirando.
-- **Alcance de la difusión**: M4 emite un evento de cambio; M5 decide a qué salas va. M4 no
-  conhece el sistema de tiempo real, y M5 no puede escribir en la base.
-- **RF-40 (conexión y resincronización)**: el frontend detecta pérdida de conexión y la marca; al
-  reconectar vuelve a pedir la agenda del día en lugar de confiar en lo que tenía en memoria. Es
-  lo que garantiza que un médico no vea una agenda congelada sin saberlo.
-
-### M6 · Recordatorios — RF-41 … RF-45
-
-Funciones: programar el envío, enviarlo, reintentarlo, descartarlo si el turno ya no aplica.
-
-- **Programación**: un turno `reservado` con email genera un registro en `EnvioRecordatorio` para
-  24 h antes del inicio de su franja. Si ese momento ya pasó, no se genera nada (RF-41).
-- **RF-43 (email cargado tarde)**: cargar el email de un paciente dispara la misma programación
-  para sus turnos `reservado` pendientes. Es la misma función que usa M4 al crear, no una segunda
-  implementación.
-- **RF-44 (supresión)**: al alcanzar un estado terminal, el registro de envío pendiente pasa a
-  `descartado`. Un envío que ya salió no se retira: está fuera de alcance
-  (`spec.md:332-333`).
-- **RF-45 (reintento)**: el fallo deja el registro con su próximo intento. **[supuesto]** Tres
-  intentos con espera creciente, y al agotarlos el registro queda en estado terminal de fallo sin
-  intervención de un usuario, porque RF-45 no contempla intervención humana.
-
-### M7 · Auditoría e historial — RF-46 … RF-49
-
-Funciones: registrar alta y cambios, servir el historial.
-
-- **RF-46 / RF-47 (registro)**: la escritura del evento ocurre en la misma transacción que el
-  cambio de estado. Un cambio sin registro no es posible, ni por error.
-- **RF-30 (autor `sistema`)**: el paso automático a `no_asistio` registra origen `sistema` y autor
-  nulo, para que la auditoría distinga "lo hizo recepción" de "lo hizo el sistema".
-- **RF-48 / RF-49 (historial)**: la consulta filtra por franja ya transcurida y estado terminal.
-  El acceso se restringe a recepción en el backend: es un dato de agenda, no un dato de consulta
-  clínica.
+- **RF-46**: los eventos se escriben dentro de las operaciones de M3; no hay otra vía de escritura.
+- **RF-47**: todos los turnos del paciente, en cualquier estado, separados por si la franja ya
+  terminó: próximos en orden ascendente e historial en orden descendente. Una sola consulta, partida
+  en memoria con el reloj inyectable. Disponible para `secretaria`
+  y `administrador`. El rol `kinesiologo` lo tiene vedado (D-16).
 
 ---
 
 ## 4. Decisiones técnicas y alternativas descartadas
 
-Cada decisión indica la alternativa considerada y por qué se descartó. Las que no están en el
-alcanance de la Constitución.
-
 ### 4.1 Sesión en cookie con tabla propia, en lugar de JWT
 
-**Elegido:** cookie de sesión opaca, con el registro de la sesión en la base.
+**Elegido:** cookie de sesión opaca, con la sesión persistida en la base.
 
-*Descartado:* JWT. El token se autovalidaría sin consultar la base, pero RF-06 exige que cerrar
-sesión deje de exponer los datos, y con JWT el token sigue siendo válido hasta expirar. Habría que
-anadir una lista de revocación, que es la sesión en base con más pasos. Además, RF-07 pide sesiones
-que no expiran: un JWT sin expiración no se puede revocar con la limitación de tamaño que tiene.
+*Descartado:* JWT. RF-10 exige que cerrar sesión invalide el acceso (y RF-08 y RF-09, que se puedan
+cerrar las sesiones de otro), y un JWT sigue siendo válido hasta expirar; RF-11 pide sesiones sin vencimiento, y un JWT sin vencimiento no es revocable sin
+una lista negra, que es una tabla de sesiones con más pasos.
 
-### 4.2 Franjas derivadas del horario, en lugar de una tabla de franjas
+*Descartado también:* sesiones en memoria del proceso. Un reinicio del servidor cerraría todas las
+agendas abiertas, incluidas las que los kinesiólogos usan como monitor.
 
-**Elegido:** el horario del médico define un patrón; las franjas se calculan al vuelo a partir de la
-duración fija y el horario vigente de esa fecha.
+### 4.2 Grilla como configuración, en lugar de una tabla de franjas
 
-*Descartado:* materializar una tabla `Franja` con una fila por bloque agendable. Simplificaría la
-consulta de disponibilidad, pero RF-17 permite cambiar el horario a futuro, y eso obliga a
-recalcular y reconciliar filas existentes en cada cambio, decidiendo qué pasa con las que ya
-estaban reservadas. Con derivación, un turno guarda su propia fecha y hora de inicio y no depende
-de que el patrón siga igual. El costo es que la disponibilidad se calcula en cada consulta, lo que
-es holgado para el volumen de un consultorio.
+**Elegido:** la grilla es un parámetro (duración y horas de inicio por bloque) y las franjas se
+derivan al consultar.
 
-### 4.3 Un solo registro por médico, en lugar de un historial de horarios
+*Descartado:* materializar una fila por franja y fecha. Simplifica la disponibilidad, pero obliga a
+generar filas por adelantado y a reconciliarlas ante un cambio de bloque o de días de atención. Con
+derivación, el volumen de un consultorio (tres agendas, diez franjas por día) hace el cálculo
+trivial.
 
-**Elegido:** `HorarioMedico` versionado con fecha de vigencia.
+### 4.3 Bloque como columna, en lugar de un horario versionado
 
-*Descartado:* dos columnas de horario en `Medico`. Es más simple, pero un cambio de horario
-destruye el patrón pasado, y sin él no se puede reconstruir qué franjas existían en una fecha
-anterior — que es lo que necesitan RF-30 (¿venció una franja?) y RF-32 (¿la franja está libre?).
+**Elegido:** `Kinesiologo.bloque`.
 
-### 4.4 Restricción de estado en el esquema, en lugar de solo en el código
+*Descartado:* una tabla de horarios con vigencia. Era necesaria cuando el sistema marcaba
+inasistencias solo y tenía que reconstruir qué franjas existían en una fecha pasada. Con
+inasistencia manual, el pasado solo se consulta a través de los turnos, que guardan su propia hora.
 
-**Elegido:** el conjunto de cinco estados es una restricción de dominio, y la tabla de
-transiciones vive en el código de M4.
+### 4.4 Ocupación por igualdad de hora de inicio, en lugar de solapamiento
 
-*Descartado:* activar la tabla de transiciones como disparador de base de datos. Sería la
-integridad más fuerte, pero el disparador tendría que reconstruir la tabla de transiciones en SQL,
-con los roles dentro de la base, y quedaría duplicada respecto de M4. La Constitución quiere que el
-modelo relacional aporte integridad, y eso ya ocurre con los índices parciales de §2.2, que son
-donde importa. La tabla de transiciones se queda en el código, en un solo lugar.
+**Elegido:** dos turnos chocan si comparten kinesiólogo (o paciente), fecha y hora de inicio.
 
-### 4.5 Sesiones en la base, en lugar de en memoria
+*Descartado:* comparar intervalos. Con una única grilla de duración fija, la igualdad da el mismo
+resultado y se puede garantizar con un índice parcial. Si la grilla dejara de ser única, hay que
+revisar esta decisión.
 
-**Elegido:** sesiones persistidas.
+### 4.5 Aviso de pendientes calculado al leer, en lugar de un proceso periódico
 
-*Descartado:* sesiones solo en memoria del proceso. Cumple RF-07 sin vencimiento, pero un reinicio
-del servidor cierra todas las agendas, incluidos los médicos a mitad de jornada. En un consultorio
-con un único proceso, el reinicio ocurre en el momento menos pensado.
+**Elegido:** una consulta sobre los turnos activos con la franja terminada.
 
-### 4.6 Proveedor de email
+*Descartado:* un barrido periódico que marque o señale los turnos. El sistema no cambia estados
+por su cuenta (regla 9), así que no hay nada que escribir; un proceso en segundo plano solo agregaría
+una pieza que puede fallar en silencio.
 
-**Elegido:** un proveedor transaccional con API sobre HTTPS, con la bandeja `EnvioRecordatorio`
-como propietaria del estado del envío.
+### 4.6 Corrección como operación propia, en lugar de abrir la tabla de transiciones
 
-*Descartado:* SMTP directo con Nodemailer. Evita un intermediario, pero deja el envío en manos de la
-configuración del consultorio, que es exactamente la parte que no se quiere depender. La
-dependencia con el proveedor es inevitable en cualquier caso —RF-45 ya la asume—; lo que se busca es
-que esa dependencia no sea también una dependencia de la red del consultorio.
+**Elegido:** `corregir` aparte de `transicionar`.
 
-*Descartado también:* un proveedor transaccional frente a uno de marketing. La diferencia real es
-que el segundo no garantiza entrega ni reporta rebotes de forma utilizable, y RF-45 necesita saber
-que un envío falló.
+*Descartado:* agregar todas las combinaciones a la tabla. El flujo normal dejaría de ser
+verificable, la pantalla ofrecería 4 acciones en cada estado, y la auditoría no podría distinguir
+el trabajo diario de las correcciones.
 
-### 4.7 Comparación de franjas por igualdad, en lugar de solapamiento
+### 4.7 Sin control de concurrencia entre escrituras
 
-**Elegido:** dos turnos se pisan solo si comparten médico, fecha y hora de inicio.
+**Elegido:** sin versiones ni bloqueo optimista. Los índices de §2.3 impiden el único daño
+estructural posible (doble ocupación de franja).
 
-*Descartado:* comparación por solapamiento de intervalos. Es más correcta en el abstracto, pero
-con duración fija y un patrón uniforme la igualdad da el mismo resultado, y es expresable como un
-índice único parcial (§2.2). El solapamiento obligaría a comparar rangos en el chequeo y dejaría de
-poder garantizarse con el índice. Si algún día las duraciones fueran variables, esta decisión es la
-primera que habría que revisar.
+*Descartado:* bloqueo optimista. Las secretarias no trabajan en simultáneo (D-12); el kinesiólogo
+no escribe. No hay escenario realista de dos escrituras cruzadas sobre el mismo turno.
 
-### 4.8 Concurrencia: aplicar la última acción, en lugar de bloqueo optimista
+### 4.8 Autorización por rol a nivel de método, en lugar de por endpoint
 
-**Elegido:** sin versión ni bloqueo. La acción se aplica; si choca con el índice de unicidad, se
-reporta como conflicto de negocio (franja ocupada).
+**Elegido:** cada rol tiene declarado en qué módulos puede escribir (todos para `administrador`;
+M2 pacientes y M3 para `secretaria`; ninguno para `kinesiologo`), y esa declaración se aplica en un
+único middleware.
 
-*Descartado:* control de versiones optimista que rechace la escritura si el registro cambió. Es más
-estricto, pero D-19 decidió explícitamente que la última acción gana, y rechazar la segunda sería
-contradecir una decisión de alcance ya tomada. La consecuencia aceptada es que un turno puede
-terminar `en_espera` si recepción y médico actúan con 20 ms de diferencia; RF-39 hace que todas las
-agendas converjan a ese estado final.
+*Descartado:* declarar permisos endpoint por endpoint. Es más flexible, pero cada endpoint nuevo
+abre la posibilidad de olvidar el chequeo, y la regla de negocio es global (D-3).
 
-### 4.9 Barrido periódico de inasistencias, en lugar de cálculo al leer
+### 4.9 Montos de coseguro como decimal
 
-**Elegido:** un proceso que revisa periódicamente los turnos `reservado` cuya franja venció y aplica
-la transición a `no_asistio`.
+**Elegido:** tipo decimal de precisión fija en pesos.
 
-*Descartado:* calcular la inasistencia al leer la agenda, sin escribir. Es más simple y no requiere
-un proceso que corra, pero RF-30 exige que el estado cambie y quede registrado (RF-46). Si el estado
-solo se calculara al leer, un turno con inasistencia seguiría `reservado` en la base, ocuparía la
-franja para las decisiones de disponibilidad, y no tendría evento de auditoría. La escritura al leer
-—hacer el cambio dentro de un GET— resolvería eso, pero hace que una consulta screen modifique
-datos, lo que complica caché, permisos y trazabilidad de errores.
+*Descartado:* coma flotante, porque los montos de dinero no deben acumular error de redondeo
+aunque hoy sean informativos.
 
-*Descartado también:* un planificador externo (cron del sistema operativo). Agrega una dependencia
-de infraestructura al despliegue más simple del producto, que es un consultorio corriendo en una
-máquina.
+### 4.10 Interfaz en un solo idioma
 
-### 4.10 Un solo modelo de usuario, en lugar de usuario más perfil de médico
+**Elegido:** castellano.
 
-**Elegido:** `Usuario` con rol, y `Medico` como perfil 1:1 para el horario.
+*Descartado:* i18n desde el inicio. El producto es single-tenant y no hay un segundo idioma en el
+horizonte.
 
-*Descartado:* una sola tabla con columnas de horario y nombre opcionales. Menos tablas, pero cada
-consulta de usuario tendría que filtrar las columnas que no aplican según el rol, y el modelo no
-impide que un médico tenga horario y una recepcionista no. La Constitución separa roles; el modelo
-refleja esa separación.
+### 4.11 Ticket en PDF generado en el backend, con QR de texto plano
 
-### 4.11 Orden de la espera por `llegada_en` proyectado, en lugar de derivado del historial
+**Elegido:** el backend arma el PDF (librería `qrcode` para el código y `pdfkit` para el documento) a
+partir del turno vigente y de los datos vigentes de `Consultorio` (RF-13). El QR contiene los datos del turno en
+texto; el ticket no incluye DNI ni coseguros.
 
-**Elegido:** columna `llegada_en` en `Turno`, escrita junto al evento de auditoría.
+*Descartado:* generar el ticket en el frontend. Funcionaría, pero el contenido dependería de lo que
+el cliente tenga en memoria. Generarlo en el servidor garantiza que refleje el turno vigente, que
+es lo que pide RF-28.
 
-*Descartado:* derivar el orden agregando `TurnoEvento`. Evita duplicar el dato, pero obliga a
-agregar eventos por turno para ordenar la cola, en la consulta que se dispara en cada push de
-RF-38. La proyección se escribe en la misma transacción que el evento, que es la única forma de que
-divergirían.
-
-### 4.12 Sin)i18n de la interfaz
-
-**Elegido:** la interfaz está en un solo idioma.
-
-*Descartado:* preparado para varios idiomas desde el inicio. El producto es single-tenant para un
-consultorio, y la Constitución prioriza funcionar bien para un consultorio antes que escalar. Los
-mensajes de rechazo que el backend produce —RF-34— son parte de la API y se localizan en el
-frontend, no en el servidor.
+*Descartado:* un QR con un enlace al turno. Exigiría una página pública o un acceso para pacientes,
+y el paciente no es usuario del sistema (sección 4 de la spec). El texto plano se lee con cualquier
+celular sin conexión al sistema.
 
 ---
 
 ## 5. Fronteras del sistema
 
-- **El backend es la única autoridad sobre el estado de un turno.** El frontend calcula qué botones
-  mostrar (RF-35) pero ninguna acción se ejecuta si el servidor la rechaza.
-- **El frontend no conoce la tabla de transiciones.** Recibe la lista de acciones disponibles desde
-  la API. Duplicar esa tabla en el cliente es la forma más probable de que RF-35 y RF-26 se
-  contradigan en producción.
-- **El sistema de tiempo real no escribe en la base.** M5 difunde, M4 decide.
-- **El proceso de email no cambia estados.** M6 lee la bandeja y envía; el estado del turno lo
-  conoce M4.
-- **El frontend detecta su propia conexión caída** y marca la agenda, porque el servidor no puede
-  afirmar que un cliente está desconectado (RF-40).
+- **El backend es la única autoridad sobre los turnos.** El frontend muestra las acciones que la
+  API le devuelve y ninguna se ejecuta si el servidor la rechaza.
+- **El frontend no conoce la tabla de transiciones.** Duplicarla en el cliente es la forma más
+  probable de que RF-34 y la validación del servidor se contradigan.
+- **El tiempo real no escribe en la base.** M5 difunde; M3 decide.
+- **El rol se toma de la sesión, nunca de la petición.**
+- **El frontend detecta su propia conexión caída** (RF-45), porque el servidor no puede afirmar que
+  un cliente está desconectado.
 
 ---
 
 ## 6. Estrategia de tests
 
-El riesgo del producto no está en las formas de carga ni en las pantallas: está en la máquina de
-estados y en que dos personas miren la misma agenda. La estrategia pone el esfuerzo ahí.
+El riesgo está en la ocupación de franjas (dos kinesiólogos en paralelo, reprogramación,
+correcciones) y en que el kinesiólogo vea su agenda al día.
 
 ### 6.1 Niveles
 
-**Nivel 1 · Unidad — la tabla de transiciones y las reglas puras (M4, M2, M3)**
-Sin base de datos, sin red. Se verifica la tabla de transiciones de forma exhaustiva por
-combinación: para los cinco estados de origen × los cinco de destino × los tres roles, el sistema
-acepta exactamente las cuatro filas de la tabla de `spec.md:180-185` y rechaza todo lo demás. Los
-mensajes de RF-34 se verifican también como unidad, incluida la rama de estado terminal que motivó
-D-7. Se cubren además el cálculo de franjas desde el horario, la validación de DNI y el cálculo de
-la ventana de 24 h de RF-41.
+**Unidad (M2, M3, M4).** Sin base ni red.
+- Tabla del flujo: los 5 estados de origen × 5 de destino, aceptando exactamente las 4 filas de
+  `spec.md` §3.5.
+- Acciones visibles por estado y rol (RF-34).
+- Cálculo de la grilla: seis franjas a la mañana, con la última a las 11:45, y cuatro a la tarde.
+- Disponibilidad y condición de "pendiente de marcar", con reloj inyectable.
+- Validación de DNI.
 
-**Nivel 2 · Integración — la base de datos real (M4, M7, M2)**
-Contra un PostgreSQL real, no contra un doble. El objetivo es verificar que las reglas de §2.2 se
-cumplen: los índices parciales rechazan el segundo turno activo del mismo médico y del mismo
-paciente; los estados fuera del conjunto son rechazados por el esquema; no existe forma de borrar
-un turno. Aquí se prueban las transiciones con su evento de auditoría en la misma transacción, y
-RF-30 y RF-47 con sus eventos.
+**Integración (M2, M3, M6), contra PostgreSQL real.**
+- Los índices parciales rechazan el segundo turno activo del mismo kinesiólogo y del mismo
+  paciente, y aceptan dos kinesiólogos distintos en la misma franja.
+- Corrección y reprogramación hacia una franja ocupada se rechazan (RF-37).
+- Cada operación de M3 escribe su `TurnoEvento` con el tipo correcto.
+- No existe vía de borrado.
 
-**Nivel 3 · Contrato de tiempo real (M5)**
-Con dos clientes conectados, uno de ellos ejecuta la acción y el otro debe recibir el cambio sin
-recargar (RF-38, RF-39). Se verifica también que un turno solo se difunde a la sala del médico
-correspondiente y a la de recepción, no a las de otros médicos (RF-09).
+**Contrato de tiempo real (M5).** Con dos clientes conectados: el cambio llega sin recargar, solo
+a la sala del kinesiólogo correcto. Una reprogramación entre
+kinesiólogos llega a ambos.
 
-**Nivel 4 · Extremo a extremo (M3, M4, M1)**
-Sobre la aplicación. Se recorre el flujo completo con dos sesiones simultáneas —recepción y
-médico— porque es la única forma de cubrir RF-35, RF-38 y RF-39 como los vive el consultorio. Aquí
-se verifican RF-01, RF-02, RF-03, RF-09, RF-10, RF-11, RF-12, RF-13, RF-33 y RF-49 desde la interfaz.
+**Extremo a extremo (M1, M3, M4).** Dos sesiones simultáneas, secretaría y kinesiólogo, recorriendo
+el flujo completo: asignar → llegó → asistió, con el kinesiólogo viendo cada paso. Se verifica que
+el kinesiólogo no ve acciones ni puede ejecutarlas contra la API.
 
-### 6.2 Pruebas de tiempo y de concurrencia
+### 6.2 Reloj controlado
 
-Dos grupos que se planifican desde el principio porque no se pueden agregar al final:
+Toda prueba que dependa de la hora (aviso de pendientes, historial, disponibilidad de "hoy") usa un
+reloj inyectable, no el del sistema.
 
-- **Reloj controlado.** Toda prueba que dependa de la hora usa un reloj inyectable, no el reloj del
-  sistema. Sin esto, RF-30, RF-41, RF-43 y RF-48 no son verificables: dependen de que una franja
-  haya terminado o de que faltan 24 h. La encontré es la de la noche anterior: un turno `reservado`
-  con la franja vencida de ayer no puede convertirse en inasistencia durante una prueba normal.
-- **Concurrencia real.** RF-37 se prueba con dos peticiones simultáneas sobre el mismo turno y
-  sobre la misma franja, verificando que queda un solo turno activo y que ambas agendas reflejan el
-  mismo estado. Es la prueba que valida la decisión de §4.8 contra el índice parcial de §2.2.
+### 6.3 Qué no se prueba
 
-### 6.3 Trazabilidad de las pruebas
-
-Cada prueba declara el RF que cubre y cada RF tiene al menos una. La matriz completa está en la
-sección 8. No se acepta una prueba que no apunte a un RF: sería funcionalidad no especificada.
-
-**Cobertura exigida sin excepción:** RF-25, RF-26, RF-27, RF-28, RF-29, RF-30, RF-31, RF-33, RF-34
-— la máquina de estados completa, incluida la excepción retroactiva de D-9. **Cobertura exigida
-para los requisitos de la Constitución:** cada no negociable de `constitucion.md:45-49` tiene al
-menos una prueba, aunque el RF equivalente ya esté cubierto.
-
-### 6.4 Qué no se prueba y por qué
-
-- **Pruebas de carga y rendimiento.** Un consultorio genera decenas de turnos por día. La
-  preocupación real de volumen es el envío de emails programados, que se mide en el tiempo, no en
-  la concurrencia.
-- **Pruebas del proveedor de email real.** RF-45 se verifica con un doble que falla a demanda; el
-  proveedor se integra en el despliegue y su comportamiento no es controlable desde el tests.
-- **Pruebas de la interfaz de usuario más allá del flujo.** No hay estados de carga, animaciones
-  ni responsive dentro del alcance, así que no hay nada que exigirle.
+- **Carga y rendimiento:** tres agendas de diez franjas por día.
+- **Concurrencia entre secretarias:** fuera de alcance (D-12); los índices cubren el único daño
+  estructural.
 
 ---
 
 ## 7. Orden de construcción
 
-El orden sigue dependencias reales, no el orden de los RF.
-
-1. **M1 y M2** — sin ellos no hay nada que probar. También resuelven los pendientes de
-   `spec.md:382-389` si el negocio los define antes de empezar.
-2. **M4** — la máquina de estados y el modelo. Es la parte de la que depende el resto, y la que
-   más pruebas lleva.
-3. **M3** — la agenda es lo que hace utilizable a M4.
-4. **M7** — la auditoría se escribe dentro de M4, así que va con él; la consulta de historial puede
-   esperar al final.
-5. **M5** — el tiempo real, que solo se puede probar con dos clientes reales.
-6. **M6** — el recordatorio, que es el único módulo con dependencia externa y el único que puede
-   fallar sin que el sistema se entere.
+1. **M1 y M2** — cuentas, kinesiólogos, pacientes y grilla.
+2. **M3 con M6** — el ciclo de vida y su auditoría, que se escriben en la misma transacción.
+3. **M4** — las vistas que hacen utilizable a M3, incluido el aviso.
+4. **M5** — tiempo real, que solo se prueba con dos clientes reales.
+5. **M6, consulta de historial.**
 
 ---
 
@@ -517,65 +425,60 @@ El orden sigue dependencias reales, no el orden de los RF.
 |---|---|---|
 | RF-01 | M1 | E2E |
 | RF-02 | M1 | E2E + unidad (mensaje) |
-| RF-03 | M1 | E2E + integración |
-| RF-04 | M1 | E2E + integración |
+| RF-03 | M1 | integración (API) + E2E |
+| RF-04 | M1 | integración |
 | RF-05 | M1 | E2E (verificación de despliegue) |
-| RF-06 | M1 | E2E |
-| RF-07 | M1 | E2E |
-| RF-08 | transversal | integración (valores de fecha) |
-| RF-09 | M3 | contrato + E2E |
-| RF-10 | M3 | E2E |
-| RF-11 | M3 | E2E |
-| RF-12 | M3 | unidad (orden) + E2E |
-| RF-13 | M3 | integración + E2E |
+| RF-06 | M1 | integración (API bloqueada) + E2E |
+| RF-07 | M1 | integración |
+| RF-08 | M1 | integración (sesiones revocadas) |
+| RF-09 | M1 | integración (sesiones revocadas, registros conservados) |
+| RF-10 | M1 | E2E |
+| RF-11 | M1 | integración |
+| RF-12 | transversal | integración |
+| RF-13 | M2 | integración + E2E (ticket refleja el cambio) |
 | RF-14 | M2 | integración |
-| RF-15 | M2 | unidad (formato) + integración (unicidad) |
-| RF-16 | M2 | integración + E2E |
+| RF-15 | M2 | unidad (grilla) |
+| RF-16 | M2 | integración |
 | RF-17 | M2 | integración |
-| RF-18 | M2 | integración |
-| RF-19 | M2 | integración |
-| RF-20 | M3 | unidad (cálculo) + integración |
-| RF-21 | M4 | integración |
-| RF-22 | M4 | integración (índice parcial) |
-| RF-23 | M4 | integración (índice parcial) |
-| RF-24 | M4 | integración |
-| RF-25 | M4 | integración (esquema) |
-| RF-26 | M4 | unidad (exhaustiva) + integración |
-| RF-27 | M4 | unidad + integración |
-| RF-28 | M4 | unidad + integración |
-| RF-29 | M4 | unidad + integración |
-| RF-30 | M4 | unidad (reloj) + integración |
-| RF-31 | M4 | unidad + integración |
-| RF-32 | M4 | integración |
-| RF-33 | M4 | unidad (matriz rol×estado) + E2E |
-| RF-34 | M4 | unidad (ambas ramas del mensaje) |
-| RF-35 | M4 | E2E (acción por estado y rol) |
-| RF-36 | M4 | integración (no existe vía de borrado) |
-| RF-37 | M4 | integración (concurrencia real) |
-| RF-38 | M5 | contrato |
-| RF-39 | M5 | contrato |
-| RF-40 | M5 | contrato |
-| RF-41 | M6 | unidad (ventana de 24 h) + integración |
-| RF-42 | M6 | integración |
-| RF-43 | M6 | integración |
-| RF-44 | M6 | integración |
-| RF-45 | M6 | integración (doble que falla) |
-| RF-46 | M7 | integración |
-| RF-47 | M7 | integración |
-| RF-48 | M7 | integración |
-| RF-49 | M7 | E2E |
-
-**Cobertura:** los 49 RF tienen al menos un nivel de prueba asignado, y cada uno tiene al menos un
-criterio de finalización en `spec.md:412-504`.
+| RF-18 | M2 | unidad (formato) + integración (unicidad) |
+| RF-19 | M2 | integración + E2E |
+| RF-20 | M2 | integración |
+| RF-21 | M2 | integración |
+| RF-22 | M4 | unidad + integración |
+| RF-23 | M3 | integración |
+| RF-24 | M3 | integración (índice parcial) |
+| RF-25 | M3 | integración (índice parcial) |
+| RF-26 | M3 | integración |
+| RF-27 | M3 | integración |
+| RF-28 | M3 | integración (contenido del QR y datos vigentes tras reprogramar) |
+| RF-29 | M3 | integración (esquema) |
+| RF-30 | M3 | unidad + integración |
+| RF-31 | M3 | unidad + integración |
+| RF-32 | M3 | unidad + integración |
+| RF-33 | M3 | unidad + integración |
+| RF-34 | M3 | unidad (acciones por estado y rol) + E2E |
+| RF-35 | M3 | integración |
+| RF-36 | M3 | integración |
+| RF-37 | M3 | integración |
+| RF-38 | M3 | integración |
+| RF-39 | M3 | integración |
+| RF-40 | M4 | integración + E2E |
+| RF-41 | M4 | E2E |
+| RF-42 | M4 | unidad (reloj) + integración |
+| RF-43 | M5 | contrato + E2E |
+| RF-44 | M5 | contrato |
+| RF-45 | M5 | contrato |
+| RF-46 | M6 | integración |
+| RF-47 | M6 | E2E |
 
 ---
 
 ## 9. Riesgos técnicos
 
-| Riesgo | Origen | Mitigación prevista |
+| Riesgo | Origen | Mitigación |
 |---|---|---|
-| Gestión de contraseñas sin resolver | `spec.md:382-383` | Ninguna hasta que el negocio defina. Un médico que pierde su clave queda fuera del sistema y recepción no puede ayudarlo. |
-| Franja de duración no fijada | `spec.md:388-389` | La duración se resuelve como un parámetro del sistema (§4.2). Si resulta variable por médico, la decisión de §4.7 es la primera que hay que revisar. |
-| Colisiones silenciosas por D-19 | `spec.md:371` | Aceptado. El índice parcial impide el daño estructural (RF-22, RF-23) y RF-39 hace converger las agendas. Un turno puede terminar en un estado distinto del que quien miraba la pantalla esperaba. |
-| Zona horaria mal configurada | RF-08 | Es un parámetro de instalación, y todo el cálculo de franjas depende de él. Debe fijarse antes del primer despliegue y no cambiarse después. |
-| Proveedor de email caído | RF-45 | La bandeja persiste el envío pendiente; nada se pierde, solo se demora. |
+| Pérdida de la contraseña del administrador | D-18 | Nadie más puede restablecerla. El comando de instalación permite regenerar la contraseña temporal del administrador desde el servidor. |
+| Turnos olvidados sin marcar | D-8 | Aviso permanente de pendientes (RF-42). |
+| Corrección usada como atajo | D-10 | Queda registrada como `correccion` con autor; se puede auditar. |
+| Grilla desfasada entre bloques en el futuro | §4.4 | La ocupación por igualdad deja de alcanzar; revisar índices. |
+| Zona horaria mal configurada | RF-12 | Parámetro de instalación; fijarlo antes del primer despliegue. |

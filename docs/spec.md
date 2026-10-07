@@ -6,19 +6,26 @@ No contiene decisiones de implementación: esas van en `plan.md`.
 Cada requisito está expresado en notación EARS y numerado como `RF-nn`. La sección 7 traduce
 cada `RF` a un criterio de finalización verificable.
 
+> **Revisión 2026-10-07.** Reescrita a partir del relevamiento con el consultorio: turnos de 45
+> minutos, tres kinesiólogos en dos bloques, kinesiólogo de solo lectura, reprogramación,
+> corrección de estados, marcado manual de inasistencias, datos de obra social y coseguro, y
+> eliminación del recordatorio por email. Se agregó el rol administrador para la gestión de
+> cuentas y contraseñas, con control total, y el ticket con QR para cada turno.
+
 ---
 
 ## 1. Problema y objetivo
 
-La coordinación entre recepción y los médicos se hace hoy de forma manual: la recepcionista no
-tiene una forma fiable de avisar que el paciente llegó, y el médico no tiene visibilidad de quién
-lo espera sin que alguien interrumpa la consulta en curso.
+La coordinación entre la secretaría y los kinesiólogos se hace hoy de forma manual: la secretaría
+no tiene una forma fiable de avisar que el paciente llegó, y el kinesiólogo no tiene visibilidad
+de quién lo espera sin que alguien interrumpa la sesión en curso.
 
 El sistema debe:
 
-- **Dar visibilidad al médico** de quién está esperando, en tiempo real y sin interrupciones.
-- **Dar a recepción una herramienta única** para gestionar la agenda del día.
-- **Dejar registro** de cada turno y de cada cambio de estado, con autor y momento.
+- **Dar visibilidad al kinesiólogo** de sus próximos pacientes y de quién está esperando, en
+  tiempo real y sin interrupciones.
+- **Dar a la secretaría una herramienta única** para asignar, mover y cerrar los turnos del día.
+- **Dejar registro** de cada turno y de cada cambio, con autor y momento.
 
 ---
 
@@ -26,22 +33,39 @@ El sistema debe:
 
 | Actor | Acceso | Responsabilidad |
 |---|---|---|
-| Recepcionista | Login propio | Carga de pacientes, médicos y turnos; gestión de la agenda; control de estados |
-| Médico / Kinesiólogo | Login propio | Consulta su agenda y cierra sus turnos |
-| Paciente | Sin acceso | Recibe el recordatorio por email |
+| Administrador | Login propio | Control total: todo lo que hace la secretaría, más crear, restablecer y desactivar cuentas, y dar de alta kinesiólogos y definir su bloque |
+| Secretaría | Login propio | Carga de pacientes; asignación, reprogramación y cambio de estado de turnos |
+| Kinesiólogo | Login propio, **solo lectura** | Monitorea únicamente su propia agenda: próximos pacientes y en espera, con los datos de cada paciente |
+| Paciente | Sin acceso | — |
+
+**Convención:** toda acción que esta spec atribuye a la secretaría también la puede ejecutar el
+administrador (D-18). Las acciones sobre cuentas y kinesiólogos son exclusivas del administrador.
 
 **Definiciones:**
 
-- **Franja:** bloque horario de duración fija dentro del horario de atención de un médico. Dos
-  turnos se pisan solo si ocupan **la misma franja**.
+- **Franja:** bloque de **45 minutos** de la grilla fija del consultorio. Un turno ocupa
+  exactamente una franja.
+- **Bloque:** mañana o tarde. Cada bloque tiene su grilla de franjas:
+
+  | Bloque | Inicio de cada franja | Fin del bloque |
+  |---|---|---|
+  | Mañana | 08:00 · 08:45 · 09:30 · 10:15 · 11:00 · 11:45 | 12:30 |
+  | Tarde | 16:00 · 16:45 · 17:30 · 18:15 | 19:00 |
+
+  La última franja de la mañana (11:45) termina a las 12:30, después del horario nominal de 12:00.
+  Es intencional (D-1).
+- **Kinesiólogo de un bloque:** cada kinesiólogo atiende en un único bloque. Hoy hay dos
+  kinesiólogos a la mañana y uno a la tarde, así que en la mañana dos turnos pueden compartir
+  franja, con pacientes distintos y kinesiólogos distintos.
 - **Turno activo:** turno en estado `reservado` o `en_espera`. Solo los turnos activos ocupan su
   franja.
-- **Estado terminal:** `finalizado`, `cancelado` o `no_asistio`. Un turno terminal no admite más
-  cambios de estado y libera su franja.
-- **Inasistencia:** un turno `reservado` cuya franja terminó sin que nadie lo marcara `en_espera`.
+- **Turno cerrado:** turno en estado `asistio`, `no_asistio` o `anulado`. No ocupa franja.
+- **Turno pendiente de marcar:** turno activo cuya franja ya terminó. Es la señal de que la
+  secretaría tiene que cerrarlo.
+- **Días de atención:** lunes a viernes, para todos los kinesiólogos. Sábados y domingos no tienen
+  franjas.
 - **Zona horaria:** única, configurable al instalar. Todas las fechas, franjas y horas del sistema
   se interpretan en esa zona.
-- **Anticipación del recordatorio:** 24 horas antes del inicio de la franja.
 
 ---
 
@@ -51,298 +75,321 @@ El sistema debe:
 
 - **RF-01** — *Evento:* Cuando un usuario se autentica con credenciales válidas, entonces el
   sistema lo redirige a la pantalla de su rol.
-  *Por qué:* Cada rol tiene un alcance distinto sobre la agenda y las acciones disponibles.
+  *Por qué:* Cada rol tiene un alcance distinto sobre la agenda.
 
 - **RF-02** — *Evento:* Cuando un usuario intenta autenticarse con credenciales inválidas, entonces
   el sistema rechaza el acceso e informa que las credenciales no son válidas, sin revelar cuál
   parte fue incorrecta.
   *Por qué:* Evitar que un tercero enumere los usuarios del consultorio.
 
-- **RF-03** — *Evento:* Cuando un usuario autenticado intenta una acción que su rol no permite,
-  entonces el sistema la rechaza e informa que no está autorizado, sin alterar ningún dato.
-  *Por qué:* La separación entre recepción y médico es una regla de negocio, no una comodidad de
-  interfaz.
+- **RF-03** — *Comportamiento no deseado:* Si un usuario intenta una acción que su rol no permite
+  —en particular, si un kinesiólogo intenta cualquier modificación, o si la secretaría intenta
+  gestionar cuentas o kinesiólogos—, entonces el sistema la rechaza e informa que no está
+  autorizado, sin alterar ningún dato.
+  *Por qué:* La separación de roles es una regla de negocio, no una comodidad de interfaz.
 
-- **RF-04** — *Evento:* Cuando recepción crea la cuenta de un médico o de un profesional de
-  recepción, con un rol asignado, entonces el sistema la registra y la deja activa.
-  *Por qué:* El alta de personal es una decisión interna del consultorio. Cada persona con su
-  propia cuenta es lo que hace auditable quién hizo cada cambio.
+- **RF-04** — *Evento:* Cuando el administrador crea una cuenta de secretaría o de kinesiólogo con
+  una contraseña temporal, entonces el sistema la registra activa y marcada para cambio de
+  contraseña.
+  *Por qué:* Cada persona con su propia cuenta es lo que hace auditable quién hizo cada cambio, y
+  la contraseña que eligió el administrador no debe seguir en uso. La cuenta de un kinesiólogo se
+  crea con su alta (RF-14).
 
-- **RF-05** — *Evento:* Al habilitarse el sistema por primera vez, entonces existe al menos una
-  cuenta de recepción activa.
-  *Por qué:* Sin una cuenta inicial nadie podría crear las demás y el consultorio quedaría sin
-  acceso.
+- **RF-05** — *Evento:* Al instalarse el sistema, entonces existe una cuenta de administrador
+  activa, marcada para cambio de contraseña.
+  *Por qué:* Sin una cuenta inicial nadie podría crear las demás. La crea quien instala, con una
+  contraseña temporal que el administrador reemplaza en su primer ingreso.
 
-- **RF-06** — *Evento:* Cuando un usuario cierra sesión, entonces el sistema invalida su sesión y la
+- **RF-06** — *Evento:* Cuando un usuario ingresa con una cuenta marcada para cambio de contraseña,
+  entonces el sistema le exige elegir una nueva antes de mostrarle cualquier otra pantalla.
+  *Por qué:* La contraseña temporal la conoce el administrador; solo la que elige cada persona
+  garantiza que las acciones registradas a su nombre fueron suyas.
+
+- **RF-07** — *Evento:* Cuando un usuario autenticado cambia su contraseña indicando la actual,
+  entonces el sistema la reemplaza.
+  *Por qué:* Si alguien conoció la contraseña de otro, el dueño tiene que poder cambiarla sin
+  depender del administrador.
+
+- **RF-08** — *Evento:* Cuando el administrador restablece la contraseña de una cuenta, entonces el
+  sistema le asigna una contraseña temporal, cierra sus sesiones abiertas y la marca para cambio de
+  contraseña.
+  *Por qué:* Es la forma de recuperar el acceso de quien olvidó su contraseña, sin email ni
+  recuperación automática.
+
+- **RF-09** — *Evento:* Cuando el administrador desactiva una cuenta, entonces el sistema impide
+  nuevos ingresos con ella y cierra sus sesiones abiertas, conservando todo lo registrado a su
+  nombre.
+  *Por qué:* Una persona que deja el consultorio no debe seguir accediendo, pero lo que hizo tiene
+  que seguir siendo auditable. Por eso las cuentas se desactivan y no se eliminan.
+
+- **RF-10** — *Evento:* Cuando un usuario cierra sesión, entonces el sistema invalida su sesión y la
   pantalla deja de mostrar los datos de la agenda.
   *Por qué:* La agenda contiene datos personales de pacientes y no debe quedar expuesta en un
   equipo compartido.
 
-- **RF-07** — *Restricción:* Mientras un usuario permanezca autenticado, entonces su sesión no
+- **RF-11** — *Restricción:* Mientras un usuario permanezca autenticado, entonces su sesión no
   expira por inactividad.
-  *Por qué:* El médico deja la pantalla en la sala de espera y vuelve a la consulta; cerrarla por
-  inactividad lo saca del sistema justo cuando más lo necesita.
+  *Por qué:* El kinesiólogo deja la pantalla abierta como monitor; cerrarla por inactividad lo
+  saca del sistema justo cuando la necesita.
 
-- **RF-08** — *Restricción:* El sistema interpreta todas las fechas, franjas y horas en una única
+- **RF-12** — *Restricción:* El sistema interpreta todas las fechas, franjas y horas en una única
   zona horaria, configurada al instalarse.
-  *Por qué:* Un consultorio opera en un solo huso. Mezclarlos desalinea la agenda, la hora de
-  llegada y el momento del recordatorio.
+  *Por qué:* Un consultorio opera en un solo huso.
 
-### 3.2 Alcance de la agenda
+### 3.2 Consultorio, kinesiólogos y grilla
 
-- **RF-09** — *Restricción:* Mientras un usuario esté autenticado como médico, entonces el sistema
-  le muestra únicamente los turnos que tiene asignados.
-  *Por qué:* El médico solo atiende su agenda; ver la de otros no aporta nada a su consulta.
+- **RF-13** — *Evento:* Cuando la secretaría modifica el nombre, la dirección o el teléfono del
+  consultorio, entonces el sistema guarda los nuevos datos y los usa en todos los tickets que se
+  generen a partir de ese momento.
+  *Por qué:* Son los datos que el paciente usa para llegar o llamar (RF-28), y la secretaría es
+  quien se entera cuando cambian. Se cargan por primera vez al instalar el sistema.
 
-- **RF-10** — *Evento:* Cuando recepción solicita la agenda, entonces el sistema le muestra los
-  turnos de todos los médicos, filtrables por fecha y por médico.
-  *Por qué:* Recepción coordina el día completo del consultorio, no una agenda individual. El
-  acceso a un paciente puntual se resuelve por nombre o DNI (RF-19).
+- **RF-14** — *Evento:* Cuando el administrador registra un kinesiólogo con nombre, bloque, usuario
+  y contraseña temporal, entonces el sistema crea en un mismo paso su perfil, su agenda y su
+  cuenta de solo lectura.
+  *Por qué:* Un kinesiólogo sin cuenta no puede monitorear su agenda, y una cuenta de kinesiólogo
+  sin perfil no tiene agenda que mostrar. Separarlos solo permite dejar uno de los dos a medias.
 
-- **RF-11** — *Restricción:* Mientras se muestra un turno en una agenda, entonces el sistema muestra
-  paciente, médico, fecha, franja, estado actual y, si está `en_espera`, la hora en que fue marcado
-  como tal. Los dos roles ven los mismos campos.
-  *Por qué:* Recepción necesita localizar un turno por cualquiera de estos datos, y el médico
-  necesita la hora de llegada para ordenar la espera.
+- **RF-15** — *Restricción:* Las únicas franjas agendables de un kinesiólogo son las de la grilla
+  de su bloque, de lunes a viernes (sección 2).
+  *Por qué:* La grilla es el horario real del consultorio; ofrecer otra franja sería ofrecer un
+  turno que nadie atiende.
 
-- **RF-12** — *Restricción:* Mientras un turno se encuentre `en_espera`, entonces el sistema lo
-  presenta ordenado por hora de llegada en la agenda del médico.
-  *Por qué:* Saber quién espera solo es accionable si además se sabe a quién atiende primero.
+- **RF-16** — *Evento:* Cuando el administrador cambia el bloque de un kinesiólogo, entonces el cambio
+  rige para la disponibilidad de fechas futuras y no altera los turnos ya asignados.
+  *Por qué:* Mover a un kinesiólogo de bloque no debe desarmar la agenda ya asignada; los turnos
+  afectados se reprograman a mano (RF-36).
 
-- **RF-13** — *Evento:* Cuando recepción abre la agenda de una fecha, entonces el sistema le muestra
-  cuántas inasistencias quedaron registradas en esa fecha.
-  *Por qué:* La inasistencia se resuelve sola y no genera ninguna alerta; sin un contador, recepción
-  no se entera de que dejó de venir gente.
+### 3.3 Pacientes
 
-### 3.3 Datos maestros
+- **RF-17** — *Evento:* Cuando la secretaría registra un paciente nuevo con DNI, nombre y apellido,
+  teléfono y obra social, entonces el sistema lo guarda y lo deja disponible para asignarle turnos.
+  *Por qué:* Son los datos fijos del paciente. Se cargan una sola vez, la primera vez que se
+  acerca al consultorio. Un paciente sin obra social se registra como "Particular".
 
-- **RF-14** — *Evento:* Cuando recepción registra un paciente con nombre y DNI válidos, entonces el
-  sistema lo guarda y lo hace disponible para agendar; email y teléfono son opcionales.
-  *Por qué:* El paciente es la entidad alrededor de la que gira todo el registro de turnos, pero
-  exigirle un canal de contacto dejaría al consultorio sin agendar (decisión D-1).
+- **RF-18** — *Comportamiento no deseado:* Si el DNI no tiene un formato válido, o ya está
+  registrado en otro paciente, o falta alguno de los datos de RF-17, entonces el sistema impide el
+  alta o la edición e informa el motivo.
+  *Por qué:* El DNI es la clave con la que se recupera al paciente en cada turno siguiente (RF-19);
+  un DNI duplicado o mal tipeado rompe esa recuperación.
 
-- **RF-15** — *Comportamiento no deseado:* Si el DNI no tiene un formato válido, o ya está
-  registrado en otro paciente, entonces el sistema impide el alta o la edición e informa el motivo.
-  *Por qué:* El DNI identifica al paciente y alimenta la deduplicación; sin validación, se cargan
-  pacientes duplicados o con el documento mal tipeado.
+- **RF-19** — *Evento:* Cuando la secretaría ingresa un DNI al asignar un turno, entonces el sistema
+  recupera los datos del paciente si ya existe; si no existe, ofrece registrarlo en el mismo paso.
+  *Por qué:* A partir del segundo turno, el DNI tiene que alcanzar para asignar.
 
-- **RF-16** — *Evento:* Cuando recepción registra un médico con nombre y horario de atención, entonces
-  el sistema lo guarda y le habilita su agenda y su cuenta.
-  *Por qué:* Cada médico necesita un espacio de agenda independiente y una cuenta propia, y su
-  horario es lo que define qué franjas se pueden ofrecer.
+- **RF-20** — *Evento:* Cuando la secretaría edita los datos de un paciente, entonces el sistema
+  guarda los cambios y revalida el DNI.
+  *Por qué:* El teléfono o la obra social cambian, y un alta equivocada tiene que poder corregirse
+  sin perder la garantía de unicidad.
 
-- **RF-17** — *Evento:* Cuando recepción modifica el horario de atención de un médico, entonces el
-  sistema aplica el cambio solo a las franjas futuras y no altera los turnos ya registrados.
-  *Por qué:* Un médico puede ampliar o reducir su disponibilidad, pero cambiar su horario no debe
-  desarmar la agenda que ya quedó reservada.
+- **RF-21** — *Evento:* Cuando la secretaría busca un paciente por DNI o por nombre en la sección
+  **Pacientes**, entonces el sistema muestra las coincidencias, y al elegir una abre la ficha del
+  paciente: sus datos (editables, RF-20), sus próximos turnos y su historial (RF-47).
+  *Por qué:* Es el lugar único para responder "¿quién es este paciente y qué turnos tiene?". La
+  búsqueda por nombre además evita registrar dos veces a quien no trae el DNI.
 
-- **RF-18** — *Evento:* Cuando recepción edita los datos de un paciente o de un médico, entonces el
-  sistema guarda los cambios y revalida el DNI.
-  *Por qué:* Un alta equivocada no se puede deshacer; el sistema tiene que permitir corregirla sin
-  perder la garantía de unicidad.
+### 3.4 Asignación de turnos
 
-- **RF-19** — *Evento:* Cuando se busca un paciente o un médico por nombre o DNI, entonces el
-  sistema muestra las coincidencias.
-  *Por qué:* Sin búsqueda, recepción no reutiliza los datos ya cargados y termina duplicando
-  pacientes.
+- **RF-22** — *Evento:* Cuando la secretaría elige una fecha y un bloque (mañana o tarde) para
+  asignar un turno, entonces el sistema muestra los kinesiólogos de ese bloque y, para cada uno,
+  las franjas que no tienen turno activo de ese kinesiólogo ni del paciente elegido.
+  *Por qué:* El turno se asigna a un kinesiólogo concreto, y a la mañana hay más de uno. Ver de un
+  vistazo quién tiene lugar evita ofrecer una franja que la asignación vaya a rechazar.
 
-### 3.4 Creación de turnos
+- **RF-23** — *Evento:* Cuando la secretaría asigna un turno con paciente, kinesiólogo, fecha y
+  franja válidos —la franja dentro del bloque de ese kinesiólogo—, y la franja está libre para el kinesiólogo y para el paciente, entonces el sistema
+  registra el turno en estado `reservado` junto con el coseguro según obra social y el coseguro
+  adicional.
+  *Por qué:* La reserva es el punto de partida del ciclo de vida. Los coseguros son del turno, no
+  del paciente, porque cambian de una vez a otra (D-5). Se admiten fechas ya vencidas para permitir
+  carga retroactiva (D-13).
 
-- **RF-20** — *Evento:* Cuando recepción solicita las franjas disponibles de un médico en una fecha,
-  entonces el sistema devuelve las franjas sin turno activo dentro de su horario de atención, tanto
-  para ese médico como para el paciente elegido.
-  *Por qué:* Recepción necesita ver directamente qué puede ofrecer, sin calcularlo a mano y sin
-  ofrecer una franja que la creación vaya a rechazar.
+- **RF-24** — *Comportamiento no deseado:* Si la franja ya tiene un turno activo de ese
+  kinesiólogo, entonces el sistema impide asignar el turno e informa que la franja está ocupada.
+  *Por qué:* Un kinesiólogo no atiende a dos pacientes en la misma franja. Otro kinesiólogo sí
+  puede tener un turno en esa misma franja.
 
-- **RF-21** — *Evento:* Cuando recepción crea un turno con paciente, médico, fecha y franja válidos, y
-  la franja está libre para el médico y para el paciente, entonces el sistema registra el turno en
-  estado `reservado`.
-  *Por qué:* La reserva es el punto de partida del ciclo de vida. Se admiten fechas ya vencidas para
-  permitir carga retroactiva (decisión D-13).
+- **RF-25** — *Comportamiento no deseado:* Si el paciente ya tiene un turno activo en esa misma
+  franja, con cualquier kinesiólogo, entonces el sistema impide asignar el turno e informa del
+  conflicto.
+  *Por qué:* Con dos kinesiólogos a la mañana, es posible asignarle por error al mismo paciente
+  dos turnos simultáneos.
 
-- **RF-22** — *Comportamiento no deseado:* Si la franja seleccionada ya tiene un turno activo para
-  ese médico, entonces el sistema impide crear el turno e informa que la franja está ocupada.
-  *Por qué:* Un médico no puede atender a dos pacientes en la misma franja.
+- **RF-26** — *Comportamiento no deseado:* Si el turno se asigna sin paciente, kinesiólogo, fecha o
+  franja válidos, entonces el sistema impide la asignación e informa qué dato falta.
+  *Por qué:* Un turno incompleto no es agendable.
 
-- **RF-23** — *Comportamiento no deseado:* Si el paciente ya tiene un turno activo en esa misma
-  franja, entonces el sistema impide crear el turno e informa del conflicto.
-  *Por qué:* Evita que el paciente se auto-doble-reserve y llegue a una consulta imposible.
+- **RF-27** — *Evento:* Cuando la secretaría modifica los coseguros de un turno, entonces el sistema
+  guarda los nuevos montos sin alterar su estado ni su franja.
+  *Por qué:* El monto puede no conocerse al asignar o cambiar antes de la sesión. Los coseguros son
+  informativos: el sistema no registra si se cobraron (sección 4).
 
-- **RF-24** — *Comportamiento no deseado:* Si el turno se crea sin paciente, médico, fecha o franja
-  válidos, entonces el sistema impide la creación e informa qué dato falta.
-  *Por qué:* Un turno incompleto no es agendable y rompe la trazabilidad del historial.
+- **RF-28** — *Evento:* Cuando se asigna un turno, entonces el sistema genera un ticket descargable
+  en PDF con un código QR que contiene la información del turno —número de turno, paciente,
+  kinesiólogo, fecha y hora— y la misma información en texto legible, junto con el nombre, la
+  dirección y el teléfono del consultorio. El ticket se puede volver a descargar desde el turno en
+  cualquier momento, y siempre refleja sus datos vigentes.
+  *Por qué:* El paciente se lleva un comprobante de su turno, impreso o enviado por la secretaría,
+  con los datos para llegar o llamar al consultorio. Tras una reprogramación (RF-36), el ticket
+  descargado de nuevo muestra la nueva fecha y hora. No incluye DNI ni coseguros.
 
 ### 3.5 Ciclo de vida del turno
 
-El sistema reconoce exactamente cinco estados: `reservado`, `en_espera`, `finalizado`, `cancelado`
-y `no_asistio`. Estas son las únicas transiciones permitidas:
+El sistema reconoce exactamente cinco estados: `reservado`, `en_espera`, `asistio`, `no_asistio`
+y `anulado`. Todas las acciones sobre un turno las ejecuta la secretaría.
 
-| Desde | Hacia | Quién puede ejecutarla | Condición |
+**Flujo normal.** Estas son las acciones que la pantalla ofrece en el día a día:
+
+| Desde | Hacia | Acción | Significado |
 |---|---|---|---|
-| `reservado` | `en_espera` | Recepción | Ninguna |
-| `reservado` | `cancelado` | Recepción | Ninguna |
-| `reservado` | `no_asistio` | Sistema | La franja terminó y el turno ya existía cuando terminó |
-| `en_espera` | `finalizado` | Médico o recepción | Ninguna |
+| `reservado` | `en_espera` | Llegó | El paciente está en la sala de espera |
+| `en_espera` | `asistio` | Asistió | La sesión terminó |
+| `reservado` | `no_asistio` | No asistió | El paciente no vino |
+| `reservado` | `anulado` | Anular | El turno no se va a dar |
 
-- **RF-25** — *Restricción:* El sistema reconoce únicamente los cinco estados definidos en esta
-  sección; ningún otro valor es válido para un turno.
-  *Por qué:* Un conjunto cerrado de estados es lo que hace verificable que el historial de un
-  paciente nunca contenga una secuencia imposible.
+**Corrección.** Fuera del flujo normal, la secretaría puede llevar un turno de cualquier estado a
+cualquier otro (RF-35), como acción explícita y registrada.
 
-- **RF-26** — *Restricción:* El sistema solo admite las transiciones de la tabla anterior; cualquier
-  otra se rechaza sin modificar el turno.
-  *Por qué:* El estado es el registro de lo que ocurrió; permitir atajos o retrocesos lo vuelve una
-  secuencia imposible.
+- **RF-29** — *Restricción:* El sistema reconoce únicamente los cinco estados de esta sección.
+  *Por qué:* Un conjunto cerrado de estados es lo que permite que la agenda y el historial se lean
+  sin ambigüedad.
 
-- **RF-27** — *Evento:* Cuando recepción marca un turno `reservado` como `en_espera`, entonces el
-  sistema cambia su estado y registra el cambio.
-  *Por qué:* Es la señal de que el paciente llegó, que es el hecho que el médico necesita ver. Se
-  admite incluso en una franja ya vencida, para poder registrar una carga retroactiva (D-13).
+- **RF-30** — *Evento:* Cuando la secretaría marca un turno `reservado` como `en_espera`, entonces
+  el sistema cambia su estado y registra la hora de llegada.
+  *Por qué:* Es la señal de que el paciente llegó, que es el hecho que el kinesiólogo necesita
+  ver. La hora de llegada ordena la espera (RF-40).
 
-- **RF-28** — *Evento:* Cuando el médico o recepción marcan un turno `en_espera` como `finalizado`,
-  entonces el sistema cambia su estado y registra el cambio.
-  *Por qué:* Cierra el turno y lo hace visible en el historial. Ambos roles deben poder hacerlo
-  porque el médico cierra su consulta y recepción necesita resolver los casos en que el paciente
-  no llegó a ser atendido o se retiró.
+- **RF-31** — *Evento:* Cuando la secretaría marca un turno `en_espera` como `asistio`, entonces el
+  sistema cambia su estado y lo retira de la espera.
+  *Por qué:* El kinesiólogo no puede modificar nada, así que la secretaría cierra el turno cuando
+  la sesión termina. "En espera" y "asistió" son estados distintos porque el kinesiólogo necesita
+  ver quién sigue esperando, no quién ya pasó.
 
-- **RF-29** — *Evento:* Cuando recepción marca un turno `reservado` como `cancelado`, entonces el
-  sistema cambia su estado y libera la franja.
-  *Por qué:* El paciente puede no asistir o avisar que no viene. Cancelar deja la franja
-  reutilizable en lugar de bloquearla.
+- **RF-32** — *Evento:* Cuando la secretaría marca un turno `reservado` como `no_asistio`, entonces
+  el sistema cambia su estado y libera la franja. El sistema nunca marca una inasistencia por su
+  cuenta.
+  *Por qué:* Solo la secretaría sabe si el paciente avisó, llegó tarde o no vino.
 
-- **RF-30** — *Evento:* Cuando termina la franja de un turno `reservado` que ya existía antes de que
-  terminara, entonces el sistema cambia su estado a `no_asistio` y registra el cambio.
-  *Por qué:* Sin esta salida, el turno quedaría `reservado` para siempre, con la franja bloqueada y
-  fuera del historial. Es lo que mantiene la cola del médico limpia sin depender de que recepción
-  actúe.
+- **RF-33** — *Evento:* Cuando la secretaría anula un turno `reservado`, entonces el sistema cambia
+  su estado a `anulado` y libera la franja.
+  *Por qué:* El paciente avisa que no viene o el turno se cargó por error. Anular deja la franja
+  reutilizable.
 
-- **RF-31** — *Restricción:* Mientras un turno se encuentre en estado terminal, entonces el sistema
-  no admite ningún cambio de estado sobre él.
-  *Por qué:* Alterar un estado terminal destruiría el registro de lo ocurrido.
+- **RF-34** — *Restricción:* Mientras un turno esté en un estado del flujo normal, entonces la
+  pantalla de la secretaría muestra únicamente las acciones de la tabla que salen de ese estado,
+  más la opción de corrección. La pantalla del kinesiólogo no muestra ninguna acción.
+  *Por qué:* El flujo normal tiene que ser evidente; la corrección existe para errores y no debe
+  confundirse con él.
 
-- **RF-32** — *Evento:* Cuando un turno alcanza un estado terminal, entonces su franja queda
-  disponible para nuevas reservas.
-  *Por qué:* La franja de un turno que ya terminó o que se canceló no debe seguir bloqueando la
-  agenda.
+- **RF-35** — *Evento:* Cuando la secretaría corrige el estado de un turno hacia cualquier otro de
+  los cinco estados, entonces el sistema aplica el cambio y lo registra como corrección.
+  *Por qué:* Un "no asistió" marcado por error, o un paciente que llegó tarde después de marcado,
+  tiene que poder corregirse sin anular y reasignar.
 
-- **RF-33** — *Comportamiento no deseado:* Si el médico intenta marcar un turno como `en_espera` o
-  como `cancelado`, entonces el sistema rechaza la acción e informa que esa acción es de recepción.
-  *Por qué:* "El paciente llegó" y "el paciente no viene" son hechos que confirma recepción, que es
-  quien está en contacto con el consultorio.
+- **RF-36** — *Evento:* Cuando la secretaría reprograma un turno `reservado` a otra fecha, franja o
+  kinesiólogo, entonces el sistema mueve el mismo turno, que conserva su estado `reservado`, su
+  paciente y sus coseguros. No se guarda la fecha y franja anteriores.
+  *Por qué:* Reprogramar es mover el turno, no crear uno nuevo. El consultorio no necesita saber
+  dónde estaba antes (D-9).
 
-- **RF-34** — *Comportamiento no deseado:* Si se intenta una transición no permitida, entonces el
-  sistema no modifica el turno e informa cuál es la transición válida desde su estado actual; si el
-  turno está en estado terminal, informa que el turno está cerrado y no tiene acciones disponibles.
-  *Por qué:* Un rechazo que no explica la regla hace que el sistema se perciba como roto, y un
-  rechazo que promete una transición que no existe es peor.
+- **RF-37** — *Comportamiento no deseado:* Si un turno pasa a un estado activo —por corrección o
+  por reprogramación— sobre una franja que ya tiene un turno activo del mismo kinesiólogo o del
+  mismo paciente, o se reprograma un turno que no está `reservado`, entonces el sistema rechaza la
+  acción sin modificar el turno e informa el motivo.
+  *Por qué:* Las reglas de RF-24 y RF-25 valen para cualquier forma de ocupar una franja, no solo
+  para la asignación.
 
-- **RF-35** — *Restricción:* Mientras un turno esté en un estado que admita transición para el rol del
-  usuario que mira, entonces el sistema muestra la acción correspondiente; en los estados
-  terminales no muestra ninguna. Sobre un turno `reservado`, recepción ve siempre tanto la acción
-  de llegada como la de cancelación.
-  *Por qué:* Las reglas de transición deben ser descubribles sin que el usuario las aprenda a los
-  golpes, y las acciones disponibles dependen de quién mira.
+- **RF-38** — *Restricción:* Un turno ocupa su franja mientras está activo y la libera en cuanto
+  pasa a un estado cerrado.
+  *Por qué:* La franja de un turno anulado o al que el paciente no vino debe poder ofrecerse a otro.
 
-- **RF-36** — *Restricción:* El sistema no permite eliminar un turno; todo turno Conserva su registro
-  hasta alcanzar un estado terminal.
-  *Por qué:* Borrar destruiría evidencia y permitiría hacer desaparecer turnos. Un turno creado por
-  error se resuelve cancelándolo y creando el correcto.
+- **RF-39** — *Restricción:* El sistema no permite eliminar un turno, en ningún estado.
+  *Por qué:* Borrar destruiría evidencia. Un turno cargado por error se anula.
 
-- **RF-37** — *Evento:* Cuando un turno cambia de estado mientras otra persona está accionándolo, o
-  se intenta crear un turno sobre una franja que otra persona acaba de reservar, entonces el sistema
-  aplica el cambio recibido y lo refleja en las agendas abiertas.
-  *Por qué:* En un consultorio con varias recepcionistas las acciones se cruzan; el sistema no debe
-  bloquear el trabajo de nadie por una colisión, y todas las agendas deben converger al mismo
-  estado (RF-39).
+### 3.6 Agenda
 
-### 3.6 Visibilidad en tiempo real
+- **RF-40** — *Restricción:* Mientras un usuario esté autenticado como kinesiólogo, entonces el
+  sistema le muestra únicamente sus propios turnos de la fecha elegida —por defecto, hoy—
+  separados en **en espera**, ordenados por hora de llegada, y **próximos** (`reservado`), ordenados
+  por franja. De cada turno ve nombre y apellido del paciente, franja, estado y, si está en espera,
+  la hora de llegada, además de todos los datos del paciente y los coseguros del turno. No puede
+  ver turnos de otros kinesiólogos, ni consultar pacientes por fuera de sus propios turnos.
+  *Por qué:* Es el monitor de agenda del kinesiólogo: a quién atiende ahora y a quién después.
+  Dentro de sus turnos ve la misma información del paciente que la secretaría (D-15); fuera de su
+  agenda no tiene nada que ver (D-16).
 
-- **RF-38** — *Evento:* Cuando un turno cambia a `en_espera`, entonces la agenda del médico
-  correspondiente lo refleja sin que el médico recargue la página.
-  *Por qué:* Es el objetivo central del producto: que el médico sepa quién espera sin que nadie
-  interrumpa la consulta en curso.
+- **RF-41** — *Evento:* Cuando la secretaría solicita la agenda, entonces el sistema le muestra los
+  turnos de todos los kinesiólogos, filtrables por fecha y por kinesiólogo, con paciente (nombre y
+  apellido, DNI, teléfono, obra social), kinesiólogo, fecha, franja, estado, hora de llegada si
+  corresponde, y coseguros.
+  *Por qué:* La secretaría coordina el día completo y es quien llama o cobra.
 
-- **RF-39** — *Evento:* Cuando un turno cambia de estado por cualquier acción, entonces todas las
-  agendas abiertas que lo muestran reflejan el nuevo estado sin recarga manual.
-  *Por qué:* Varias personas miran la misma agenda; una vista divergente genera desconfianza y
-  llamadas de verificación.
+- **RF-42** — *Evento:* Cuando la secretaría abre la agenda y existen turnos pendientes de marcar,
+  de cualquier fecha, entonces el sistema muestra un aviso con su cantidad y permite ir a cada uno.
+  *Por qué:* La inasistencia y el cierre son manuales (RF-31, RF-32). Sin un aviso, un turno sin
+  marcar queda activo para siempre sin que nadie lo note.
 
-- **RF-40** — *Restricción:* Mientras la conexión con el sistema esté interrumpida, entonces el
-  sistema advierte que la agenda puede estar desactualizada; una vez restablecida la conexión, el
-  sistema sincroniza la pantalla con el estado actual de los turnos.
-  *Por qué:* Un médico que ve una agenda congelada puede tomar decisiones sobre datos viejos sin
-  saberlo.
+### 3.7 Visibilidad en tiempo real
 
-### 3.7 Recordatorio al paciente
+- **RF-43** — *Evento:* Cuando un turno cambia a `en_espera`, entonces la agenda del kinesiólogo
+  correspondiente lo refleja sin que recargue la página.
+  *Por qué:* Es el objetivo central del producto.
 
-- **RF-41** — *Evento:* Cuando se cumple la anticipación de un turno que sigue `reservado` y el
-  paciente tiene email cargado, entonces el sistema envía el recordatorio a ese email.
-  *Por qué:* El recordatorio reduce el ausentismo, que es el costo operativo principal de la agenda.
-  Si el turno se reserva con menos de 24 h de antelación, el recordatorio no se envía.
+- **RF-44** — *Evento:* Cuando un turno se asigna, cambia de estado, se corrige o se reprograma,
+  entonces todas las agendas abiertas que lo muestran reflejan el cambio sin recarga manual.
+  *Por qué:* El kinesiólogo deja la agenda abierta todo el bloque; una vista desactualizada le
+  hace llamar a un paciente que ya no está o perderse uno que llegó.
 
-- **RF-42** — *Comportamiento no deseado:* Si el paciente no tiene email cargado, entonces el
-  sistema no envía recordatorio de ese turno y la reserva no se bloquea.
-  *Por qué:* Decisión D-1: la reserva nunca se pierde por falta de canal de contacto.
-
-- **RF-43** — *Evento:* Cuando se carga el email de un paciente que ya tiene turnos `reservado`
-  pendientes, entonces el sistema programa el recordatorio de cada uno según la anticipación.
-  *Por qué:* La reserva sin recordatorio fue una limitación de los datos, no una decisión del
-  consultorio; en cuanto se conoce el email, la información debe aprovecharse.
-
-- **RF-44** — *Comportamiento no deseado:* Si un turno alcanza `cancelado` o `no_asistio`, entonces
-  el sistema no envía el recordatorio de ese turno.
-  *Por qué:* Avisar de un turno que ya no existe degrada la confianza en el canal de contacto.
-
-- **RF-45** — *Opcional:* Donde el envío del email falle por un error del proveedor externo, entonces
-  el sistema reintenta el envío sin intervención de un usuario.
-  *Por qué:* El resultado del recordatorio depende de la disponibilidad de un tercero; un fallo
-  transitorio no debe requerir que alguien esté pendiente.
+- **RF-45** — *Restricción:* Mientras la conexión con el sistema esté interrumpida, entonces el
+  sistema advierte que la agenda puede estar desactualizada; una vez restablecida, sincroniza la
+  pantalla con el estado actual de los turnos.
+  *Por qué:* Un kinesiólogo que ve una agenda congelada puede tomar decisiones sobre datos viejos.
 
 ### 3.8 Auditoría e historial
 
-- **RF-46** — *Evento:* Cuando el estado de un turno cambia, entonces el sistema registra el estado
-  anterior, el nuevo, quién lo ejecutó y cuándo.
-  *Por qué:* Sin trazabilidad, un reclamo sobre un turno no se puede reconstruir.
+- **RF-46** — *Evento:* Cuando un turno se asigna, cambia de estado, se corrige o se reprograma,
+  entonces el sistema registra qué tipo de cambio fue, quién lo hizo y cuándo; en los cambios de
+  estado registra además el estado anterior y el nuevo.
+  *Por qué:* Ante un reclamo, el consultorio tiene que poder reconstruir quién hizo qué. En la
+  reprogramación no se guarda la ubicación anterior (D-9), pero sí el hecho.
 
-- **RF-47** — *Evento:* Cuando un turno se crea, entonces el sistema registra quién lo creó y cuándo.
-  *Por qué:* El alta es el primer hecho del turno y quien la hizo es tan relevante como quién
-  cambió un estado después.
-
-- **RF-48** — *Evento:* Cuando un turno alcanza un estado terminal y su franja ya transcurrió,
-  entonces ese turno pasa a formar parte del historial del paciente.
-  *Por qué:* El historial responde por lo que pasó. Un turno a futuro no es historial todavía.
-
-- **RF-49** — *Evento:* Cuando recepción consulta el historial de un paciente, entonces el sistema
-  muestra sus turnos con franja ya transcurida, en estado terminal, con fecha, médico y estado
-  final. Ningún otro rol puede consultarlo.
-  *Por qué:* Recepción responde las consultas de agenda. El historial de otros pacientes no aporta
-  nada a la consulta que el médico está atendiendo.
+- **RF-47** — *Evento:* Cuando la secretaría abre la ficha de un paciente, entonces el sistema
+  muestra todos sus turnos, con fecha, franja, kinesiólogo, estado y coseguros, en dos listas:
+  **próximos** (franja todavía no transcurrida), del más cercano al más lejano, e **historial**
+  (franja ya transcurrida), del más reciente al más antiguo. El kinesiólogo no puede consultarla.
+  *Por qué:* La ficha responde tanto "¿cuándo le toca?" como "¿qué turnos tuvo?". Incluye turnos
+  con otros kinesiólogos, y cada kinesiólogo solo ve su propia agenda (D-16).
 
 ---
 
 ## 4. Fuera de alcance
 
 **Esta lista es la fuente de verdad del alcance.** La constitución la referencia y no la duplica.
+No se implementa nada de lo que sigue sin una decisión nueva, conforme al no negociable de la
+constitución.
 
-Los puntos siguientes quedan explícitamente fuera del MVP y no deben implementarse salvo decisión
-nueva, conforme al no negociable de la constitución.
-
-- **Borrado de turnos.** Un turno mal creado se cancela y se rehace (RF-36).
-- **Reintento o reversión de cambios de estado.** Un error de carga se resuelve con un nuevo turno.
-- **Notificación al paciente de una cancelación o una inasistencia.** El paciente recibe el
-  recordatorio previo y nada más.
-- **Cancelación por parte del paciente.** El paciente no accede al sistema.
-- **Cancelación de un turno ya iniciado.** `en_espera` y los estados terminales no son cancelables
-  (RF-31); un paciente que llega y se retira se resuelve con RF-28.
-- **SMS, WhatsApp o notificaciones push.** El MVP envía únicamente email.
-- **Facturación, historia clínica, evolución del paciente o notas de la consulta.** El sistema
-  gestiona turnos, no información clínica.
-- **Gestión de licencias, feriados o vacaciones.** El horario de atención es el que carga recepción.
+- **Borrado de turnos.** Un turno mal cargado se anula (RF-39).
+- **Acciones del kinesiólogo.** Su rol es de solo lectura.
+- **Recordatorios o avisos al paciente** por cualquier canal: email, SMS, WhatsApp o push. El
+  contacto es telefónico y lo maneja la secretaría.
+- **Cobro, facturación y liquidación a obras sociales.** Los coseguros se registran a título
+  informativo; el sistema no sabe si se cobraron.
+- **Catálogo de obras sociales o validación de cobertura.** La obra social es un dato de texto.
+- **Historia clínica, evolución del paciente o notas de la sesión.**
+- **Historial de ubicaciones de un turno reprogramado.**
+- **Lectura del QR por el sistema** (por ejemplo, escanear el ticket para marcar la llegada). El QR
+  es un comprobante para el paciente.
+- **Envío del ticket al paciente** por el sistema. La secretaría lo descarga y lo entrega.
+- **Sobreturnos, duraciones variables o franjas fuera de la grilla.**
+- **Licencias, feriados o vacaciones**, y atención en fin de semana.
 - **Reportes, métricas, estadísticas o exportación de datos.**
 - **Self-service del paciente** (pedir, reprogramar o cancelar turno).
+- **Trabajo simultáneo de varias secretarias** más allá de lo que garantiza RF-37 (D-12).
 - **Multi-tenant.** Un despliegue es un consultorio.
 - **App móvil nativa.** El alcance es web.
-- **Auditoría de navegación** (quién consultó qué). Solo se registran altas y cambios de estado.
+- **Auditoría de navegación** (quién consultó qué).
+- **Recuperación de contraseña por email** o autogestionada. La resuelve el administrador (RF-08).
+- **Eliminación de cuentas.** Las cuentas se desactivan (RF-09).
 
 ---
 
@@ -350,56 +397,53 @@ nueva, conforme al no negociable de la constitución.
 
 | # | Decisión | Motivo |
 |---|---|---|
-| D-1 | El turno se crea aunque el paciente no tenga email ni teléfono; el recordatorio simplemente no se envía. | Exigir un canal de contacto dejaría al consultorio sin agendar. Un turno sin aviso es mejor que ningún turno. |
-| D-2 | La superposición se valida por médico **y** por paciente, sobre la misma franja. | Evita que el paciente se auto-doble-reserve y llegue a una consulta imposible. |
-| D-3 | Los cambios de estado no tienen ventana temporal. | Permite corregir la carga de datos tarde, incluida la carga retroactiva. |
-| D-4 | El recordatorio por email entra en el MVP; los demás canales quedan afuera. | El ausentismo es el costo principal de la agenda. |
-| D-5 | Cada persona tiene su propia cuenta y recepción las crea, incluidas las de recepción. | La constitución exige un login por rol. Dos personas en una misma cuenta destruirían la auditoría. |
-| D-6 | Se agrega el estado terminal `cancelado`, solo por recepción y solo desde `reservado`. | Sin él, el paciente que avisa que no viene deja su turno en `reservado` y la franja bloqueada. |
-| D-7 | Una transición inválida se rechaza sin modificar el turno; en un estado terminal el mensaje dice que el turno está cerrado. | Un rechazo que promete una transición inexistente es peor que un rechazo que explica la regla. |
-| D-8 | La cancelación no tiene restricción de fecha. | Un turno `reservado` nunca llegó a abrirse, así que cancelarlo nunca borra evidencia. |
-| D-9 | `no_asistio` es un estado propio y el sistema lo aplica solo al terminar la franja. **Excepción:** no se aplica a los turnos creados cuando su franja ya había vencido, que quedan en manos de recepción. | Es lo que mantiene la cola del médico limpia sin depender de que recepción actúe, y a la vez impide que la carga retroactiva (D-13) nazca muerta. |
-| D-10 | El historial incluye solo turnos con franja ya transcurida. | La constitución lo define como "turnos anteriores"; un turno a futuro no es historial todavía. |
-| D-11 | Recepción puede modificar el horario de un médico, con efecto solo a futuro. | Los médicos amplían o reducen su disponibilidad; cambiar el horario no debe desarmar la agenda ya agendada. |
-| D-12 | El recordatorio se envía 24 h antes; si el turno se reserva con menos de antelación, no se envía. | Cubre el caso normal sin recargar al paciente con avisos de última hora. |
-| D-13 | Se admite crear turnos con fecha ya vencida. | Recepción necesita registrar y corregir turnos viejos. |
-| D-14 | Los datos de pacientes y médicos son editables por recepción, con el DNI revalidado. | Un alta equivocada no se puede deshacer; el sistema debe permitir corregirla. |
-| D-15 | Cargar el email de un paciente dispara el recordatorio de sus turnos pendientes. | La falta de email fue una limitación de los datos, no una decisión del consultorio. |
-| D-16 | No se avisa al paciente cuando su turno se cancela. Riesgo aceptado. | Evita un segundo tipo de email y todo lo que arrastra. En un consultorio chico lo resuelve un llamado de recepción. |
-| D-17 | Las sesiones no expiran por inactividad. | El médico deja la pantalla en la sala de espera y volver a autenticarse lo saca del sistema en el peor momento. |
-| D-18 | El fallo de envío de email se reintenta automáticamente. | Un fallo transitorio de un tercero no debe exigir que alguien esté pendiente. |
-| D-19 | Ante dos acciones simultáneas sobre el mismo turno, la última se aplica. | En un consultorio chico bloquear el trabajo de recepción por una colisión es un costo mayor que el de converger al estado final. |
-| D-20 | La creación de un turno también queda auditada. | El alta es el primer hecho del turno y quien la hizo importa tanto como quién cambió un estado después. |
-| D-21 | El médico y recepción ven los mismos campos de un turno. | Un solo conjunto de datos que mantener, y la garantía de unicidad del DNI protege contra el registro duplicado. |
-| D-22 | Solo recepción consulta el historial de un paciente. | Es la pantalla que responde consultas de agenda; no aporta a la consulta que el médico atiende. |
-| D-23 | Recepción ve un contador de inasistencias por fecha. | La inasistencia se resuelve sola y no dispara ninguna alerta; sin el contador, nadie se entera. |
-| D-24 | `spec.md` es la fuente de verdad del alcance; la constitución lo referencia. | Dos listas divergentes de "fuera de alcance" permiten reintroducir sin querer lo que se excluyó a propósito. |
+| D-1 | Turnos de 45 minutos sobre una grilla fija: seis franjas a la mañana (la última, 11:45–12:30) y cuatro a la tarde. | Es la forma en que el consultorio trabaja. La franja de las 11:45 se habilitó a pedido aunque exceda las 12:00. |
+| D-2 | Cada kinesiólogo atiende en un único bloque; varios kinesiólogos pueden compartir franja. | Hoy hay dos a la mañana y uno a la tarde. |
+| D-3 | El kinesiólogo es de solo lectura. | Todas las acciones las registra la secretaría, que es quien está en contacto con el paciente. |
+| D-4 | Los datos fijos del paciente se cargan una vez; los turnos siguientes se asignan con el DNI. | Evita recargar datos y duplicar pacientes. |
+| D-5 | Coseguro según obra social y coseguro adicional son datos del turno, informativos. | Cambian de un turno a otro. Registrar cobros sería facturación. |
+| D-6 | El contacto del paciente es solo telefónico y no hay recordatorio automático. | Sin email no hay canal automatizable dentro del alcance. |
+| D-7 | `en_espera` y `asistio` son estados distintos; la secretaría cierra el turno al terminar la sesión. | El kinesiólogo necesita distinguir quién espera de quién ya pasó, y no puede cerrar turnos él mismo. |
+| D-8 | La inasistencia la marca la secretaría a mano, con un aviso de turnos pendientes de marcar. | Solo la secretaría sabe si el paciente avisó o llegó tarde. El aviso evita turnos activos olvidados. |
+| D-9 | Reprogramar mueve el mismo turno y no guarda dónde estaba; sí queda registrado quién y cuándo reprogramó. | El consultorio no usa la ubicación anterior; quién lo hizo sí importa ante un reclamo. |
+| D-10 | La secretaría puede corregir un turno de cualquier estado a cualquier otro, y la corrección queda registrada. | Los errores de carga tienen que poder corregirse sin anular y reasignar. |
+| D-11 | Ningún turno se elimina. | Preserva la evidencia; un error se anula o se corrige. |
+| D-12 | No hay manejo de concurrencia entre secretarias más allá de la unicidad de franja. | Son tres, pero nunca trabajan en simultáneo. |
+| D-13 | Se admiten turnos con fecha ya vencida. | La secretaría necesita registrar turnos que no se cargaron a tiempo. |
+| D-14 | Las sesiones no expiran por inactividad. | El kinesiólogo usa la agenda como monitor durante todo el bloque. |
+| D-15 | En sus propios turnos, el kinesiólogo ve toda la información del paciente, en solo lectura. | Decisión del consultorio. |
+| D-16 | Cada kinesiólogo ve solo su agenda y sus turnos asignados: ni agendas ajenas, ni búsqueda de pacientes, ni historial. | Decisión del consultorio. El historial y la búsqueda mostrarían turnos de otros kinesiólogos. |
+| D-17 | `spec.md` es la fuente de verdad del alcance; la constitución lo referencia. | Dos listas divergentes permiten reintroducir sin querer lo excluido. |
+| D-18 | Existe un rol administrador con control total: todo lo de la secretaría, más cuentas y kinesiólogos. La primera cuenta es la del administrador. | El dueño del sistema controla quién accede y puede operar cualquier funcionalidad. |
+| D-19 | Las cuentas nacen con contraseña temporal y cambio obligatorio en el primer ingreso; el administrador restablece contraseñas olvidadas. | Nadie trabaja con una contraseña que otro conoce, y la recuperación no depende de un canal de email. |
+| D-20 | Las cuentas se desactivan, nunca se eliminan. | La auditoría referencia a sus autores. |
+| D-21 | Se atiende de lunes a viernes, igual para todos los kinesiólogos. | Es el horario del consultorio. |
+| D-22 | Solo se reprograman turnos `reservado`. Un paciente que no vino se marca `no_asistio` y se le asigna un turno nuevo. | Reprogramar un turno cerrado borraría lo que pasó, porque no se guarda la ubicación anterior (D-9). |
+| D-23 | Cada turno asignado genera un ticket PDF descargable con un QR que contiene sus datos y con nombre, dirección y teléfono del consultorio. El QR no se lee desde el sistema. | El paciente necesita un comprobante. Que el QR lleve los datos en texto, y no un enlace, evita exponer el sistema a los pacientes. |
+| D-24 | La asignación parte de la fecha y el bloque, y muestra los kinesiólogos de ese bloque con sus franjas libres. | Con dos kinesiólogos a la mañana, la secretaría elige a quién asignar viendo la disponibilidad de ambos. |
+| D-25 | Existe una sección **Pacientes** con búsqueda y una ficha que reúne datos, próximos turnos e historial. Solo para secretaría y administrador. | Concentra en un lugar las consultas sobre un paciente. El kinesiólogo no accede (D-16). |
+| D-26 | Los datos del consultorio (nombre, dirección y teléfono) se cargan al instalar y la secretaría los puede editar. | Cambian rara vez, pero cuando cambian no debe hacer falta tocar el servidor. |
 
 ### 5.1 Pendientes que requieren decisión del negocio
 
-Estos puntos no están resueltos y bloquean la redacción de `plan.md`:
-
-- **Gestión de contraseñas.** No hay requisito para cambiar una contraseña, recuperar una perdida,
-  desactivar una cuenta ni entregarla a un médico nuevo. Hoy solo existe la creación (RF-04).
-- **Asignación de la primera cuenta de recepción.** RF-05 exige que exista, pero no dice quién la
-  define ni cómo se entrega.
-- **Contenido del email de recordatorio.** El texto, el remitente y si incluye la dirección del
-  consultorio no están definidos.
-- **Duración de la franja.** La constitución la fija, pero su valor (30 minutos en el material de
-  origen) nunca se будó explícito en la spec.
+No quedan pendientes. Cualquier decisión nueva se agrega a la tabla anterior.
 
 ---
 
 ## 6. Reglas de negocio consolidadas
 
-1. Solo existen cinco estados: `reservado`, `en_espera`, `finalizado`, `cancelado`, `no_asistio`.
-2. Las transiciones válidas son exactamente las de la tabla de la sección 3.5.
-3. `finalizado`, `cancelado` y `no_asistio` son terminales y liberan la franja.
-4. Solo los turnos activos ocupan una franja.
-5. Un paciente no puede tener dos turnos activos en la misma franja.
-6. Un médico no puede tener dos turnos activos en la misma franja.
-7. Todo alta y todo cambio de estado quedan registrados con autor y momento.
-8. Ningún turno se elimina.
+1. Solo existen cinco estados: `reservado`, `en_espera`, `asistio`, `no_asistio`, `anulado`.
+2. El administrador puede todo; la secretaría gestiona pacientes y turnos; el kinesiólogo solo
+   lee.
+3. El flujo normal es el de la tabla de la sección 3.5; cualquier otro cambio es una corrección
+   explícita y registrada.
+4. Solo los turnos activos (`reservado`, `en_espera`) ocupan una franja.
+5. Un kinesiólogo no puede tener dos turnos activos en la misma franja.
+6. Un paciente no puede tener dos turnos activos en la misma franja.
+7. Las franjas son las de la grilla de 45 minutos del bloque del kinesiólogo.
+8. Toda asignación, cambio de estado, corrección y reprogramación queda registrada con autor y
+   momento.
+9. Ningún turno se elimina, y el sistema nunca cambia un estado por su cuenta.
 
 ---
 
@@ -407,98 +451,96 @@ Estos puntos no están resueltos y bloquean la redacción de `plan.md`:
 
 El MVP se considera terminado cuando **todos** los puntos siguientes son verificables.
 
-### 7.1 Acceso y convenciones
+### 7.1 Acceso
 
-- [ ] Recepción y médico se autentican con credenciales propias y ven pantallas distintas (RF-01).
+- [ ] Administrador, secretaría y kinesiólogo se autentican con credenciales propias y ven
+      pantallas distintas (RF-01).
 - [ ] Un login inválido se rechaza con un mensaje genérico (RF-02).
-- [ ] Un rol no puede ejecutar acciones reservadas al otro, y se le informa sin alterar datos (RF-03).
-- [ ] Recepción puede crear cuentas de médicos y de recepción, cada una activa y con su rol (RF-04).
-- [ ] El sistema es utilizable desde el primer arranque, con una cuenta de recepción activa (RF-05).
-- [ ] Cerrar sesión deja de exponer los datos de la agenda (RF-06).
-- [ ] La sesión de un usuario no expira por inactividad (RF-07).
-- [ ] Fechas, franjas y horas se interpretan en una única zona horaria configurable (RF-08).
+- [ ] Un kinesiólogo no puede ejecutar ninguna modificación y la secretaría no puede gestionar
+      cuentas ni kinesiólogos, ni desde la interfaz ni contra la API; el administrador puede todo
+      (RF-03).
+- [ ] El administrador crea cuentas de secretaría y de kinesiólogo con contraseña temporal (RF-04).
+- [ ] Tras la instalación existe una cuenta de administrador con contraseña temporal (RF-05).
+- [ ] Una cuenta con contraseña temporal no accede a ninguna pantalla hasta elegir una nueva
+      (RF-06).
+- [ ] Un usuario puede cambiar su propia contraseña indicando la actual (RF-07).
+- [ ] Restablecer una contraseña cierra las sesiones de la cuenta y exige cambiarla al ingresar
+      (RF-08).
+- [ ] Una cuenta desactivada no puede ingresar, sus sesiones se cierran y sus registros se
+      conservan (RF-09).
+- [ ] Cerrar sesión deja de exponer los datos de la agenda (RF-10).
+- [ ] La sesión no expira por inactividad (RF-11).
+- [ ] Fechas, franjas y horas se interpretan en una única zona horaria configurable (RF-12).
 
-### 7.2 Alcance de la agenda
+### 7.2 Consultorio, kinesiólogos y grilla
 
-- [ ] El médico ve únicamente los turnos que tiene asignados (RF-09).
-- [ ] Recepción ve los turnos de todos los médicos y puede filtrar por fecha y por médico (RF-10).
-- [ ] Cada turno en agenda muestra paciente, médico, fecha, franja, estado y hora de llegada si
-      está `en_espera`, y ambos roles ven los mismos campos (RF-11).
-- [ ] Los turnos `en_espera` aparecen ordenados por hora de llegada (RF-12).
-- [ ] La agenda de una fecha muestra cuántas inasistencias tuvo (RF-13).
+- [ ] La secretaría edita nombre, dirección y teléfono del consultorio, y los tickets nuevos los
+      reflejan (RF-13).
+- [ ] Dar de alta un kinesiólogo crea su perfil, su agenda y su cuenta en un solo paso (RF-14).
+- [ ] Solo se ofrecen las franjas de la grilla de su bloque, de lunes a viernes, incluida la de
+      11:45 a la mañana (RF-15).
+- [ ] Cambiar el bloque de un kinesiólogo no altera sus turnos ya asignados (RF-16).
 
-### 7.3 Datos maestros
+### 7.3 Pacientes
 
-- [ ] Recepción registra un paciente con nombre y DNI, sin email ni teléfono si no los tiene
-      (RF-14).
-- [ ] Un DNI con formato inválido o ya registrado se rechaza, tanto al crear como al editar
-      (RF-15).
-- [ ] Recepción registra un médico con nombre y horario, y este queda con agenda y cuenta propias
-      (RF-16).
-- [ ] Cambiar el horario de un médico solo afecta a las franjas futuras (RF-17).
-- [ ] Recepción puede editar los datos de un paciente o un médico, y el DNI se revalida (RF-18).
-- [ ] La búsqueda por nombre o DNI encuentra pacientes y médicos existentes (RF-19).
+- [ ] Un paciente nuevo se registra con DNI, nombre y apellido, teléfono y obra social (RF-17).
+- [ ] Un DNI inválido o repetido, o un dato faltante, impide el alta y la edición (RF-18).
+- [ ] Al ingresar un DNI existente se recuperan sus datos; uno inexistente ofrece el alta (RF-19).
+- [ ] Los datos de un paciente se pueden editar y el DNI se revalida (RF-20).
+- [ ] La sección Pacientes busca por DNI o nombre y abre la ficha con datos, próximos turnos e
+      historial (RF-21).
 
-### 7.4 Turnos
+### 7.4 Asignación
 
-- [ ] Recepción ve las franjas libres de un médico para una fecha, ya filtradas también por el
-      paciente elegido (RF-20).
-- [ ] Un turno se crea en `reservado` con paciente, médico, fecha y franja válidos, y admite fecha
-      ya vencida (RF-21).
-- [ ] No se puede crear un turno en una franja con turno activo del mismo médico (RF-22).
-- [ ] No se puede crear un turno en una franja con turno activo del mismo paciente (RF-23).
-- [ ] Un turno con datos faltantes no se crea, y el mensaje indica cuál falta (RF-24).
+- [ ] Al elegir fecha y bloque se ven los kinesiólogos de ese bloque con sus franjas libres, que
+      excluyen las ocupadas por cada kinesiólogo y por el paciente (RF-22).
+- [ ] Un turno se asigna en `reservado` con sus coseguros, y admite fecha vencida (RF-23).
+- [ ] No se asigna un turno en una franja ocupada por el mismo kinesiólogo; sí con otro
+      kinesiólogo (RF-24).
+- [ ] No se asigna un turno a un paciente que ya tiene uno activo en esa franja (RF-25).
+- [ ] Un turno con datos faltantes no se asigna, y el mensaje indica cuál falta (RF-26).
+- [ ] Los coseguros de un turno se pueden modificar sin alterar estado ni franja (RF-27).
+- [ ] Al asignar un turno se puede descargar su ticket PDF con QR y los datos del consultorio, y
+      vuelve a descargarse con los datos vigentes tras una reprogramación (RF-28).
 
 ### 7.5 Estados
 
-- [ ] El sistema no reconoce ningún estado fuera de los cinco definidos (RF-25).
-- [ ] Solo existen las transiciones de la tabla; cualquier otra se rechaza sin modificar el turno
-      (RF-26).
-- [ ] `reservado` → `en_espera` solo lo ejecuta recepción, incluso en una franja vencida (RF-27).
-- [ ] `en_espera` → `finalizado` lo ejecutan médico o recepción (RF-28).
-- [ ] `reservado` → `cancelado` solo lo ejecuta recepción (RF-29).
-- [ ] Al terminar la franja, un turno `reservado` que ya existía pasa solo a `no_asistio`; uno creado
-      con la franja vencida no pasa solo (RF-30).
-- [ ] Un turno terminal no admite más cambios de estado (RF-31).
-- [ ] La franja de un turno terminal queda disponible para nuevas reservas (RF-32).
-- [ ] El médico no puede marcar `en_espera` ni `cancelado` (RF-33).
-- [ ] Una transición rechazada no modifica el turno e indica la válida; sobre un turno terminal
-      indica que está cerrado y no tiene acciones (RF-34).
-- [ ] Las acciones visibles dependen del estado y del rol; sobre un `reservado`, recepción ve
-      siempre llegada y cancelación (RF-35).
-- [ ] No existe ninguna forma de eliminar un turno (RF-36).
-- [ ] Dos acciones simultáneas sobre el mismo turno convergen al último estado aplicado y todas las
-      agendas lo reflejan (RF-37).
+- [ ] El sistema no reconoce ningún estado fuera de los cinco definidos (RF-29).
+- [ ] Llegó, Asistió, No asistió y Anular funcionan según la tabla de 3.5 (RF-30 a RF-33).
+- [ ] El sistema nunca marca un estado por su cuenta (RF-32).
+- [ ] La secretaría ve solo las acciones del flujo que salen del estado actual, más la corrección;
+      el kinesiólogo no ve acciones (RF-34).
+- [ ] Una corrección lleva un turno de cualquier estado a cualquier otro y queda registrada como
+      tal (RF-35).
+- [ ] Reprogramar mueve el mismo turno `reservado` a otra fecha, franja o kinesiólogo (RF-36).
+- [ ] Una corrección o reprogramación hacia una franja ocupada, o la reprogramación de un turno no
+      `reservado`, se rechaza sin modificar el turno (RF-37).
+- [ ] La franja de un turno cerrado queda disponible (RF-38).
+- [ ] No existe ninguna forma de eliminar un turno (RF-39).
 
-### 7.6 Tiempo real
+### 7.6 Agenda y tiempo real
 
-- [ ] El médico ve un turno pasar a `en_espera` sin recargar la página (RF-38).
-- [ ] Los cambios de estado se propagan a todas las agendas abiertas sin recarga manual (RF-39).
-- [ ] Una interrupción de conexión advierte que la agenda puede estar desactualizada, y al
-      reconectar la pantalla se sincroniza (RF-40).
-
-### 7.7 Recordatorio
-
-- [ ] Un turno `reservado` con email dispara el recordatorio 24 h antes del inicio de su franja
+- [ ] El kinesiólogo ve solo sus turnos, separados en espera (por llegada) y próximos (por
+      franja), con todos los datos del paciente y los coseguros; no puede consultar agendas ajenas,
+      buscar pacientes ni ver historiales (RF-40).
+- [ ] La secretaría ve todos los turnos filtrables por fecha y kinesiólogo, con todos los datos
       (RF-41).
-- [ ] Un turno reservado con menos de 24 h de antelación no dispara recordatorio (RF-41).
-- [ ] Un turno sin email no dispara recordatorio y no bloqueó la reserva (RF-42).
-- [ ] Cargar el email de un paciente dispara el recordatorio de sus turnos `reservado` pendientes
-      (RF-43).
-- [ ] Un turno `cancelado` o `no_asistio` no dispara recordatorio (RF-44).
-- [ ] Un fallo de envío se reintenta sin intervención de un usuario (RF-45).
+- [ ] La agenda de la secretaría avisa de los turnos pendientes de marcar (RF-42).
+- [ ] El kinesiólogo ve un turno pasar a `en_espera` sin recargar (RF-43).
+- [ ] Asignaciones, cambios, correcciones y reprogramaciones se propagan a todas las agendas
+      abiertas (RF-44).
+- [ ] Una caída de conexión se advierte y al reconectar la agenda se sincroniza (RF-45).
 
-### 7.8 Auditoría e historial
+### 7.7 Auditoría e historial
 
-- [ ] Cada cambio de estado registra estado anterior, estado nuevo, autor y momento (RF-46).
-- [ ] La creación de un turno registra quién lo creó y cuándo (RF-47).
-- [ ] Solo los turnos terminales cuya franja ya transcurrió aparecen en el historial (RF-48).
-- [ ] Recepción ve fecha, médico y estado final de cada turno del historial; ningún otro rol puede
-      consultarlo (RF-49).
+- [ ] Cada asignación, cambio de estado, corrección y reprogramación registra tipo, autor y
+      momento, y los cambios de estado registran estado anterior y nuevo (RF-46).
+- [ ] La ficha del paciente muestra sus próximos turnos (del más cercano al más lejano) y su
+      historial (del más reciente al más antiguo); el kinesiólogo no puede consultarla (RF-47).
 
-### 7.9 Salida
+### 7.8 Salida
 
 - [ ] Ningún punto de la sección 4 está implementado.
 - [ ] No existe funcionalidad sin un `RF` numerado asociado, ni ningún `RF` sin verificación.
-- [ ] Las ocho reglas de la sección 6 se pueden comprobar una por una sobre el sistema.
-- [ ] Los cuatro pendientes de la sección 5.1 están resueltos y documentados.
+- [ ] Las nueve reglas de la sección 6 se pueden comprobar una por una sobre el sistema.
+- [ ] Los pendientes de la sección 5.1 están resueltos y documentados.
