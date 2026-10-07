@@ -158,6 +158,17 @@ crítico (`inlineCritical: false`). `verificar-csp` usa el Chrome o Edge instala
 3. Comando de instalación — crea la cuenta de administrador (contraseña temporal, se muestra una sola vez) y los datos del consultorio.
 4. Levantar backend y frontend, e ingresar como administrador para elegir la contraseña definitiva.
 
+## Integración continua
+
+En cada pull request, GitHub Actions (`.github/workflows/ci.yml`) ejecuta en backend y frontend:
+auditoría de dependencias (`npm audit --audit-level=high`, que frena el pipeline ante
+vulnerabilidades altas o críticas), lint, compilación y pruebas. El backend corre las pruebas de
+integración contra un PostgreSQL de servicio con datos ficticios; el frontend verifica la CSP de
+producción. Dependabot propone actualizaciones una vez por semana.
+
+En el backend, `overrides` de `package.json` fuerza versiones corregidas de dos dependencias del
+CLI de Prisma (`deepmerge-ts` y `mysql2`). Se pueden quitar cuando Prisma las actualice.
+
 ## Estructura del repo
 
 ```
@@ -174,6 +185,7 @@ crítico (`inlineCritical: false`). `verificar-csp` usa el Chrome o Edge instala
 ├── frontend/           (T-05) Angular
 ├── e2e/                (T-33) Playwright
 ├── infra/              postgres/init: bases de desarrollo; (T-36) aprovisionamiento, respaldo y restauración
+├── .github/            CI (GitHub Actions) y Dependabot
 ├── docker-compose.yml  PostgreSQL de desarrollo y de pruebas
 ├── .env.example        variables de entorno con valores ficticios
 └── .nvmrc              versión de Node
