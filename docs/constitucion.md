@@ -32,6 +32,8 @@ alcance"). Este documento no la duplica, para evitar que las dos se desincronice
 - **Backend:** Node.js + Express
 - **Base de datos:** PostgreSQL (vía Prisma ORM)
 - **Tiempo real:** Socket.io (WebSockets)
+- **Producción:** DigitalOcean, región Frankfurt (Unión Europea): servidor con Docker Compose y
+  Caddy, y PostgreSQL administrado. Detalle en [`despliegue.md`](./despliegue.md).
 
 ### Justificación del cambio de BD (Mongo → PostgreSQL)
 El dominio es fuertemente relacional (turno ↔ paciente ↔ kinesiólogo ↔ estado, con consultas por fecha y estado). Un modelo relacional con constraints da integridad "gratis" (ej. impedir dos turnos activos del mismo kinesiólogo o del mismo paciente en la misma franja), y las consultas típicas de agenda son más naturales en SQL.
@@ -49,4 +51,9 @@ El dominio es fuertemente relacional (turno ↔ paciente ↔ kinesiólogo ↔ es
 - Toda alta y todo cambio de un turno deben quedar registrados (quién, cuándo).
 - El kinesiólogo nunca debe tener que refrescar manualmente para ver un paciente en espera.
 - No se borra un turno: un error de carga se resuelve anulando o corrigiendo.
+- Los datos de pacientes son datos sensibles de salud (Ley 25.326): solo se alojan en Argentina o
+  en países con nivel de protección adecuado, cifrados en tránsito y en reposo, y nunca aparecen en
+  logs.
+- Ninguna versión llega a producción sin copia de seguridad verificada ni con dependencias con
+  vulnerabilidades altas o críticas.
 - No se avanza sobre lo marcado como "fuera de alcance" sin volver a este documento.

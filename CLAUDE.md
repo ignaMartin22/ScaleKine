@@ -8,14 +8,16 @@ Development). Este archivo guía el trabajo de implementación.
 En orden de precedencia:
 
 1. `docs/constitucion.md`: principios y no negociables.
-2. `docs/spec.md`: qué se construye (RF-01 … RF-47), fuera de alcance (§4) y criterios (§7).
+2. `docs/spec.md`: qué se construye (RF-01 … RF-47 y RNF-01 … RNF-13), fuera de alcance (§4) y
+   criterios (§7).
 3. `docs/plan.md`: cómo se construye (módulos, modelo, decisiones, estructura del repo).
-4. `docs/tasks.md`: qué tarea sigue y cuándo está hecha.
+4. `docs/despliegue.md`: dónde corre, cómo se protege y cómo se opera en producción.
+5. `docs/tasks.md`: qué tarea sigue y cuándo está hecha.
 
 ## Reglas de trabajo
 
-- **Nada sin RF.** Toda funcionalidad y toda prueba apuntan a un RF. Si algo no tiene RF, no se
-  implementa; si hace falta, primero se agrega a la spec.
+- **Nada sin requisito.** Toda funcionalidad y toda prueba apuntan a un RF o RNF. Si algo no tiene
+  requisito, no se implementa; si hace falta, primero se agrega a la spec.
 - **Contradicción → spec primero.** Si una tarea choca con la spec o el plan, se frena, se corrige
   el documento y recién después el código.
 - **Fuera de alcance es fuera de alcance.** No implementar nada de `spec.md` §4.
@@ -36,3 +38,15 @@ En orden de precedencia:
 - El sistema nunca cambia el estado de un turno por su cuenta.
 - Toda lógica que depende de la hora usa el reloj inyectable y la zona horaria configurada.
 - Las pruebas de integración corren contra PostgreSQL real, nunca contra un doble.
+
+## Seguridad (datos sensibles de salud)
+
+- Nunca registrar en logs DNI, nombres, teléfonos, obra social, coseguros, contraseñas ni tokens.
+  Todo log pasa por el logger con redacción.
+- Toda entrada a la API se valida con `zod`; ningún error devuelve trazas al cliente.
+- No agregar servicios externos que reciban datos personales fuera de Argentina o de un país adecuado
+  (`despliegue.md` §1). Ante la duda, no se agrega.
+- Nunca usar datos reales de pacientes en desarrollo, pruebas, CI, issues ni commits.
+- Ningún secreto en el repositorio: solo `.env.example` con valores ficticios.
+- La aplicación se conecta a la base con `scalekine_app`, que no tiene permisos de estructura ni de
+  borrado; no "arreglar" un error de permisos ampliándolos.

@@ -3,14 +3,16 @@
 **Documento de alcance funcional.** Describe *qué* debe hacer el sistema y *por qué*.
 No contiene decisiones de implementación: esas van en `plan.md`.
 
-Cada requisito está expresado en notación EARS y numerado como `RF-nn`. La sección 7 traduce
-cada `RF` a un criterio de finalización verificable.
+Cada requisito está expresado en notación EARS y numerado como `RF-nn` (funcionales) o `RNF-nn`
+(seguridad y operación, sección 3.9). La sección 7 traduce cada uno a un criterio de finalización
+verificable.
 
 > **Revisión 2026-10-07.** Reescrita a partir del relevamiento con el consultorio: turnos de 45
 > minutos, tres kinesiólogos en dos bloques, kinesiólogo de solo lectura, reprogramación,
 > corrección de estados, marcado manual de inasistencias, datos de obra social y coseguro, y
 > eliminación del recordatorio por email. Se agregó el rol administrador para la gestión de
-> cuentas y contraseñas, con control total, y el ticket con QR para cada turno.
+> cuentas y contraseñas, con control total, y el ticket con QR para cada turno. Se agregaron los
+> requisitos de seguridad y operación (§3.9) y el vencimiento de sesión a las 12 horas.
 
 ---
 
@@ -127,10 +129,12 @@ administrador (D-18). Las acciones sobre cuentas y kinesiólogos son exclusivas 
   *Por qué:* La agenda contiene datos personales de pacientes y no debe quedar expuesta en un
   equipo compartido.
 
-- **RF-11** — *Restricción:* Mientras un usuario permanezca autenticado, entonces su sesión no
-  expira por inactividad.
-  *Por qué:* El kinesiólogo deja la pantalla abierta como monitor; cerrarla por inactividad lo
-  saca del sistema justo cuando la necesita.
+- **RF-11** — *Restricción:* Una sesión no expira por inactividad, pero vence a las **12 horas**
+  de iniciada. Al vencer, la pantalla deja de mostrar datos y pide volver a ingresar.
+  *Por qué:* El kinesiólogo deja la pantalla abierta como monitor durante todo su bloque, así que
+  cerrarla por inactividad lo saca del sistema justo cuando la necesita. Pero una sesión eterna en
+  una PC compartida expone datos de salud indefinidamente; 12 horas cubren la jornada completa
+  (08:00 a 19:00) y obligan a ingresar de nuevo cada día (D-14).
 
 - **RF-12** — *Restricción:* El sistema interpreta todas las fechas, franjas y horas en una única
   zona horaria, configurada al instalarse.
@@ -360,6 +364,84 @@ cualquier otro (RF-35), como acción explícita y registrada.
   *Por qué:* La ficha responde tanto "¿cuándo le toca?" como "¿qué turnos tuvo?". Incluye turnos
   con otros kinesiólogos, y cada kinesiólogo solo ve su propia agenda (D-16).
 
+### 3.9 Requisitos no funcionales de seguridad y operación
+
+El sistema maneja datos de salud, que la Ley 25.326 considera **datos sensibles** (art. 2) y que
+exigen medidas de seguridad y confidencialidad (arts. 9 y 10). Estos requisitos fijan el resultado
+exigido; el cómo está en `plan.md` y `despliegue.md`.
+
+- **RNF-01** — *Restricción:* El sistema solo se sirve por HTTPS, con TLS 1.2 o superior; una
+  petición por HTTP se redirige, y el navegador recibe la instrucción de no volver a usar HTTP. La
+  cookie de sesión solo viaja por HTTPS, no es legible desde JavaScript y no se envía desde otros
+  sitios.
+  *Por qué:* Datos de salud en texto plano por la red de la clínica o de un proveedor de internet
+  son una filtración.
+
+- **RNF-02** — *Comportamiento no deseado:* Si una cuenta acumula 5 ingresos fallidos seguidos,
+  entonces se bloquea 15 minutos, y cada bloqueo siguiente dura el doble; si una misma dirección
+  acumula 20 ingresos fallidos en 15 minutos, entonces se bloquea esa dirección 15 minutos. El
+  mensaje de rechazo sigue sin revelar si la cuenta existe (RF-02). Un restablecimiento de
+  contraseña (RF-08) levanta el bloqueo de la cuenta.
+  *Por qué:* Sin límite, una contraseña se puede adivinar por fuerza bruta.
+
+- **RNF-03** — *Restricción:* Las contraseñas tienen al menos 12 caracteres, no pueden figurar en
+  una lista de contraseñas comunes, y nunca se almacenan ni se registran en texto legible.
+  *Por qué:* La longitud es la defensa más efectiva contra el adivinado; las contraseñas comunes son
+  lo primero que se prueba.
+
+- **RNF-04** — *Evento:* Cuando el administrador ingresa, entonces el sistema le exige, además de la
+  contraseña, un código de un solo uso de una aplicación autenticadora (TOTP). En su primer ingreso,
+  después de elegir la contraseña (RF-06), debe activarlo, y recibe códigos de recuperación de un
+  solo uso. Si pierde la aplicación y los códigos, el segundo factor solo se restablece desde el
+  servidor.
+  *Por qué:* El administrador tiene control total (D-18); una contraseña robada no debe alcanzar
+  para tomar el sistema.
+
+- **RNF-05** — *Restricción:* La base de datos, sus copias de seguridad y cualquier registro que
+  contenga datos personales se almacenan únicamente en Argentina o en países que la autoridad de
+  aplicación reconoce con nivel de protección adecuado (Disposición 60-E/2016). Ningún servicio de
+  terceros que procese datos personales opera fuera de esos países.
+  *Por qué:* El art. 12 de la Ley 25.326 restringe la transferencia internacional de datos
+  personales (D-28).
+
+- **RNF-06** — *Restricción:* La base de datos y sus copias de seguridad están cifradas en reposo.
+  *Por qué:* Un disco o un archivo de copia extraviado no debe exponer datos legibles.
+
+- **RNF-07** — *Restricción:* La base se puede restaurar a cualquier momento de los últimos 7 días.
+  Además existe una copia diaria cifrada en un proveedor distinto del principal, con 30 días de
+  retención. Ante la pérdida total del proveedor principal se pierden, como máximo, las últimas 24
+  horas, y el servicio se restablece en 4 horas o menos. La restauración se prueba una vez por mes.
+  *Por qué:* Perder la agenda de un consultorio es el incidente más probable y el más costoso, y un
+  backup que nunca se restauró no es una garantía.
+
+- **RNF-08** — *Restricción:* Los registros técnicos del sistema (logs, errores, monitoreo) no
+  contienen DNI, nombres, teléfonos, obra social ni coseguros. La única traza de quién hizo qué es
+  la auditoría (RF-46), que vive en la base.
+  *Por qué:* Los logs se copian, se envían a terceros y se conservan con menos cuidado que la base.
+
+- **RNF-09** — *Restricción:* La base no acepta conexiones desde internet; la aplicación la usa con
+  un usuario que no puede modificar su estructura; el servidor solo expone HTTPS al público.
+  *Por qué:* Cada puerto abierto y cada permiso de más es una vía de ataque.
+
+- **RNF-10** — *Restricción:* Toda entrada a la API se valida antes de procesarse; los errores no
+  muestran detalles internos; la aplicación no puede incrustarse en otros sitios ni ejecutar scripts
+  de orígenes no declarados.
+  *Por qué:* Son las defensas básicas contra inyección, robo de sesión y suplantación de la
+  interfaz.
+
+- **RNF-11** — *Restricción:* No se despliega una versión cuyas dependencias tengan vulnerabilidades
+  conocidas de severidad alta o crítica.
+  *Por qué:* La mayoría de los ataques a aplicaciones chicas explotan dependencias desactualizadas.
+
+- **RNF-12** — *Evento:* Cuando el sistema deja de responder, o cuando falla una copia de seguridad
+  o su prueba de restauración, entonces el administrador recibe una alerta.
+  *Por qué:* Una caída o un backup roto que nadie nota se descubren el día que se necesitan.
+
+- **RNF-13** — *Restricción:* El servidor aplica automáticamente las actualizaciones de seguridad
+  del sistema operativo, y solo admite acceso administrativo con clave criptográfica, nunca con
+  contraseña.
+  *Por qué:* Un servidor sin parches o con acceso por contraseña es el blanco más fácil.
+
 ---
 
 ## 4. Fuera de alcance
@@ -390,6 +472,9 @@ constitución.
 - **Auditoría de navegación** (quién consultó qué).
 - **Recuperación de contraseña por email** o autogestionada. La resuelve el administrador (RF-08).
 - **Eliminación de cuentas.** Las cuentas se desactivan (RF-09).
+- **Segundo factor para secretaría y kinesiólogo.** Solo el administrador lo usa (RNF-04).
+- **Alta disponibilidad** (servidores o nodos de base redundantes). Hay un solo servidor y un solo
+  nodo de base; la continuidad se garantiza con las copias de RNF-07.
 
 ---
 
@@ -410,7 +495,7 @@ constitución.
 | D-11 | Ningún turno se elimina. | Preserva la evidencia; un error se anula o se corrige. |
 | D-12 | No hay manejo de concurrencia entre secretarias más allá de la unicidad de franja. | Son tres, pero nunca trabajan en simultáneo. |
 | D-13 | Se admiten turnos con fecha ya vencida. | La secretaría necesita registrar turnos que no se cargaron a tiempo. |
-| D-14 | Las sesiones no expiran por inactividad. | El kinesiólogo usa la agenda como monitor durante todo el bloque. |
+| D-14 | Las sesiones no expiran por inactividad, pero vencen a las 12 horas de iniciadas. | El kinesiólogo usa la agenda como monitor durante todo el bloque, y una sesión eterna en una PC compartida expone datos de salud. |
 | D-15 | En sus propios turnos, el kinesiólogo ve toda la información del paciente, en solo lectura. | Decisión del consultorio. |
 | D-16 | Cada kinesiólogo ve solo su agenda y sus turnos asignados: ni agendas ajenas, ni búsqueda de pacientes, ni historial. | Decisión del consultorio. El historial y la búsqueda mostrarían turnos de otros kinesiólogos. |
 | D-17 | `spec.md` es la fuente de verdad del alcance; la constitución lo referencia. | Dos listas divergentes permiten reintroducir sin querer lo excluido. |
@@ -423,6 +508,9 @@ constitución.
 | D-24 | La asignación parte de la fecha y el bloque, y muestra los kinesiólogos de ese bloque con sus franjas libres. | Con dos kinesiólogos a la mañana, la secretaría elige a quién asignar viendo la disponibilidad de ambos. |
 | D-25 | Existe una sección **Pacientes** con búsqueda y una ficha que reúne datos, próximos turnos e historial. Solo para secretaría y administrador. | Concentra en un lugar las consultas sobre un paciente. El kinesiólogo no accede (D-16). |
 | D-26 | Los datos del consultorio (nombre, dirección y teléfono) se cargan al instalar y la secretaría los puede editar. | Cambian rara vez, pero cuando cambian no debe hacer falta tocar el servidor. |
+| D-27 | Se adoptan los requisitos de seguridad y operación de la sección 3.9 como parte del MVP. | El sistema maneja datos sensibles de salud (Ley 25.326, arts. 2, 9 y 10; Res. AAIP 47/2018). |
+| D-28 | Los datos solo se alojan en Argentina o en países adecuados. Producción va en la Unión Europea (ver `despliegue.md`). | Evita la transferencia internacional a países no adecuados (art. 12; Disp. 60-E/2016), como Estados Unidos. |
+| D-29 | Segundo factor obligatorio solo para el administrador. | Es la cuenta con control total; para los demás roles, el costo operativo diario supera el beneficio. |
 
 ### 5.1 Pendientes que requieren decisión del negocio
 
@@ -469,7 +557,7 @@ El MVP se considera terminado cuando **todos** los puntos siguientes son verific
 - [ ] Una cuenta desactivada no puede ingresar, sus sesiones se cierran y sus registros se
       conservan (RF-09).
 - [ ] Cerrar sesión deja de exponer los datos de la agenda (RF-10).
-- [ ] La sesión no expira por inactividad (RF-11).
+- [ ] La sesión no expira por inactividad y vence a las 12 horas de iniciada (RF-11).
 - [ ] Fechas, franjas y horas se interpretan en una única zona horaria configurable (RF-12).
 
 ### 7.2 Consultorio, kinesiólogos y grilla
@@ -538,9 +626,34 @@ El MVP se considera terminado cuando **todos** los puntos siguientes son verific
 - [ ] La ficha del paciente muestra sus próximos turnos (del más cercano al más lejano) y su
       historial (del más reciente al más antiguo); el kinesiólogo no puede consultarla (RF-47).
 
-### 7.8 Salida
+### 7.8 Seguridad y operación
+
+- [ ] El sitio solo responde por HTTPS con TLS 1.2+, redirige HTTP, envía HSTS, y la cookie de
+      sesión es `Secure`, `HttpOnly` y `SameSite=Strict` (RNF-01).
+- [ ] Cinco ingresos fallidos bloquean la cuenta 15 minutos, con bloqueos crecientes, y veinte desde
+      una dirección la bloquean; el mensaje no revela si la cuenta existe (RNF-02).
+- [ ] Una contraseña de menos de 12 caracteres o común se rechaza (RNF-03).
+- [ ] El administrador no puede ingresar sin el código TOTP; los códigos de recuperación funcionan
+      una sola vez (RNF-04).
+- [ ] Base, copias y registros con datos personales están en países adecuados (RNF-05).
+- [ ] Base y copias están cifradas en reposo (RNF-06).
+- [ ] Hay restauración a un punto de los últimos 7 días, copia diaria externa con 30 días de
+      retención, y una prueba de restauración documentada del último mes (RNF-07).
+- [ ] Una búsqueda en los logs de un DNI de prueba no encuentra coincidencias (RNF-08).
+- [ ] La base no es alcanzable desde internet, el usuario de la aplicación no puede alterar el
+      esquema, y el servidor solo expone el puerto 443 (y 80 para redirigir) (RNF-09).
+- [ ] Una entrada inválida se rechaza con un error sin detalles internos, y las cabeceras de
+      seguridad impiden incrustar la aplicación (RNF-10).
+- [ ] La auditoría de dependencias no informa vulnerabilidades altas ni críticas (RNF-11).
+- [ ] Detener la aplicación, o hacer fallar un backup, genera una alerta al administrador
+      (RNF-12).
+- [ ] El servidor tiene actualizaciones automáticas de seguridad y rechaza el acceso SSH por
+      contraseña (RNF-13).
+
+### 7.9 Salida
 
 - [ ] Ningún punto de la sección 4 está implementado.
-- [ ] No existe funcionalidad sin un `RF` numerado asociado, ni ningún `RF` sin verificación.
+- [ ] No existe funcionalidad sin un `RF` o `RNF` numerado asociado, ni ningún requisito sin
+      verificación.
 - [ ] Las nueve reglas de la sección 6 se pueden comprobar una por una sobre el sistema.
 - [ ] Los pendientes de la sección 5.1 están resueltos y documentados.

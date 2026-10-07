@@ -5,7 +5,8 @@ Deriva de [`spec.md`](./spec.md) y respeta el stack fijado en
 Socket.io.
 
 Este documento describe **cómo** se implementa lo que la spec define como **qué**. Cada módulo
-declara los RF que le corresponden, y la sección 8 cierra la trazabilidad en ambos sentidos.
+declara los RF que le corresponden, y la sección 8 cierra la trazabilidad en ambos sentidos. La
+infraestructura de producción y la operación están en [`despliegue.md`](./despliegue.md).
 
 > **Sin pendientes de negocio.** `spec.md` §5.1 está vacío. Lo que sigue marcado **[supuesto]** son
 > detalles técnicos que el plan fija por defecto y se pueden ajustar sin tocar la spec.
@@ -47,15 +48,21 @@ Entidades persistidas y sus relaciones. La forma física se define en las migrac
 - Activo
 - Debe cambiar contraseña: marca que se enciende al crear o restablecer la cuenta (RF-04, RF-08) y
   se apaga cuando el usuario elige la suya (RF-06)
+- Ingresos fallidos seguidos, bloqueado hasta y cantidad de bloqueos consecutivos (RNF-02)
+- Secreto TOTP, cifrado con la clave de la aplicación, y si el segundo factor está activo (RNF-04,
+  solo administrador)
+- Códigos de recuperación, guardados como hash y marcados al usarse (RNF-04)
 
 **`Sesion`** (M1)
-- Token opaco
+- Token opaco (en la base se guarda su hash, no el token)
 - Usuario asociado
-- Creada y revocada
+- Creada, vence (creada + 12 h, RF-11) y revocada
+- Segundo factor verificado (solo relevante para el administrador, RNF-04)
 
 Tabla propia para que cerrar sesión (RF-10) sea una revocación real, para que restablecer o
 desactivar una cuenta pueda cerrar todas sus sesiones (RF-08, RF-09), y para que las sesiones
-sobrevivan a un reinicio del servidor (RF-11, §4.1).
+sobrevivan a un reinicio del servidor (§4.1). Guardar el hash del token hace que una copia de la
+base no permita secuestrar sesiones.
 
 **`Kinesiologo`** — perfil 1:1 con `Usuario` (M2)
 - Usuario asociado
@@ -116,7 +123,7 @@ parámetro para que cambiarlos no requiera migración.
 | No hay dos turnos activos del mismo kinesiólogo en la misma franja | Índice único parcial sobre (kinesiólogo, fecha, hora de inicio) filtrado a `reservado` y `en_espera` | RF-24, RF-37 |
 | No hay dos turnos activos del mismo paciente en la misma franja | Índice único parcial sobre (paciente, fecha, hora de inicio) filtrado a los estados activos | RF-25, RF-37 |
 | Solo existen los cinco estados | Enum en el esquema | RF-29 |
-| Un turno no se elimina | Ausencia de toda vía de borrado en la aplicación | RF-39 |
+| Un turno no se elimina | Ausencia de toda vía de borrado en la aplicación, y el usuario de base de la aplicación sin permiso `DELETE` sobre turnos, eventos, usuarios ni pacientes (`despliegue.md` §7) | RF-39, RF-09 |
 
 **Por qué índices parciales:** cubren de una sola vez las cuatro formas de ocupar una franja
 —asignar, corregir hacia un estado activo, reprogramar y corregir una reprogramación— sin que cada
@@ -161,8 +168,20 @@ saca al turno de `en_espera` la conserva; una que lo devuelve a `reservado` la l
 - **RF-08 / RF-09**: restablecer y desactivar revocan todas las sesiones de la cuenta en la misma
   transacción. Una cuenta desactivada conserva su fila, porque `Turno` y `TurnoEvento` la
   referencian como autor.
-- **Contraseñas:** se guardan con un hash lento con sal (bcrypt o argon2). **[supuesto]** Longitud
-  mínima de 8 caracteres, sin otras reglas de composición.
+- **RF-11**: cada petición y cada conexión de Socket.io verifican que la sesión no esté vencida ni
+  revocada. Al conectar el socket se programa su desconexión para el momento del vencimiento, y el
+  frontend vuelve al login.
+- **RNF-02 (límite de intentos):** el bloqueo por cuenta vive en `Usuario`; el de dirección IP usa
+  `rate-limiter-flexible` con almacenamiento en PostgreSQL, para que sobreviva a reinicios. Express
+  confía solo en la IP que informa el proxy local (`trust proxy` = 1).
+- **RNF-03 (contraseñas):** hash `argon2id` con los parámetros recomendados por OWASP; mínimo de 12
+  caracteres; rechazo de las contraseñas de una lista embebida de contraseñas comunes. Se validan
+  igual al crear, cambiar y restablecer.
+- **RNF-04 (segundo factor del administrador):** TOTP con `otplib`. El secreto se cifra con
+  AES-256-GCM usando `CLAVE_CIFRADO`. La activación muestra un QR para la app autenticadora y 10
+  códigos de recuperación que se ven una sola vez. Una sesión de administrador sin el segundo factor
+  verificado solo accede a la pantalla de verificación (mismo mecanismo de bloqueo que RF-06). El
+  comando de instalación incluye un subcomando para restablecer el segundo factor desde el servidor.
 
 ### M2 · Datos maestros — RF-13 … RF-21
 
@@ -257,9 +276,10 @@ commit, emite un evento de dominio que M5 difunde.
 
 **Elegido:** cookie de sesión opaca, con la sesión persistida en la base.
 
-*Descartado:* JWT. RF-10 exige que cerrar sesión invalide el acceso (y RF-08 y RF-09, que se puedan
-cerrar las sesiones de otro), y un JWT sigue siendo válido hasta expirar; RF-11 pide sesiones sin vencimiento, y un JWT sin vencimiento no es revocable sin
-una lista negra, que es una tabla de sesiones con más pasos.
+*Descartado:* JWT. RF-10 exige que cerrar sesión invalide el acceso, y RF-08 y RF-09 que se puedan
+cerrar las sesiones de otro; un JWT sigue siendo válido hasta expirar, y revocarlo exige una lista
+negra, que es una tabla de sesiones con más pasos. Además, el token quedaría expuesto a JavaScript
+si se guarda fuera de una cookie `HttpOnly` (RNF-01).
 
 *Descartado también:* sesiones en memoria del proceso. Un reinicio del servidor cerraría todas las
 agendas abiertas, incluidas las que los kinesiólogos usan como monitor.
@@ -375,6 +395,42 @@ Prisma no expresa índices únicos parciales en su esquema. Se crean en una migr
 mano dentro de `prisma/migrations`, y una prueba de integración verifica que existen. Es la única
 parte del esquema que no sale de `schema.prisma`.
 
+### 4.15 Defensas de la aplicación
+
+**Elegido** (RNF-01, RNF-08, RNF-10):
+- `helmet` con CSP estricta (`default-src 'self'`, sin scripts en línea ni orígenes externos),
+  `frame-ancestors 'none'` y HSTS (además de Caddy, ver `despliegue.md`).
+- Validación de cada cuerpo, parámetro y consulta con `zod` antes de llegar al servicio. Límite de
+  tamaño de petición de 100 kB.
+- CSRF: la cookie es `SameSite=Strict` y, además, toda petición de escritura verifica que el
+  encabezado `Origin` sea el de la aplicación. El handshake de Socket.io verifica lo mismo.
+- Errores: el manejador central responde un código y un mensaje de negocio; el detalle va solo al
+  log del servidor.
+- Logs con `pino` y redacción de campos (`dni`, `nombre`, `telefono`, `obraSocial`, coseguros,
+  contraseñas, tokens). Las URLs se registran sin parámetros de consulta, para que una búsqueda por
+  DNI no quede en el log.
+
+*Descartado:* tokens CSRF sincronizados. Con frontend y API en el mismo origen, `SameSite=Strict`
+más la verificación de `Origin` cubren el mismo riesgo con menos piezas.
+
+### 4.16 Producción en DigitalOcean, región Frankfurt
+
+**Elegido:** un Droplet en Frankfurt con Docker Compose (Caddy + backend + frontend estático) y
+PostgreSQL administrado de DigitalOcean en la misma región, conectados por red privada. Copia
+externa diaria en un proveedor distinto, también dentro de la Unión Europea. El detalle, los costos
+y la operación están en [`despliegue.md`](./despliegue.md).
+
+*Descartado:* Hetzner (UE) con PostgreSQL propio. Es más barato, pero los backups, los parches y la
+recuperación a un punto en el tiempo (RNF-07) quedarían a cargo de un único desarrollador.
+
+*Descartado:* DonWeb (Argentina). Evita la transferencia internacional, pero no ofrece PostgreSQL
+administrado y su backup semanal no alcanza RNF-07.
+
+*Descartado:* AWS São Paulo. La menor latencia, pero Brasil no figura en la lista de países
+adecuados de la AAIP (RNF-05) y el costo es el doble o más.
+
+*Descartado:* servidor en la clínica. Cortes de luz e internet, riesgo físico y backups manuales.
+
 ---
 
 ## 5. Fronteras del sistema
@@ -417,7 +473,14 @@ repositorio de otro: se comunican por los servicios, y los turnos solo se escrib
 | `ZONA_HORARIA` | Zona IANA del consultorio, p. ej. `America/Argentina/Buenos_Aires` (RF-12) |
 | `PORT` | Puerto del backend |
 | `FRONTEND_ORIGIN` | Origen permitido para CORS y para el handshake de Socket.io |
-| `COOKIE_SECURE` | `true` en producción (cookie de sesión solo por HTTPS) |
+| `COOKIE_SECURE` | `true` en producción (cookie de sesión solo por HTTPS, RNF-01) |
+| `CLAVE_CIFRADO` | Clave de 32 bytes para cifrar los secretos TOTP (RNF-04). Se respalda fuera del servidor: sin ella, el administrador debe reactivar su segundo factor |
+| `NODE_ENV` | `production` en producción: desactiva trazas en las respuestas |
+| `LOG_LEVEL` | Nivel de log de `pino` |
+
+En producción, `DATABASE_URL` usa el usuario de aplicación sin permisos de estructura y exige SSL
+(`sslmode=require`). Las migraciones corren con otro usuario, `DATABASE_URL_MIGRACIONES`, que solo
+se usa durante el despliegue (RNF-09).
 
 Los datos del consultorio no son variables de entorno: viven en la tabla `Consultorio` (RF-13).
 
@@ -453,6 +516,16 @@ kinesiólogos llega a ambos.
 el flujo completo: asignar → llegó → asistió, con el kinesiólogo viendo cada paso. Se verifica que
 el kinesiólogo no ve acciones ni puede ejecutarlas contra la API.
 
+**Seguridad (M1 y transversal).**
+- Bloqueo de cuenta e IP con sus umbrales y su duración creciente (RNF-02), con reloj inyectable.
+- Contraseñas cortas o comunes rechazadas en alta, cambio y restablecimiento (RNF-03).
+- Administrador sin TOTP verificado bloqueado; códigos de recuperación de un solo uso (RNF-04).
+- Sesión vencida a las 12 horas rechazada en HTTP y desconectada en Socket.io (RF-11).
+- Cabeceras de seguridad presentes en todas las respuestas; petición de escritura con `Origin`
+  ajeno rechazada (RNF-01, RNF-10).
+- Una prueba que ejecuta el flujo completo con un DNI conocido y verifica que no aparece en la
+  salida de logs capturada (RNF-08).
+
 ### 6.2 Reloj controlado
 
 Toda prueba que dependa de la hora (aviso de pendientes, historial, disponibilidad de "hoy") usa un
@@ -473,6 +546,7 @@ reloj inyectable, no el del sistema.
 3. **M4** — las vistas que hacen utilizable a M3, incluido el aviso.
 4. **M5** — tiempo real, que solo se prueba con dos clientes reales.
 5. **M6, consulta de historial.**
+6. **Despliegue** — infraestructura, copias, monitoreo y endurecimiento (`despliegue.md`).
 
 ---
 
@@ -527,6 +601,19 @@ reloj inyectable, no el del sistema.
 | RF-45 | M5 | contrato |
 | RF-46 | M6 | integración |
 | RF-47 | M6 | E2E |
+| RNF-01 | M1 + infraestructura | integración (cabeceras, cookie) + verificación de despliegue |
+| RNF-02 | M1 | integración (reloj) |
+| RNF-03 | M1 | unidad + integración |
+| RNF-04 | M1 | integración + E2E |
+| RNF-05 | infraestructura | verificación de despliegue (inventario de servicios y regiones) |
+| RNF-06 | infraestructura | verificación de despliegue |
+| RNF-07 | infraestructura | prueba de restauración mensual documentada |
+| RNF-08 | transversal | integración (logs capturados) |
+| RNF-09 | infraestructura + migraciones | integración (permisos del usuario) + verificación de despliegue |
+| RNF-10 | transversal | integración |
+| RNF-11 | CI | `npm audit` en el pipeline |
+| RNF-12 | infraestructura | simulacro de caída y de backup fallido |
+| RNF-13 | infraestructura | verificación de despliegue |
 
 ---
 
@@ -539,3 +626,7 @@ reloj inyectable, no el del sistema.
 | Corrección usada como atajo | D-10 | Queda registrada como `correccion` con autor; se puede auditar. |
 | Grilla desfasada entre bloques en el futuro | §4.4 | La ocupación por igualdad deja de alcanzar; revisar índices. |
 | Zona horaria mal configurada | RF-12 | Parámetro de instalación; fijarlo antes del primer despliegue. |
+| Pérdida de `CLAVE_CIFRADO` | RNF-04 | Se respalda en un gestor de contraseñas del administrador. Sin ella, el segundo factor se restablece desde el servidor. |
+| Pérdida del segundo factor del administrador | RNF-04 | Códigos de recuperación y subcomando de restablecimiento en el servidor. |
+| Caída de DigitalOcean o de la región | RNF-07 | Copia externa diaria en otro proveedor y procedimiento de reconstrucción en `despliegue.md`. |
+| Un servicio auxiliar (monitoreo, errores) fuera de países adecuados | RNF-05, RNF-08 | Inventario de servicios en `despliegue.md`; ningún dato personal sale de la aplicación por logs. |

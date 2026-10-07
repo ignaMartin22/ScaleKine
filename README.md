@@ -11,7 +11,8 @@ Desarrollado con metodología **SDD (Spec-Driven Development)**. Documentos del 
 1. [`docs/constitucion.md`](./docs/constitucion.md) — principios rectores, alcance del MVP, stack y no-negociables.
 2. [`docs/spec.md`](./docs/spec.md) — qué se construye y por qué: requisitos EARS numerados, fuera de alcance y criterios de finalización.
 3. [`docs/plan.md`](./docs/plan.md) — plan técnico: módulos, modelo de datos, decisiones y tests.
-4. [`docs/tasks.md`](./docs/tasks.md) — desglose en tareas, por fases, con los RF que cubre cada una.
+4. [`docs/tasks.md`](./docs/tasks.md) — desglose en tareas, por fases, con los RF y RNF que cubre cada una.
+5. [`docs/despliegue.md`](./docs/despliegue.md) — producción: infraestructura, seguridad, copias, monitoreo y operación.
 
 Las reglas de trabajo para implementar están en [`CLAUDE.md`](./CLAUDE.md).
 
@@ -21,6 +22,20 @@ Las reglas de trabajo para implementar están en [`CLAUDE.md`](./CLAUDE.md).
 - **Backend:** Node.js + Express
 - **Base de datos:** PostgreSQL (Prisma ORM)
 - **Tiempo real:** Socket.io
+- **Producción:** DigitalOcean (Frankfurt, UE) con Docker Compose, Caddy y PostgreSQL administrado
+
+## Seguridad
+
+El sistema maneja datos de salud, que la Ley 25.326 considera sensibles. Por eso:
+
+- Se sirve solo por HTTPS.
+- El administrador ingresa con segundo factor.
+- Hay límite de intentos de login y contraseñas de 12 caracteres como mínimo.
+- Las sesiones vencen a las 12 horas.
+- Los datos se alojan solo en la UE, cifrados, con copias externas cifradas y probadas cada mes.
+- Los logs no contienen datos personales.
+
+Requisitos en `docs/spec.md` §3.9 (RNF-01 … RNF-13); implementación y operación en `docs/despliegue.md`.
 
 ## Turnos
 
@@ -56,7 +71,7 @@ No incluye (por ahora): recordatorios al paciente, cobros o facturación, portal
 
 ## Setup
 
-_Se completa en T-31._ Requisitos previstos: Node.js LTS, Docker (para PostgreSQL) y las variables de entorno de `docs/plan.md` §5.2 (`.env.example`).
+_Se completa en T-40._ Requisitos previstos: Node.js LTS, Docker (para PostgreSQL) y las variables de entorno de `docs/plan.md` §5.2 (`.env.example`).
 
 Primer arranque previsto:
 
@@ -73,11 +88,13 @@ Primer arranque previsto:
 │   ├── constitucion.md
 │   ├── spec.md
 │   ├── plan.md
-│   └── tasks.md
+│   ├── tasks.md
+│   └── despliegue.md
 ├── CLAUDE.md
 ├── README.md
 ├── backend/            (T-02) Express + Prisma + Socket.io
 ├── frontend/           (T-05) Angular
-├── e2e/                (T-30) Playwright
+├── e2e/                (T-33) Playwright
+├── infra/              (T-36) aprovisionamiento, respaldo y verificación de restauración
 └── docker-compose.yml  (T-01) PostgreSQL
 ```
