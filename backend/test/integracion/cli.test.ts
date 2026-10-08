@@ -307,6 +307,32 @@ describe('restablecer-2fa-admin (RNF-04)', () => {
     await expect((await servicio(deps)).ingresar('administrador', contrasenaTemporal)).resolves.toBeDefined();
   });
 
+  it('cierra las sesiones abiertas del administrador y no toca las de otras cuentas', async () => {
+    const deps = dependencias();
+    const { contrasenaTemporal } = await instalar(deps, DATOS);
+    const identidad = await servicio(deps);
+    const primera = await identidad.ingresar('administrador', contrasenaTemporal);
+    const segunda = await identidad.ingresar('administrador', contrasenaTemporal);
+    // Una sesión que ya había verificado el segundo factor.
+    await db.sesion.updateMany({ data: { segundoFactorVerificado: true } });
+    const otra = await crearUsuario({ nombreUsuario: 'otra1' });
+    const sesionAjena = await db.sesion.create({
+      data: {
+        hashToken: 'hash-ajeno',
+        usuarioId: otra.id,
+        creadaEn: new Date(AHORA),
+        venceEn: new Date('2026-10-08T00:00:00Z'),
+      },
+    });
+
+    await restablecer2faAdmin(deps, {});
+
+    expect(await identidad.sesionVigente(primera.token)).toBeNull();
+    expect(await identidad.sesionVigente(segunda.token)).toBeNull();
+    const ajena = await db.sesion.findUniqueOrThrow({ where: { id: sesionAjena.id } });
+    expect(ajena.revocadaEn).toBeNull();
+  });
+
   it('falla si no hay administrador', async () => {
     expect(await codigoDeError(restablecer2faAdmin(dependencias(), {}))).toBe('administrador_inexistente');
   });

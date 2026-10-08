@@ -157,8 +157,8 @@ de entorno: `docker compose exec api node dist/cli/index.js <subcomando> [opcion
   niega sin modificar nada.
 - `restablecer-admin`: genera una nueva contraseña temporal (también una sola vez), marca la cuenta
   para cambio, levanta el bloqueo por intentos y cierra todas las sesiones del administrador.
-- `restablecer-2fa-admin`: desactiva el segundo factor del administrador para que lo vuelva a
-  activar en su próximo ingreso.
+- `restablecer-2fa-admin`: desactiva el segundo factor del administrador y cierra sus sesiones,
+  para que lo vuelva a activar en su próximo ingreso.
 - `revocar-sesiones`: revoca las sesiones de todas las cuentas; es el primer paso ante un incidente
   (`docs/despliegue.md` §12).
 

@@ -44,7 +44,9 @@ async function ejecutar(argv: readonly string[]): Promise<void> {
       case 'restablecer-2fa-admin': {
         await restablecer2faAdmin(dependencias, orden.datos);
         logger.info({ comando: orden.comando }, 'segundo factor del administrador restablecido');
-        informar('Segundo factor desactivado: el administrador lo activará en su próximo ingreso.');
+        informar(
+          'Segundo factor desactivado y sesiones del administrador cerradas: lo activará en su próximo ingreso.',
+        );
         break;
       }
       case 'revocar-sesiones': {

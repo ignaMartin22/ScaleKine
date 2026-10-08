@@ -146,16 +146,25 @@ export async function restablecerAdmin(
 
 /**
  * Desactiva el segundo factor del administrador (RNF-04): lo deja sin activar, sin secreto y sin
- * códigos de recuperación, para que lo vuelva a activar en su próximo ingreso.
+ * códigos de recuperación, para que lo vuelva a activar en su próximo ingreso. También cierra sus
+ * sesiones abiertas: una que ya verificó el segundo factor no debe sobrevivir a la pérdida de la
+ * aplicación autenticadora.
  */
 export async function restablecer2faAdmin(
-  { db }: DependenciasCli,
+  { db, reloj }: DependenciasCli,
   seleccion: SeleccionAdministrador,
 ): Promise<void> {
   const { id } = await buscarAdministrador(db, seleccion);
-  await db.usuario.update({
-    where: { id },
-    data: { totpActivo: false, secretoTotpCifrado: null, codigosRecuperacion: [] },
+  await db.$transaction(async (tx) => {
+    // Mismo orden que `restablecerAdmin`: primero la fila de la cuenta y después las sesiones.
+    await tx.usuario.update({
+      where: { id },
+      data: { totpActivo: false, secretoTotpCifrado: null, codigosRecuperacion: [] },
+    });
+    await tx.sesion.updateMany({
+      where: { usuarioId: id, revocadaEn: null },
+      data: { revocadaEn: reloj.ahora() },
+    });
   });
 }
 
