@@ -6,7 +6,7 @@ export default defineConfig({
       {
         test: {
           name: 'unidad',
-          include: ['test/comun/**/*.test.ts'],
+          include: ['test/comun/**/*.test.ts', 'test/modulos/**/*.test.ts'],
           environment: 'node',
         },
       },
