@@ -143,8 +143,8 @@ export async function restablecerAdmin(
 }
 
 /**
- * Desactiva el segundo factor del administrador (RNF-04): lo deja sin activar, sin secreto y sin
- * códigos de recuperación, para que lo vuelva a activar en su próximo ingreso. También cierra sus
+ * Desactiva el segundo factor del administrador (RNF-04): lo deja sin activar, sin secreto, sin el
+ * último paso TOTP usado y sin códigos de recuperación, para que lo vuelva a activar en su próximo ingreso. También cierra sus
  * sesiones abiertas: una que ya verificó el segundo factor no debe sobrevivir a la pérdida de la
  * aplicación autenticadora.
  */
@@ -157,7 +157,7 @@ export async function restablecer2faAdmin(
     // Mismo orden que `restablecerAdmin`: primero la fila de la cuenta y después las sesiones.
     await tx.usuario.update({
       where: { id },
-      data: { totpActivo: false, secretoTotpCifrado: null, codigosRecuperacion: [] },
+      data: { totpActivo: false, secretoTotpCifrado: null, ultimoPasoTotp: null, codigosRecuperacion: [] },
     });
     await tx.sesion.updateMany({
       where: { usuarioId: id, revocadaEn: null },

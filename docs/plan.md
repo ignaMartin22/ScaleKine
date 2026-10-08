@@ -213,7 +213,10 @@ saca al turno de `en_espera` la conserva; una que lo devuelve a `reservado` la l
 - **RNF-04 (segundo factor del administrador):** TOTP con `otplib`. El secreto se cifra con
   AES-256-GCM usando `CLAVE_CIFRADO`. La activación muestra un QR para la app autenticadora y 10
   códigos de recuperación que se ven una sola vez. Una sesión de administrador sin el segundo factor
-  verificado solo accede a la pantalla de verificación (mismo mecanismo de bloqueo que RF-06). El
+  verificado solo accede a la pantalla de verificación (mismo mecanismo de bloqueo que RF-06: la
+  sesión tiene a lo sumo un paso pendiente y cada variante del middleware declara cuáles admite). Un
+  código inválido o repetido cuenta contra el límite de intentos (RNF-02); un TOTP o un código de
+  recuperación no se reutiliza, ni en serie ni en paralelo, por escrituras condicionadas. El
   comando de instalación incluye un subcomando para restablecer el segundo factor desde el servidor;
   también cierra las sesiones abiertas del administrador, porque una sesión que ya verificó el
   segundo factor no tiene que sobrevivir a la pérdida de la aplicación autenticadora.

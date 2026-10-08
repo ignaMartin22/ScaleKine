@@ -15,11 +15,15 @@ export interface UsuarioSesion {
   rol: Rol;
   /** La cuenta debe elegir una contraseña propia antes de hacer cualquier otra cosa (RF-06). */
   debeCambiarContrasena: boolean;
+  /** El administrador ya activó su segundo factor (RNF-04). Siempre false para los demás roles. */
+  totpActivo: boolean;
 }
 
 export interface SesionActiva {
   id: number;
   usuario: UsuarioSesion;
+  /** La sesión ya pasó el segundo factor (RNF-04). Solo es relevante para el administrador. */
+  segundoFactorVerificado: boolean;
 }
 
 /** En la base solo se guarda el hash del token: una filtración de la tabla no da sesiones (RNF-01). */
@@ -31,7 +35,7 @@ function errorCredenciales(): ErrorNegocio {
   return new ErrorNegocio('credenciales_invalidas', 'Las credenciales no son válidas.', 401);
 }
 
-function errorDemasiadosIntentos(): ErrorNegocio {
+export function errorDemasiadosIntentos(): ErrorNegocio {
   return new ErrorNegocio(
     'demasiados_intentos',
     'Hubo demasiados intentos fallidos desde esta conexión. Esperá unos minutos y volvé a intentar.',
@@ -121,6 +125,7 @@ export async function crearServicioIdentidad({ db, reloj }: { db: BaseDeDatos; r
           nombreUsuario: usuario.nombreUsuario,
           rol: usuario.rol,
           debeCambiarContrasena: usuario.debeCambiarContrasena,
+          totpActivo: usuario.totpActivo,
         },
       };
     },
@@ -134,6 +139,7 @@ export async function crearServicioIdentidad({ db, reloj }: { db: BaseDeDatos; r
           id: true,
           venceEn: true,
           revocadaEn: true,
+          segundoFactorVerificado: true,
           usuario: {
             select: {
               id: true,
@@ -141,6 +147,7 @@ export async function crearServicioIdentidad({ db, reloj }: { db: BaseDeDatos; r
               rol: true,
               activo: true,
               debeCambiarContrasena: true,
+              totpActivo: true,
             },
           },
         },
@@ -149,10 +156,11 @@ export async function crearServicioIdentidad({ db, reloj }: { db: BaseDeDatos; r
       // Al cumplirse las 12 horas exactas la sesión ya está vencida (RF-11).
       if (sesion.venceEn.getTime() <= reloj.ahora().getTime()) return null;
       if (!sesion.usuario.activo) return null;
-      const { id, nombreUsuario, rol, debeCambiarContrasena } = sesion.usuario;
+      const { id, nombreUsuario, rol, debeCambiarContrasena, totpActivo } = sesion.usuario;
       return {
         id: sesion.id,
-        usuario: { id, nombreUsuario, rol, debeCambiarContrasena },
+        usuario: { id, nombreUsuario, rol, debeCambiarContrasena, totpActivo },
+        segundoFactorVerificado: sesion.segundoFactorVerificado,
       };
     },
 
