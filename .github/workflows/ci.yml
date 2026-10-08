@@ -1,0 +1,86 @@
+# Integración continua (docs/despliegue.md §10, RNF-11): lint, compilación, pruebas y auditoría de
+# dependencias en cada pull request. Nunca usa datos de producción: solo datos ficticios.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: scalekine
+          POSTGRES_PASSWORD: ci-solo-pruebas
+          POSTGRES_DB: scalekine_desarrollo
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U scalekine -d scalekine_desarrollo"
+          --health-interval 5s --health-timeout 3s --health-retries 12
+    env:
+      # Valores efímeros de esta corrida: la base vive solo dentro del job.
+      PGHOST: localhost
+      PGPASSWORD: ci-solo-pruebas
+      POSTGRES_USER: scalekine
+      SCALEKINE_CLAVE_MIGRACIONES: ci-migraciones
+      SCALEKINE_CLAVE_APP: ci-app
+      SCALEKINE_CLAVE_RESPALDO: ci-respaldo
+      DATABASE_URL_PRUEBAS: postgresql://scalekine_app:ci-app@localhost:5432/scalekine_pruebas
+      DATABASE_URL_MIGRACIONES_PRUEBAS: postgresql://scalekine_migraciones:ci-migraciones@localhost:5432/scalekine_pruebas
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci
+      - name: Auditoría de dependencias (falla con vulnerabilidades altas o críticas)
+        run: npm audit --audit-level=high
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run build
+      - name: Preparar bases y usuarios, igual que en Docker
+        working-directory: .
+        run: |
+          psql -v ON_ERROR_STOP=1 -U scalekine -d scalekine_desarrollo -f infra/postgres/init/01-bases.sql
+          sh infra/postgres/init/02-usuarios.sh
+      - name: Pruebas de unidad e integración
+        run: npm test
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - name: Auditoría de dependencias (falla con vulnerabilidades altas o críticas)
+        run: npm audit --audit-level=high
+      - run: npm run lint
+      - run: npm run build
+      - run: npm test
+      - name: CSP de producción sin violaciones
+        run: npm run verificar-csp
+        env:
+          NAVEGADOR: chrome
