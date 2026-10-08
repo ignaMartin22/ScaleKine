@@ -3,6 +3,7 @@ import { crearBaseDeDatos } from './comun/baseDeDatos.js';
 import { cargarConfiguracion, ErrorConfiguracion } from './comun/configuracion.js';
 import { crearLogger } from './comun/logger.js';
 import { relojDelSistema } from './comun/reloj.js';
+import { crearModuloIdentidad } from './modulos/m1-identidad/index.js';
 
 async function iniciar(): Promise<void> {
   const config = cargarConfiguracion(process.env);
@@ -14,7 +15,9 @@ async function iniciar(): Promise<void> {
   const [{ usuario }] = await db.$queryRaw<[{ usuario: string }]>`SELECT current_user AS usuario`;
   logger.info({ usuarioBase: usuario }, 'conectado a la base');
 
-  const app = crearApp({ config, logger, reloj });
+  // Cada módulo recibe sus dependencias en su fábrica; crearApp solo monta sus routers.
+  const identidad = crearModuloIdentidad({ db, reloj, config });
+  const app = crearApp({ config, logger, reloj, rutas: [identidad.rutas] });
   const servidor = app.listen(config.puerto, () => {
     logger.info({ puerto: config.puerto, entorno: config.entorno }, 'backend escuchando');
   });
