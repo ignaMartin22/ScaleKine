@@ -10,10 +10,43 @@ criterio de "hecho". Una tarea no está terminada si sus pruebas no pasan.
 - **Hecho** significa: pruebas del nivel indicado en verde, y los criterios de `spec.md` §7 que
   cubre se pueden verificar.
 - Las tareas de frontend (`F`) van después de la de backend (`B`) que consumen. Back y front pueden
-  avanzar en paralelo dentro de una misma fase.
+  avanzar en paralelo dentro de una misma fase (ver "Trabajo en paralelo").
 - Si una tarea revela una contradicción con la spec, se frena y se corrige primero la spec.
 - Nunca se usan datos reales de pacientes fuera de producción: las pruebas y el desarrollo usan datos
   ficticios.
+
+---
+
+## Trabajo en paralelo
+
+Las tareas se reparten en **carriles**: cada carril es un worktree con su rama y su PR, y trabaja
+una tarea por vez. Una ola empieza cuando las tareas de las que depende están fusionadas en `main`.
+
+| Ola | Carril A (camino crítico) | Carril B | Depende de |
+|---|---|---|---|
+| 1 | T-07 | T-15 → T-20 | Fase 0 |
+| 2 | T-08 → T-09 → T-13 | T-11 → T-10 → T-12 | T-07. T-10 y T-12 necesitan T-11; T-13, T-08 y T-11 |
+| 3 | T-16 → T-17 → T-18 | T-14 | Backend de la fase 1 |
+| 4 | T-22 → T-23 → T-24 | T-19 → T-21 → T-25 → T-26 | Fase 2, T-15 y T-20. T-25 necesita T-22 |
+| 5 | T-27 → T-29 | T-28 → T-30 | Fase 3 |
+| 6 | T-31 → T-32 | T-35 → T-37 | Fase 4 |
+| 7 | T-33 → T-34 | T-36 → T-38 → T-39 | Todo lo anterior |
+| — | T-40 | — | Todo |
+
+**Reglas:**
+
+- **Base de pruebas propia.** Las pruebas de integración vacían su base entre caso y caso, así que
+  cada carril usa la suya: `infra/postgres/crear-base-pruebas.sh <carril>` crea
+  `scalekine_<carril>_pruebas`, y el `.env` del worktree apunta ahí. Si el carril levanta
+  servidores, usa otros puertos (`PORT` y el de `ng serve`).
+- **Migraciones de a una.** Solo un carril por vez modifica `schema.prisma` o `prisma/migrations`.
+- **Lockfiles.** Si dos carriles agregan dependencias, el segundo hace *rebase* sobre `main` y
+  regenera `package-lock.json` con `npm install`; nunca se resuelve el conflicto a mano.
+- **T-22, T-23 y T-24 van en un solo carril**: escriben el mismo servicio de `m3-turnos`.
+- **Antes del PR**, el carril hace *rebase* sobre `main`. Las tareas que tocan sesiones,
+  contraseñas, segundo factor, escrituras de turnos, tiempo real o seguridad (T-07, T-09, T-11,
+  T-12, T-22, T-23, T-24, T-31, T-34) pasan además por el agente `revisor-seguridad` antes de
+  fusionarse.
 
 ---
 

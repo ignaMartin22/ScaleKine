@@ -21,7 +21,9 @@ En orden de precedencia:
 - **Contradicción → spec primero.** Si una tarea choca con la spec o el plan, se frena, se corrige
   el documento y recién después el código.
 - **Fuera de alcance es fuera de alcance.** No implementar nada de `spec.md` §4.
-- **Una tarea por vez**, en el orden de `tasks.md`, con su criterio de "hecho" cumplido.
+- **Una tarea por carril**, con su criterio de "hecho" cumplido. Dos carriles trabajan en paralelo
+  solo sobre tareas sin dependencias entre sí, según el grafo de `tasks.md` ("Trabajo en
+  paralelo"); dentro de un carril, las tareas siguen el orden de `tasks.md`.
 - Documentos, mensajes de la interfaz, nombres de dominio y commits en castellano. Los nombres de
   dominio en código siguen los de la spec (`reservado`, `en_espera`, `asistio`, `no_asistio`,
   `anulado`; roles `administrador`, `secretaria`, `kinesiologo`).

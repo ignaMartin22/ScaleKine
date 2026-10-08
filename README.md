@@ -158,6 +158,21 @@ crítico (`inlineCritical: false`). `verificar-csp` usa el Chrome o Edge instala
 3. Comando de instalación — crea la cuenta de administrador (contraseña temporal, se muestra una sola vez) y los datos del consultorio.
 4. Levantar backend y frontend, e ingresar como administrador para elegir la contraseña definitiva.
 
+## Trabajo en paralelo
+
+Las tareas se reparten en carriles, cada uno en su worktree, según el grafo de `docs/tasks.md`
+("Trabajo en paralelo"). Para preparar un carril:
+
+1. Crear su base de pruebas: `infra/postgres/crear-base-pruebas.sh <carril>`.
+2. Copiar el `.env` de la raíz al worktree y apuntar `DATABASE_URL_PRUEBAS` y
+   `DATABASE_URL_MIGRACIONES_PRUEBAS` a `scalekine_<carril>_pruebas`. Si el carril levanta
+   servidores, cambiar también `PORT`.
+3. Ejecutar `npm install` en `backend/` y `frontend/`.
+
+En `.claude/agents/` hay dos agentes de proyecto: `revisor-seguridad` (Opus, solo lectura), que
+revisa las tareas críticas antes de fusionarlas, y `tarea-acotada` (Haiku), para tareas chicas y
+bien especificadas.
+
 ## Integración continua
 
 En cada pull request, GitHub Actions (`.github/workflows/ci.yml`) ejecuta en backend y frontend:

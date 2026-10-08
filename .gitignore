@@ -27,3 +27,7 @@ Thumbs.db
 
 # Cliente de Prisma generado (npm run prisma:generar)
 backend/src/generado/
+
+# Claude Code: worktrees y permisos locales
+.claude/worktrees/
+.claude/settings.local.json
