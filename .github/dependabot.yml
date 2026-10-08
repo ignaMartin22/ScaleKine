@@ -1,4 +1,12 @@
 # Actualizaciones de dependencias una vez por semana (despliegue.md §10, RNF-11).
+#
+# Algunas versiones no se actualizan solas porque dependen de otra pieza del proyecto:
+# - @types/node sigue a la versión de Node fijada en .nvmrc: un salto mayor de tipos describe APIs
+#   que el runtime no tiene.
+# - typescript queda en 6.0.x: Angular 22 exige ~6.0 y typescript-eslint, < 6.1.
+# - Angular cambia de versión mayor con `ng update`, que migra el código; un PR de Dependabot no.
+# Las actualizaciones de parches siguen llegando, y las de seguridad no se ven afectadas por estas
+# exclusiones.
 version: 2
 updates:
   - package-ecosystem: npm
@@ -6,11 +14,25 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 10
+    ignore:
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
   - package-ecosystem: npm
     directory: /frontend
     schedule:
       interval: weekly
     open-pull-requests-limit: 10
+    ignore:
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: "@angular/*"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@angular-devkit/*"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "angular-eslint"
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: github-actions
     directory: /
     schedule:
