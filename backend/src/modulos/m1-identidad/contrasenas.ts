@@ -36,15 +36,21 @@ export const LARGO_MINIMO_CONTRASENA = 12;
  * Lanza un error 400 con un código estable y un mensaje para la persona usuaria.
  */
 export function validarPoliticaContrasena(contrasena: string): void {
+  // Los espacios de los extremos no cuentan para el largo ni para la comparación con la lista:
+  // no alejan a una contraseña de las comunes. El hash se calcula sobre la contraseña original.
+  const sinEspacios = contrasena.trim();
+  if (sinEspacios === '') {
+    throw new ErrorNegocio('contrasena_en_blanco', 'La contraseña no puede estar en blanco.', 400);
+  }
   // Se cuentan caracteres, no unidades UTF-16: un emoji cuenta como uno.
-  if ([...contrasena].length < LARGO_MINIMO_CONTRASENA) {
+  if ([...sinEspacios].length < LARGO_MINIMO_CONTRASENA) {
     throw new ErrorNegocio(
       'contrasena_corta',
       `La contraseña debe tener al menos ${LARGO_MINIMO_CONTRASENA} caracteres.`,
       400,
     );
   }
-  if (CONTRASENAS_COMUNES.has(contrasena.toLowerCase())) {
+  if (CONTRASENAS_COMUNES.has(sinEspacios.toLowerCase())) {
     throw new ErrorNegocio(
       'contrasena_comun',
       'Esa contraseña es muy común. Elegí otra más difícil de adivinar.',

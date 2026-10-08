@@ -14,8 +14,9 @@ import type { ServicioIdentidad, UsuarioSesion } from './servicio.js';
  * - `GET /api/sesion`: sesión actual. Mismo cuerpo; 401 si no hay una sesión válida.
  * - `PUT /api/sesion/contrasena`: cambio de la propia contraseña (RF-06, RF-07). Cuerpo
  *   `{ contrasenaActual, contrasenaNueva }`; 204 si se aplicó, 403 `contrasena_actual_incorrecta` si
- *   la actual no coincide (nunca 401: el frontend lo leería como sesión vencida) y 400 si la nueva
- *   no cumple la política (RNF-03) o es igual a la actual.
+ *   la actual no coincide (nunca 401: el frontend lo leería como sesión vencida), 400 si la nueva
+ *   no cumple la política (RNF-03) o es igual a la actual, y 409 `contrasena_modificada` si otra
+ *   escritura cambió la contraseña mientras tanto.
  * - `DELETE /api/sesion`: cierre (RF-10). Revoca la sesión si hay cookie, siempre borra la cookie y
  *   responde 204; sin sesión también es 204.
  *
@@ -52,16 +53,22 @@ function cuerpoUsuario(usuario: UsuarioSesion) {
 }
 
 /**
- * `exigirSesion` debe ser la variante que deja pasar a la cuenta marcada para cambio de contraseña:
- * estas rutas son justamente la salida de ese estado (RF-06).
+ * `exigirSesion` bloquea a la cuenta marcada para cambio de contraseña (RF-06) y es el que deben
+ * usar las rutas nuevas de este router. `exigirSesionAunqueDebaCambiarContrasena` la deja pasar y
+ * solo corresponde a las rutas que son la salida de ese estado: consultar la sesión y cambiar la
+ * contraseña.
  */
 export function crearRutasIdentidad({
   servicio,
-  exigirSesion,
+  // Aún sin uso: las rutas nuevas de este router (T-13) deben escribir `exigirSesion`, no la otra.
+  exigirSesion: _exigirSesion,
+  exigirSesionAunqueDebaCambiarContrasena,
   config,
 }: {
   servicio: ServicioIdentidad;
+  /** Para las rutas de negocio de este router (T-13); las actuales usan la variante permisiva. */
   exigirSesion: RequestHandler;
+  exigirSesionAunqueDebaCambiarContrasena: RequestHandler;
   config: Pick<Configuracion, 'cookieSegura'>;
 }): Router {
   const router = Router();
@@ -77,20 +84,24 @@ export function crearRutasIdentidad({
     }
   });
 
-  router.get('/sesion', exigirSesion, (_req, res) => {
+  router.get('/sesion', exigirSesionAunqueDebaCambiarContrasena, (_req, res) => {
     const { usuario } = sesionActual(res);
     res.json({ usuario: cuerpoUsuario(usuario) });
   });
 
   router.put(
     '/sesion/contrasena',
-    exigirSesion,
+    exigirSesionAunqueDebaCambiarContrasena,
     validar(esquemaCambioContrasena),
     async (_req, res, next) => {
       try {
-        const { usuario } = sesionActual(res);
+        const { id, usuario } = sesionActual(res);
         const { body } = datosValidados(res.locals, esquemaCambioContrasena);
-        await servicio.cambiarContrasena(usuario.id, body.contrasenaActual, body.contrasenaNueva);
+        await servicio.cambiarContrasena(
+          { usuarioId: usuario.id, sesionId: id },
+          body.contrasenaActual,
+          body.contrasenaNueva,
+        );
         res.status(204).end();
       } catch (err) {
         next(err);
