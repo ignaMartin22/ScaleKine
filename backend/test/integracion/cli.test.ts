@@ -210,6 +210,7 @@ describe('restablecer-admin (plan.md §9)', () => {
       data: {
         totpActivo: true,
         secretoTotpCifrado: 'secreto-cifrado-ficticio',
+        ultimoPasoTotp: 59_000_000,
         codigosRecuperacion: ['h1', 'h2'],
       },
     });
@@ -275,7 +276,7 @@ describe('restablecer-admin (plan.md §9)', () => {
 });
 
 describe('restablecer-2fa-admin (RNF-04)', () => {
-  it('deja el segundo factor sin activar, sin secreto y sin códigos', async () => {
+  it('deja el segundo factor sin activar, sin secreto, sin último paso TOTP y sin códigos', async () => {
     const deps = dependencias();
     await instalar(deps, DATOS);
     await db.usuario.updateMany({
@@ -283,6 +284,7 @@ describe('restablecer-2fa-admin (RNF-04)', () => {
       data: {
         totpActivo: true,
         secretoTotpCifrado: 'secreto-cifrado-ficticio',
+        ultimoPasoTotp: 59_000_000,
         codigosRecuperacion: ['h1', 'h2'],
       },
     });
@@ -292,6 +294,7 @@ describe('restablecer-2fa-admin (RNF-04)', () => {
     expect(await administrador()).toMatchObject({
       totpActivo: false,
       secretoTotpCifrado: null,
+      ultimoPasoTotp: null,
       codigosRecuperacion: [],
     });
   });

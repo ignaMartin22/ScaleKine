@@ -51,7 +51,8 @@ Entidades persistidas y sus relaciones. La forma física se define en las migrac
 - Ingresos fallidos seguidos, bloqueado hasta y cantidad de bloqueos consecutivos (RNF-02)
 - Secreto TOTP, cifrado con la clave de la aplicación, y si el segundo factor está activo (RNF-04,
   solo administrador)
-- Códigos de recuperación, guardados como hash y marcados al usarse (RNF-04)
+- Último paso TOTP aceptado, para que el mismo código no se reutilice dentro de su ventana (RNF-04)
+- Códigos de recuperación, guardados como hash y quitados de la lista al usarse (RNF-04)
 
 **`Sesion`** (M1)
 - Token opaco (en la base se guarda su hash, no el token)
@@ -183,7 +184,8 @@ saca al turno de `en_espera` la conserva; una que lo devuelve a `reservado` la l
     los intentos no cuentan ni extienden el bloqueo, y el rechazo es el mismo que el de credenciales
     inválidas, verificando igual la contraseña con argon2 para que el tiempo no lo delate (RF-02).
     `bloqueosConsecutivos`, que duplica cada bloqueo, vuelve a cero con un ingreso o un cambio de
-    contraseña correctos y con el restablecimiento (RF-08). Quedan tres diferencias residuales
+    contraseña correctos (para un administrador con segundo factor activo, con la verificación del
+    segundo factor, no con el ingreso) y con el restablecimiento (RF-08). Quedan tres diferencias residuales
     aceptadas, de menos de un milisegundo a pocos ms frente a la variación de argon2: el `UPDATE` de
     una cuenta existente con contraseña incorrecta escribe una fila y el de `id = 0` no, y el camino
     de una carrera hace `BEGIN`/`UPDATE`/`COMMIT`. En el cambio de contraseña, si el bloqueo cae
@@ -212,7 +214,17 @@ saca al turno de `en_espera` la conserva; una que lo devuelve a `reservado` la l
 - **RNF-04 (segundo factor del administrador):** TOTP con `otplib`. El secreto se cifra con
   AES-256-GCM usando `CLAVE_CIFRADO`. La activación muestra un QR para la app autenticadora y 10
   códigos de recuperación que se ven una sola vez. Una sesión de administrador sin el segundo factor
-  verificado solo accede a la pantalla de verificación (mismo mecanismo de bloqueo que RF-06). El
+  verificado solo accede a la pantalla de verificación (mismo mecanismo de bloqueo que RF-06: la
+  sesión tiene a lo sumo un paso pendiente y cada variante del middleware declara cuáles admite). Un
+  código inválido o repetido cuenta contra el límite de intentos (RNF-02); un TOTP o un código de
+  recuperación no se reutiliza, ni en serie ni en paralelo, por escrituras condicionadas (el hash del
+  código de recuperación se quita con un `UPDATE` atómico). Un código repetido en serie se rechaza
+  antes de escribir, por el mismo camino que uno inválido; la escritura condicionada queda solo para
+  las carreras en paralelo, donde el rechazo hace un viaje más a la base (diferencia residual
+  aceptada). Para el administrador con segundo factor
+  activo, un ingreso correcto con la contraseña NO reinicia el límite por cuenta: los fallos de
+  contraseña y de código suman al mismo contador y lo reinicia la verificación del segundo factor
+  ya confirmada; así, conocer la contraseña no permite probar códigos sin fin. El
   comando de instalación incluye un subcomando para restablecer el segundo factor desde el servidor;
   también cierra las sesiones abiertas del administrador, porque una sesión que ya verificó el
   segundo factor no tiene que sobrevivir a la pérdida de la aplicación autenticadora.

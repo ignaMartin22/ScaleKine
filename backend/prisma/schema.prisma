@@ -60,6 +60,8 @@ model Usuario {
   /// Secreto TOTP cifrado con CLAVE_CIFRADO (AES-256-GCM). Solo el administrador lo usa (RNF-04).
   secretoTotpCifrado    String?
   totpActivo            Boolean  @default(false)
+  /// Último paso de 30 s de un código TOTP aceptado: el mismo código no se reutiliza (RNF-04).
+  ultimoPasoTotp        Int?
   /// Hashes de los códigos de recuperación sin usar; un código usado se quita de la lista (RNF-04).
   codigosRecuperacion   String[] @default([])
   creadoEn              DateTime @db.Timestamptz(3)

@@ -11,7 +11,7 @@ import { hashearContrasena } from '../../src/modulos/m1-identidad/contrasenas.js
 import { crearModuloIdentidad } from '../../src/modulos/m1-identidad/index.js';
 import { ENTORNO_PRUEBA, loggerCapturado, ORIGEN_APP } from '../ayudantes.js';
 import { db } from './base.js';
-import { crearPaciente, crearUsuario } from './fabricas.js';
+import { crearPaciente, crearUsuario, ingresarComoAdministradorVerificado } from './fabricas.js';
 
 const CLAVE = 'clave-de-prueba-larga';
 const ERROR_NO_AUTORIZADO = {
@@ -56,6 +56,8 @@ async function appConEscrituras() {
 
 /** Crea una cuenta del rol, ingresa y devuelve el valor de la cookie `sesion`. */
 async function ingresarComo(app: Awaited<ReturnType<typeof appConEscrituras>>['app'], rol: Rol): Promise<string> {
+  // El administrador exige el segundo factor (RNF-04): se usa el ayudante compartido.
+  if (rol === 'administrador') return (await ingresarComoAdministradorVerificado(app)).token;
   const nombreUsuario = `ficticio-${rol}`;
   await crearUsuario({ rol, nombreUsuario, hashContrasena: await hashClave });
   const res = await request(app)

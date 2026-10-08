@@ -6,6 +6,9 @@ import { RelojFijo } from '../src/comun/reloj.js';
 
 export const ORIGEN_APP = 'http://localhost:4200';
 
+/** Clave de cifrado ficticia (32 bytes en base64) para los secretos TOTP de las pruebas (RNF-04). */
+export const CLAVE_CIFRADO_PRUEBA = Buffer.alloc(32, 7).toString('base64');
+
 export const ENTORNO_PRUEBA = {
   NODE_ENV: 'test',
   // La app de prueba no se conecta: las pruebas de integración usan su propia conexión.

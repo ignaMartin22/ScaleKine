@@ -15,11 +15,15 @@ export interface UsuarioSesion {
   rol: Rol;
   /** La cuenta debe elegir una contraseña propia antes de hacer cualquier otra cosa (RF-06). */
   debeCambiarContrasena: boolean;
+  /** El administrador ya activó su segundo factor (RNF-04). Siempre false para los demás roles. */
+  totpActivo: boolean;
 }
 
 export interface SesionActiva {
   id: number;
   usuario: UsuarioSesion;
+  /** La sesión ya pasó el segundo factor (RNF-04). Solo es relevante para el administrador. */
+  segundoFactorVerificado: boolean;
 }
 
 /** En la base solo se guarda el hash del token: una filtración de la tabla no da sesiones (RNF-01). */
@@ -31,7 +35,7 @@ function errorCredenciales(): ErrorNegocio {
   return new ErrorNegocio('credenciales_invalidas', 'Las credenciales no son válidas.', 401);
 }
 
-function errorDemasiadosIntentos(): ErrorNegocio {
+export function errorDemasiadosIntentos(): ErrorNegocio {
   return new ErrorNegocio(
     'demasiados_intentos',
     'Hubo demasiados intentos fallidos desde esta conexión. Esperá unos minutos y volvé a intentar.',
@@ -78,13 +82,18 @@ export async function crearServicioIdentidad({ db, reloj }: { db: BaseDeDatos; r
       const token = randomBytes(32).toString('base64url');
       const creadaEn = ahora;
       const venceEn = new Date(creadaEn.getTime() + DURACION_SESION_MS);
+      const reiniciaLimite = !(usuario.rol === 'administrador' && usuario.totpActivo);
       const creada = await db.$transaction(async (tx) => {
         // La sesión se crea solo si el hash y la cuenta siguen como se verificaron. Tomar la fila
         // serializa este ingreso con un cambio o restablecimiento de contraseña (RF-07, RF-08): si
         // el ingreso la toma primero, la revocación de ese cambio ve la sesión nueva; si el cambio
         // va primero, el WHERE ya no coincide y no se crea una sesión con la contraseña vieja.
         // Tampoco coincide si un bloqueo concurrente (RNF-02) ya se aplicó. Un ingreso correcto
-        // reinicia el límite por cuenta (RNF-02).
+        // reinicia el límite por cuenta (RNF-02), salvo en un administrador con segundo factor
+        // activo: ahí el ingreso no completa la autenticación, y reiniciar permitiría probar códigos
+        // TOTP sin fin conociendo la contraseña (4 códigos, ingresar de nuevo, repetir). Los fallos
+        // de contraseña y de código suman al mismo contador y lo reinicia la verificación del segundo
+        // factor ya confirmada.
         const { count } = await tx.usuario.updateMany({
           where: {
             id: usuario.id,
@@ -92,7 +101,10 @@ export async function crearServicioIdentidad({ db, reloj }: { db: BaseDeDatos; r
             activo: true,
             OR: [{ bloqueadoHasta: null }, { bloqueadoHasta: { lte: ahora } }],
           },
-          data: SIN_BLOQUEO,
+          // No vale `data: {}`: Prisma no emite un UPDATE sino un SELECT sin lock, y el ingreso
+          // perdería la serialización con un cambio o restablecimiento de contraseña y con un
+          // bloqueo concurrente. El incremento en 0 emite el UPDATE (toma la fila) sin tocar los fallos.
+          data: reiniciaLimite ? SIN_BLOQUEO : { ingresosFallidos: { increment: 0 } },
         });
         if (count === 0) return false;
         await tx.sesion.create({
@@ -121,6 +133,7 @@ export async function crearServicioIdentidad({ db, reloj }: { db: BaseDeDatos; r
           nombreUsuario: usuario.nombreUsuario,
           rol: usuario.rol,
           debeCambiarContrasena: usuario.debeCambiarContrasena,
+          totpActivo: usuario.totpActivo,
         },
       };
     },
@@ -134,6 +147,7 @@ export async function crearServicioIdentidad({ db, reloj }: { db: BaseDeDatos; r
           id: true,
           venceEn: true,
           revocadaEn: true,
+          segundoFactorVerificado: true,
           usuario: {
             select: {
               id: true,
@@ -141,6 +155,7 @@ export async function crearServicioIdentidad({ db, reloj }: { db: BaseDeDatos; r
               rol: true,
               activo: true,
               debeCambiarContrasena: true,
+              totpActivo: true,
             },
           },
         },
@@ -149,10 +164,11 @@ export async function crearServicioIdentidad({ db, reloj }: { db: BaseDeDatos; r
       // Al cumplirse las 12 horas exactas la sesión ya está vencida (RF-11).
       if (sesion.venceEn.getTime() <= reloj.ahora().getTime()) return null;
       if (!sesion.usuario.activo) return null;
-      const { id, nombreUsuario, rol, debeCambiarContrasena } = sesion.usuario;
+      const { id, nombreUsuario, rol, debeCambiarContrasena, totpActivo } = sesion.usuario;
       return {
         id: sesion.id,
-        usuario: { id, nombreUsuario, rol, debeCambiarContrasena },
+        usuario: { id, nombreUsuario, rol, debeCambiarContrasena, totpActivo },
+        segundoFactorVerificado: sesion.segundoFactorVerificado,
       };
     },
 

@@ -2,63 +2,76 @@ import type { RequestHandler, Response } from 'express';
 import type { Configuracion } from '../../comun/configuracion.js';
 import { ErrorNegocio } from '../../comun/errores.js';
 import { leerCookieSesion } from './cookie.js';
+import { pasoPendiente, type PasoAdmitido, type PasoPendiente } from './pasos.js';
 import type { ServicioIdentidad, SesionActiva } from './servicio.js';
+
+const ERRORES_DE_PASO: Record<PasoPendiente, { codigo: string; mensaje: string }> = {
+  verificar_segundo_factor: {
+    codigo: 'debe_verificar_segundo_factor',
+    mensaje: 'Tenés que verificar tu segundo factor antes de continuar.',
+  },
+  cambiar_contrasena: {
+    codigo: 'debe_cambiar_contrasena',
+    mensaje: 'Tenés que elegir una contraseña nueva antes de continuar.',
+  },
+  activar_segundo_factor: {
+    codigo: 'debe_activar_segundo_factor',
+    mensaje: 'Tenés que activar tu segundo factor antes de continuar.',
+  },
+};
+
+const ERROR_SIN_PASO = {
+  codigo: 'paso_no_pendiente',
+  mensaje: 'Esta acción no corresponde en este momento.',
+};
+
+/** Todos los pasos posibles, para la variante que deja pasar a cualquier sesión. */
+export const TODOS_LOS_PASOS: readonly PasoAdmitido[] = [
+  'ninguno',
+  'verificar_segundo_factor',
+  'cambiar_contrasena',
+  'activar_segundo_factor',
+];
+
+/** Pasos que admite cada handler creado, para la prueba guardiana de rutas. */
+const pasosPorHandler = new WeakMap<object, readonly PasoAdmitido[]>();
+
+/**
+ * Pasos que admite un handler creado por `crearExigirSesionConPasos`, o `undefined` si no lo es.
+ * Lo usa la prueba guardiana para fijar en qué rutas aparece cada variante.
+ */
+export function pasosAdmitidosPor(handler: unknown): readonly PasoAdmitido[] | undefined {
+  return pasosPorHandler.get(handler as object);
+}
 
 /**
  * Exige una sesión vigente (RF-11). El usuario y el rol salen de la sesión guardada en el
  * servidor, nunca de la petición. Deja la sesión en `res.locals.sesion`.
  *
- * Por defecto también rechaza con 403 `debe_cambiar_contrasena` a la cuenta marcada para cambio de
- * contraseña (RF-06): así rige para toda ruta que exija sesión, incluidas las futuras, sin que
- * cada una tenga que acordarse.
+ * La sesión tiene a lo sumo un paso pendiente (ver `pasoPendiente`): verificar el segundo factor,
+ * cambiar la contraseña (RF-06) o activar el segundo factor (RNF-04). Cada variante declara qué
+ * pasos admite y rechaza con 403 el resto, con el código del paso pendiente. `exigirSesion`, la que
+ * usa toda ruta de negocio, solo admite `ninguno`: así rige también para las rutas futuras, sin
+ * que cada una tenga que acordarse. Las demás variantes no se exportan desde el índice del módulo
+ * y una prueba guardiana fija en qué rutas aparece cada una.
  */
-export function crearExigirSesion(
+export function crearExigirSesionConPasos(
   servicio: Pick<ServicioIdentidad, 'sesionVigente'>,
   config: Pick<Configuracion, 'cookieSegura'>,
+  admitidos: readonly PasoAdmitido[],
 ): RequestHandler {
-  return armarExigirSesion(servicio, config, false);
-}
-
-/** Handlers devueltos por `crearExigirSesionAunqueDebaCambiarContrasena`, para la prueba guardiana. */
-const permisivos = new WeakSet<object>();
-
-/**
- * Variante que deja pasar a la cuenta marcada para cambio de contraseña. Solo corresponde a las
- * rutas que son la salida de ese estado: consultar la sesión y cambiar la contraseña (RF-06). No
- * se exporta desde el índice del módulo; una prueba guardiana fija en qué rutas aparece.
- */
-export function crearExigirSesionAunqueDebaCambiarContrasena(
-  servicio: Pick<ServicioIdentidad, 'sesionVigente'>,
-  config: Pick<Configuracion, 'cookieSegura'>,
-): RequestHandler {
-  const handler = armarExigirSesion(servicio, config, true);
-  permisivos.add(handler);
-  return handler;
-}
-
-/** Si `handler` es la variante permisiva. Lo usa la prueba que cubre todas las rutas. */
-export function esExigirSesionPermisivo(handler: unknown): boolean {
-  return permisivos.has(handler as object);
-}
-
-function armarExigirSesion(
-  servicio: Pick<ServicioIdentidad, 'sesionVigente'>,
-  config: Pick<Configuracion, 'cookieSegura'>,
-  permitirCuentaMarcada: boolean,
-): RequestHandler {
-  return async (req, res, next) => {
+  const handler: RequestHandler = async (req, res, next) => {
     try {
       const token = leerCookieSesion(req, config);
       const sesion = token === undefined ? null : await servicio.sesionVigente(token);
       if (!sesion) {
         throw new ErrorNegocio('sesion_invalida', 'Tu sesión venció o no es válida. Ingresá de nuevo.', 401);
       }
-      if (sesion.usuario.debeCambiarContrasena && !permitirCuentaMarcada) {
-        throw new ErrorNegocio(
-          'debe_cambiar_contrasena',
-          'Tenés que elegir una contraseña nueva antes de continuar.',
-          403,
-        );
+      const paso = pasoPendiente(sesion.usuario, sesion.segundoFactorVerificado);
+      if (!admitidos.includes(paso ?? 'ninguno')) {
+        // Sin paso pendiente en una ruta que solo sirve en un paso (activar o verificar): ya no corresponde.
+        const { codigo, mensaje } = paso === null ? ERROR_SIN_PASO : ERRORES_DE_PASO[paso];
+        throw new ErrorNegocio(codigo, mensaje, 403);
       }
       res.locals.sesion = sesion;
       next();
@@ -66,6 +79,16 @@ function armarExigirSesion(
       next(err);
     }
   };
+  pasosPorHandler.set(handler, admitidos);
+  return handler;
+}
+
+/** La variante estándar: solo admite una sesión sin pasos pendientes. */
+export function crearExigirSesion(
+  servicio: Pick<ServicioIdentidad, 'sesionVigente'>,
+  config: Pick<Configuracion, 'cookieSegura'>,
+): RequestHandler {
+  return crearExigirSesionConPasos(servicio, config, ['ninguno']);
 }
 
 /** La sesión de la petición. Si falta, la ruta no montó `exigirSesion`: es un error de programación. */
