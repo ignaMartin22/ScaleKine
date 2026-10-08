@@ -28,10 +28,11 @@ function errorCredenciales(): ErrorNegocio {
   return new ErrorNegocio('credenciales_invalidas', 'Las credenciales no son válidas.', 401);
 }
 
-export function crearServicioIdentidad({ db, reloj }: { db: BaseDeDatos; reloj: Reloj }) {
-  // Hash de una contraseña al azar, listo antes del primer ingreso: sirve para verificar contra algo
-  // cuando el usuario no existe y que la respuesta tarde lo mismo (RF-02).
-  const hashFicticio = hashearContrasena(randomBytes(32).toString('base64url'));
+export async function crearServicioIdentidad({ db, reloj }: { db: BaseDeDatos; reloj: Reloj }) {
+  // Hash de una contraseña al azar, calculado al crear el servicio: si argon2 falla se nota al
+  // arrancar y no en el primer ingreso. Sirve para verificar contra algo cuando el usuario no
+  // existe y que la respuesta tarde lo mismo (RF-02).
+  const hashFicticio = await hashearContrasena(randomBytes(32).toString('base64url'));
 
   return {
     /**
@@ -44,7 +45,7 @@ export function crearServicioIdentidad({ db, reloj }: { db: BaseDeDatos; reloj: 
     ): Promise<{ token: string; venceEn: Date; usuario: UsuarioSesion }> {
       const usuario = await db.usuario.findUnique({ where: { nombreUsuario } });
       if (!usuario) {
-        await verificarContrasena(await hashFicticio, contrasena);
+        await verificarContrasena(hashFicticio, contrasena);
         throw errorCredenciales();
       }
       const contrasenaCorrecta = await verificarContrasena(usuario.hashContrasena, contrasena);
@@ -65,9 +66,15 @@ export function crearServicioIdentidad({ db, reloj }: { db: BaseDeDatos; reloj: 
 
     /** La sesión del token, o null si no existe, se cerró, venció o la cuenta ya no está activa. */
     async sesionVigente(token: string): Promise<SesionActiva | null> {
+      // Select explícito: no se carga el hash de la contraseña ni el secreto TOTP del usuario.
       const sesion = await db.sesion.findUnique({
         where: { hashToken: hashDeToken(token) },
-        include: { usuario: true },
+        select: {
+          id: true,
+          venceEn: true,
+          revocadaEn: true,
+          usuario: { select: { id: true, nombreUsuario: true, rol: true, activo: true } },
+        },
       });
       if (!sesion || sesion.revocadaEn !== null) return null;
       // Al cumplirse las 12 horas exactas la sesión ya está vencida (RF-11).
@@ -87,4 +94,4 @@ export function crearServicioIdentidad({ db, reloj }: { db: BaseDeDatos; reloj: 
   };
 }
 
-export type ServicioIdentidad = ReturnType<typeof crearServicioIdentidad>;
+export type ServicioIdentidad = Awaited<ReturnType<typeof crearServicioIdentidad>>;

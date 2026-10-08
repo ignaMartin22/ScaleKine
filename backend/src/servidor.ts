@@ -15,8 +15,9 @@ async function iniciar(): Promise<void> {
   const [{ usuario }] = await db.$queryRaw<[{ usuario: string }]>`SELECT current_user AS usuario`;
   logger.info({ usuarioBase: usuario }, 'conectado a la base');
 
-  // Cada módulo recibe sus dependencias en su fábrica; crearApp solo monta sus routers.
-  const identidad = crearModuloIdentidad({ db, reloj, config });
+  // Cada módulo recibe sus dependencias en su fábrica; crearApp solo monta sus routers. La fábrica
+  // de identidad es asíncrona: si argon2 no funciona, el arranque falla acá y no en el primer ingreso.
+  const identidad = await crearModuloIdentidad({ db, reloj, config });
   const app = crearApp({ config, logger, reloj, rutas: [identidad.rutas] });
   const servidor = app.listen(config.puerto, () => {
     logger.info({ puerto: config.puerto, entorno: config.entorno }, 'backend escuchando');
