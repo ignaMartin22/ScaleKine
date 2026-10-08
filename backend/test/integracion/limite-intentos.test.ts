@@ -378,13 +378,14 @@ describe('límite de intentos por cuenta en el cambio de contraseña (RNF-02)', 
     const { usuario, cookie } = await cuentaConSesion(app, 'cuenta1');
     const hashAntes = (await db.usuario.findUniqueOrThrow({ where: { id: usuario.id } })).hashContrasena;
 
-    // La cuenta se bloquea justo después de que el servicio la leyó sin bloqueo.
+    // La cuenta se bloquea justo después de la segunda lectura (la posterior a verificar la actual),
+    // o sea dentro de la transacción del cambio.
     const original = db.usuario.findUnique.bind(db.usuario);
-    let primera = true;
+    let llamadas = 0;
     const espia = vi.spyOn(db.usuario, 'findUnique').mockImplementation(((args: never) => {
       const lectura = original(args);
-      if (!primera) return lectura;
-      primera = false;
+      llamadas += 1;
+      if (llamadas !== 2) return lectura;
       return lectura.then(async (usuarioLeido) => {
         await db.usuario.update({
           where: { id: usuario.id },
@@ -407,6 +408,44 @@ describe('límite de intentos por cuenta en el cambio de contraseña (RNF-02)', 
     const guardado = await db.usuario.findUniqueOrThrow({ where: { id: usuario.id } });
     expect(guardado.hashContrasena).toBe(hashAntes);
     expect(guardado.bloqueadoHasta).toEqual(mas(reloj.ahora(), QUINCE_MIN));
+  });
+
+  it('un bloqueo que cae mientras se verifica la actual se rechaza sin correr el segundo hash', LARGA, async () => {
+    const { app, reloj } = await appConIdentidad();
+    const { usuario, cookie } = await cuentaConSesion(app, 'cuenta1');
+    const hashAntes = (await db.usuario.findUniqueOrThrow({ where: { id: usuario.id } })).hashContrasena;
+
+    // La cuenta se bloquea justo después de la lectura del hash, antes de que termine de verificarse.
+    const original = db.usuario.findUnique.bind(db.usuario);
+    let primera = true;
+    const espia = vi.spyOn(db.usuario, 'findUnique').mockImplementation(((args: never) => {
+      const lectura = original(args);
+      if (!primera) return lectura;
+      primera = false;
+      return lectura.then(async (usuarioLeido) => {
+        await db.usuario.update({
+          where: { id: usuario.id },
+          data: { bloqueadoHasta: mas(reloj.ahora(), QUINCE_MIN) },
+        });
+        return usuarioLeido;
+      });
+    }) as never);
+    const transacciones = vi.spyOn(db, '$transaction');
+    try {
+      const res = await cambiar(app, cookie, CLAVE, IP_CARRERA);
+      expect(res.status).toBe(403);
+      expect(res.body).toEqual(ERROR_ACTUAL_INCORRECTA);
+      // Rechazada antes de hashear la contraseña nueva: no llegó a la transacción.
+      expect(transacciones).not.toHaveBeenCalled();
+    } finally {
+      espia.mockRestore();
+      transacciones.mockRestore();
+    }
+
+    const guardado = await db.usuario.findUniqueOrThrow({ where: { id: usuario.id } });
+    expect(guardado.hashContrasena).toBe(hashAntes);
+    const fila = await db.limiteIntentos.findUniqueOrThrow({ where: { key: `direccion:${IP_CARRERA}` } });
+    expect(fila.points).toBe(1);
   });
 
   it('un cambio de hash concurrente (restablecimiento) sin bloqueo sigue dando 409', LARGA, async () => {

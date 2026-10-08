@@ -188,6 +188,8 @@ saca al turno de `en_espera` la conserva; una que lo devuelve a `reservado` la l
     argon2: el `UPDATE` de una cuenta existente con contraseña incorrecta escribe una fila y el de
     `id = 0` no, y el camino de una carrera hace `BEGIN`/`UPDATE`/`ROLLBACK`. Si un cambio de
     contraseña pierde una carrera contra un bloqueo, responde el mismo 403 que una actual incorrecta.
+    El estado de bloqueo del cambio de contraseña se lee después de verificar la actual, para que una
+    actual correcta con la cuenta ya bloqueada no corra el segundo argon2 y no se distinga por tiempo.
   - *Dirección:* implementación propia de ventana fija sobre la tabla `limite_intentos`, que
     sobrevive a reinicios. El intento se reserva en una sola sentencia (`INSERT … ON CONFLICT DO
     UPDATE … WHERE`) antes de verificar la contraseña, así una ráfaga en paralelo no supera el

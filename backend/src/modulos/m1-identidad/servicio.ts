@@ -180,10 +180,18 @@ export async function crearServicioIdentidad({ db, reloj }: { db: BaseDeDatos; r
 
       const usuario = await db.usuario.findUnique({
         where: { id: usuarioId },
-        select: { hashContrasena: true, bloqueadoHasta: true },
+        select: { hashContrasena: true },
       });
       const correcta = await verificarContrasena(usuario?.hashContrasena ?? hashFicticio, contrasenaActual);
-      const bloqueada = usuario !== null && cuentaBloqueada(usuario.bloqueadoHasta, ahora);
+      // El bloqueo se lee DESPUÉS de verificar: en una ráfaga, argon2 hace cola y el bloqueo puede
+      // caer mientras tanto. Con la lectura vieja, una actual correcta correría un segundo argon2
+      // (el de la contraseña nueva) y tardaría el doble que un rechazo, delatando la contraseña
+      // (RNF-02). Se relee siempre, para que todo rechazo haga los mismos viajes a la base (RF-02).
+      const estado = await db.usuario.findUnique({
+        where: { id: usuarioId },
+        select: { bloqueadoHasta: true },
+      });
+      const bloqueada = estado !== null && cuentaBloqueada(estado.bloqueadoHasta, ahora);
       if (!usuario || !correcta || bloqueada) {
         await limite.confirmarFalloDireccion(ip, ahora);
         await limite.registrarFalloCuenta(usuario && !correcta ? usuarioId : null, ahora);
