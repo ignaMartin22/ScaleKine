@@ -52,16 +52,20 @@ function cuerpoUsuario(usuario: UsuarioSesion) {
 }
 
 /**
- * `exigirSesion` debe ser la variante que deja pasar a la cuenta marcada para cambio de contraseña:
- * estas rutas son justamente la salida de ese estado (RF-06).
+ * `exigirSesion` bloquea a la cuenta marcada para cambio de contraseña (RF-06) y es el que deben
+ * usar las rutas nuevas de este router. `exigirSesionAunqueDebaCambiarContrasena` la deja pasar y
+ * solo corresponde a las rutas que son la salida de ese estado: consultar la sesión y cambiar la
+ * contraseña.
  */
 export function crearRutasIdentidad({
   servicio,
-  exigirSesion,
+  exigirSesionAunqueDebaCambiarContrasena,
   config,
 }: {
   servicio: ServicioIdentidad;
+  /** Para las rutas de negocio de este router (T-13); las actuales usan la variante permisiva. */
   exigirSesion: RequestHandler;
+  exigirSesionAunqueDebaCambiarContrasena: RequestHandler;
   config: Pick<Configuracion, 'cookieSegura'>;
 }): Router {
   const router = Router();
@@ -77,20 +81,24 @@ export function crearRutasIdentidad({
     }
   });
 
-  router.get('/sesion', exigirSesion, (_req, res) => {
+  router.get('/sesion', exigirSesionAunqueDebaCambiarContrasena, (_req, res) => {
     const { usuario } = sesionActual(res);
     res.json({ usuario: cuerpoUsuario(usuario) });
   });
 
   router.put(
     '/sesion/contrasena',
-    exigirSesion,
+    exigirSesionAunqueDebaCambiarContrasena,
     validar(esquemaCambioContrasena),
     async (_req, res, next) => {
       try {
-        const { usuario } = sesionActual(res);
+        const { id, usuario } = sesionActual(res);
         const { body } = datosValidados(res.locals, esquemaCambioContrasena);
-        await servicio.cambiarContrasena(usuario.id, body.contrasenaActual, body.contrasenaNueva);
+        await servicio.cambiarContrasena(
+          { usuarioId: usuario.id, sesionId: id },
+          body.contrasenaActual,
+          body.contrasenaNueva,
+        );
         res.status(204).end();
       } catch (err) {
         next(err);

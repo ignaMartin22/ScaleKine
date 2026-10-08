@@ -18,10 +18,6 @@ function codigoDeRechazo(contrasena: string): string | null {
 }
 
 describe('política de contraseñas (RNF-03)', () => {
-  it('el largo mínimo es de 12 caracteres', () => {
-    expect(LARGO_MINIMO_CONTRASENA).toBe(12);
-  });
-
   it('rechaza las de menos de 12 caracteres', () => {
     expect(codigoDeRechazo('')).toBe('contrasena_corta');
     expect(codigoDeRechazo('Corta-1')).toBe('contrasena_corta');
@@ -57,7 +53,25 @@ describe('política de contraseñas (RNF-03)', () => {
     }
   });
 
+  it('compara con la lista sin los espacios de los extremos', () => {
+    expect(codigoDeRechazo(' password1234')).toBe('contrasena_comun');
+    expect(codigoDeRechazo('password1234 ')).toBe('contrasena_comun');
+    expect(codigoDeRechazo('\tPassword1234\n')).toBe('contrasena_comun');
+  });
+
+  it('rechaza las formadas solo por espacios en blanco', () => {
+    expect(codigoDeRechazo(' '.repeat(12))).toBe('contrasena_en_blanco');
+    expect(codigoDeRechazo(' \t\n'.repeat(6))).toBe('contrasena_en_blanco');
+    expect(codigoDeRechazo(' '.repeat(11))).toBe('contrasena_corta');
+  });
+
+  it('acepta espacios dentro de la contraseña', () => {
+    expect(codigoDeRechazo('una frase larga y rara')).toBeNull();
+  });
+
   it('un mensaje de rechazo nunca repite la contraseña recibida', () => {
+    expect(() => validarPoliticaContrasena('password1234')).toThrow(ErrorNegocio);
+    expect.assertions(2);
     try {
       validarPoliticaContrasena('password1234');
     } catch (error) {

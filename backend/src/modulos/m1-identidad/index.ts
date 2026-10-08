@@ -18,7 +18,7 @@ export async function crearModuloIdentidad({
   const servicio = await crearServicioIdentidad({ db, reloj });
   // `exigirSesion` es el que usan todas las rutas de negocio: bloquea a la cuenta marcada (RF-06).
   const exigirSesion = crearExigirSesion(servicio, config);
-  const exigirSesionPermitiendoCuentaMarcada = crearExigirSesion(servicio, config, {
+  const exigirSesionAunqueDebaCambiarContrasena = crearExigirSesion(servicio, config, {
     permitirCuentaMarcada: true,
   });
   return {
@@ -26,7 +26,8 @@ export async function crearModuloIdentidad({
     exigirSesion,
     rutas: crearRutasIdentidad({
       servicio,
-      exigirSesion: exigirSesionPermitiendoCuentaMarcada,
+      exigirSesion,
+      exigirSesionAunqueDebaCambiarContrasena,
       config,
     }),
   };

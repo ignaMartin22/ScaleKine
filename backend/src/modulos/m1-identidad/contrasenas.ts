@@ -44,7 +44,13 @@ export function validarPoliticaContrasena(contrasena: string): void {
       400,
     );
   }
-  if (CONTRASENAS_COMUNES.has(contrasena.toLowerCase())) {
+  // Una contraseña de solo espacios no tiene contenido, y los espacios de los extremos no la
+  // alejan de la lista de comunes.
+  const sinEspacios = contrasena.trim();
+  if (sinEspacios === '') {
+    throw new ErrorNegocio('contrasena_en_blanco', 'La contraseña no puede ser solo espacios.', 400);
+  }
+  if (CONTRASENAS_COMUNES.has(sinEspacios.toLowerCase())) {
     throw new ErrorNegocio(
       'contrasena_comun',
       'Esa contraseña es muy común. Elegí otra más difícil de adivinar.',

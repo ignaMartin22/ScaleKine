@@ -111,9 +111,13 @@ export async function crearServicioIdentidad({ db, reloj }: { db: BaseDeDatos; r
      * Cambio de la propia contraseña (RF-06, RF-07). Exige la actual (en el primer ingreso, la
      * temporal) y aplica la política de RNF-03. Apaga la marca de cambio pendiente. Una contraseña
      * actual incorrecta es 403 y no 401: el frontend trata todo 401 como sesión vencida.
+     *
+     * En la misma transacción revoca las demás sesiones de la cuenta (RF-07): quien conocía la
+     * contraseña anterior, p. ej. la temporal, no conserva una sesión abierta. La sesión desde la que
+     * se cambia sigue vigente.
      */
     async cambiarContrasena(
-      usuarioId: number,
+      { usuarioId, sesionId }: { usuarioId: number; sesionId: number },
       contrasenaActual: string,
       contrasenaNueva: string,
     ): Promise<void> {
@@ -133,12 +137,25 @@ export async function crearServicioIdentidad({ db, reloj }: { db: BaseDeDatos; r
           400,
         );
       }
-      await db.usuario.update({
-        where: { id: usuarioId },
-        data: {
-          hashContrasena: await hashearContrasena(contrasenaNueva),
-          debeCambiarContrasena: false,
-        },
+      const hashNuevo = await hashearContrasena(contrasenaNueva);
+      await db.$transaction(async (tx) => {
+        // Escritura condicionada al hash que se verificó: si un restablecimiento (RF-08) cambió la
+        // contraseña mientras tanto, no se lo pisa.
+        const { count } = await tx.usuario.updateMany({
+          where: { id: usuarioId, hashContrasena: usuario.hashContrasena },
+          data: { hashContrasena: hashNuevo, debeCambiarContrasena: false },
+        });
+        if (count === 0) {
+          throw new ErrorNegocio(
+            'contrasena_modificada',
+            'Tu contraseña cambió mientras la modificabas. Ingresá de nuevo.',
+            409,
+          );
+        }
+        await tx.sesion.updateMany({
+          where: { usuarioId, id: { not: sesionId }, revocadaEn: null },
+          data: { revocadaEn: reloj.ahora() },
+        });
       });
     },
 

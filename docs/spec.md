@@ -108,9 +108,11 @@ administrador (D-18). Las acciones sobre cuentas y kinesiólogos son exclusivas 
   garantiza que las acciones registradas a su nombre fueron suyas.
 
 - **RF-07** — *Evento:* Cuando un usuario autenticado cambia su contraseña indicando la actual,
-  entonces el sistema la reemplaza.
+  entonces el sistema la reemplaza y cierra las demás sesiones abiertas de la cuenta; la sesión
+  desde la que hizo el cambio sigue abierta. La nueva contraseña no puede ser igual a la actual.
   *Por qué:* Si alguien conoció la contraseña de otro, el dueño tiene que poder cambiarla sin
-  depender del administrador.
+  depender del administrador, y quien la usó no debe conservar una sesión abierta. En el primer
+  ingreso (RF-06), esto cierra también las sesiones abiertas con la contraseña temporal.
 
 - **RF-08** — *Evento:* Cuando el administrador restablece la contraseña de una cuenta, entonces el
   sistema le asigna una contraseña temporal, cierra sus sesiones abiertas y la marca para cambio de
@@ -551,7 +553,8 @@ El MVP se considera terminado cuando **todos** los puntos siguientes son verific
 - [ ] Tras la instalación existe una cuenta de administrador con contraseña temporal (RF-05).
 - [ ] Una cuenta con contraseña temporal no accede a ninguna pantalla hasta elegir una nueva
       (RF-06).
-- [ ] Un usuario puede cambiar su propia contraseña indicando la actual (RF-07).
+- [ ] Un usuario puede cambiar su propia contraseña indicando la actual; el cambio cierra sus demás
+      sesiones y rechaza repetir la actual (RF-07).
 - [ ] Restablecer una contraseña cierra las sesiones de la cuenta y exige cambiarla al ingresar
       (RF-08).
 - [ ] Una cuenta desactivada no puede ingresar, sus sesiones se cierran y sus registros se

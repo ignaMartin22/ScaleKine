@@ -165,6 +165,8 @@ saca al turno de `en_espera` la conserva; una que lo devuelve a `reservado` la l
   salvo el cambio de contraseña y el cierre de sesión. El bloqueo vive en el servidor, no en una
   redirección del frontend.
 - **RF-07**: el cambio exige la contraseña actual; en el primer ingreso, la actual es la temporal.
+  En la misma transacción se revocan las demás sesiones de la cuenta, y se rechaza una nueva igual a
+  la actual.
 - **RF-08 / RF-09**: restablecer y desactivar revocan todas las sesiones de la cuenta en la misma
   transacción. Una cuenta desactivada conserva su fila, porque `Turno` y `TurnoEvento` la
   referencian como autor.
