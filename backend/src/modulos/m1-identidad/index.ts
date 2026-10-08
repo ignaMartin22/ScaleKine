@@ -6,7 +6,7 @@ import { crearRutasIdentidad } from './rutas.js';
 import { crearServicioIdentidad } from './servicio.js';
 
 /** M1 Identidad: sesiones y contraseñas (plan.md §3 M1). Recibe sus dependencias en la fábrica. */
-export function crearModuloIdentidad({
+export async function crearModuloIdentidad({
   db,
   reloj,
   config,
@@ -15,7 +15,7 @@ export function crearModuloIdentidad({
   reloj: Reloj;
   config: Configuracion;
 }) {
-  const servicio = crearServicioIdentidad({ db, reloj });
+  const servicio = await crearServicioIdentidad({ db, reloj });
   const exigirSesion = crearExigirSesion(servicio, config);
   return { servicio, exigirSesion, rutas: crearRutasIdentidad({ servicio, exigirSesion, config }) };
 }

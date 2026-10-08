@@ -21,10 +21,13 @@ import type { ServicioIdentidad } from './servicio.js';
  */
 
 // El máximo evita trabajo de hash con entradas enormes; la política de contraseñas es de T-11.
+// PostgreSQL no admite el carácter NUL en columnas de texto: se rechaza acá con 400 (RNF-10) en
+// lugar de dejar que termine en un 500.
+const sinNul = (valor: string) => !valor.includes('\u0000');
 const esquemaIngreso = {
   body: z.object({
-    nombreUsuario: z.string().min(1).max(64),
-    contrasena: z.string().min(1).max(1024),
+    nombreUsuario: z.string().min(1).max(64).refine(sinNul),
+    contrasena: z.string().min(1).max(1024).refine(sinNul),
   }),
 };
 
