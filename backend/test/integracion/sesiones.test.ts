@@ -56,7 +56,9 @@ describe('ingreso (RF-01, RF-02)', () => {
 
     const res = await ingresar(app, 'ficticio1');
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ usuario: { nombreUsuario: 'ficticio1', rol: usuario.rol } });
+    expect(res.body).toEqual({
+      usuario: { nombreUsuario: 'ficticio1', rol: usuario.rol, debeCambiarContrasena: false },
+    });
 
     const actual = await request(app).get('/api/sesion').set('Cookie', `sesion=${tokenDe(res)}`);
     expect(actual.status).toBe(200);
