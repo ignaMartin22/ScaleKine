@@ -21,6 +21,7 @@ criterio de "hecho". Una tarea no está terminada si sus pruebas no pasan.
 
 Las tareas se reparten en **carriles**: cada carril es un worktree con su rama y su PR, y trabaja
 una tarea por vez. Una ola empieza cuando las tareas de las que depende están fusionadas en `main`.
+El estado de cada tarea y lo que quedó a medio hacer están en [`avance.md`](./avance.md).
 
 | Ola | Carril A (camino crítico) | Carril B | Depende de |
 |---|---|---|---|

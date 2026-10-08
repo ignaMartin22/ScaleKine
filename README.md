@@ -13,6 +13,7 @@ Desarrollado con metodología **SDD (Spec-Driven Development)**. Documentos del 
 3. [`docs/plan.md`](./docs/plan.md) — plan técnico: módulos, modelo de datos, decisiones y tests.
 4. [`docs/tasks.md`](./docs/tasks.md) — desglose en tareas, por fases, con los RF y RNF que cubre cada una.
 5. [`docs/despliegue.md`](./docs/despliegue.md) — producción: infraestructura, seguridad, copias, monitoreo y operación.
+6. [`docs/avance.md`](./docs/avance.md) — estado de cada tarea, trabajo en curso, pendientes y el flujo multiagente usado.
 
 Las reglas de trabajo para implementar están en [`CLAUDE.md`](./CLAUDE.md).
 

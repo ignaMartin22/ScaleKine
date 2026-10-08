@@ -14,6 +14,9 @@ En orden de precedencia:
 4. `docs/despliegue.md`: dónde corre, cómo se protege y cómo se opera en producción.
 5. `docs/tasks.md`: qué tarea sigue y cuándo está hecha.
 
+Antes de retomar trabajo, leer `docs/avance.md`: estado de cada tarea, trabajo a medio hacer y
+correcciones pendientes. No es fuente de verdad; se actualiza al fusionar cada PR.
+
 ## Reglas de trabajo
 
 - **Nada sin requisito.** Toda funcionalidad y toda prueba apuntan a un RF o RNF. Si algo no tiene
