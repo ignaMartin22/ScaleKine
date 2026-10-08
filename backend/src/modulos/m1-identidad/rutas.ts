@@ -14,8 +14,9 @@ import type { ServicioIdentidad, UsuarioSesion } from './servicio.js';
  * - `GET /api/sesion`: sesión actual. Mismo cuerpo; 401 si no hay una sesión válida.
  * - `PUT /api/sesion/contrasena`: cambio de la propia contraseña (RF-06, RF-07). Cuerpo
  *   `{ contrasenaActual, contrasenaNueva }`; 204 si se aplicó, 403 `contrasena_actual_incorrecta` si
- *   la actual no coincide (nunca 401: el frontend lo leería como sesión vencida) y 400 si la nueva
- *   no cumple la política (RNF-03) o es igual a la actual.
+ *   la actual no coincide (nunca 401: el frontend lo leería como sesión vencida), 400 si la nueva
+ *   no cumple la política (RNF-03) o es igual a la actual, y 409 `contrasena_modificada` si otra
+ *   escritura cambió la contraseña mientras tanto.
  * - `DELETE /api/sesion`: cierre (RF-10). Revoca la sesión si hay cookie, siempre borra la cookie y
  *   responde 204; sin sesión también es 204.
  *
@@ -59,6 +60,8 @@ function cuerpoUsuario(usuario: UsuarioSesion) {
  */
 export function crearRutasIdentidad({
   servicio,
+  // Aún sin uso: las rutas nuevas de este router (T-13) deben escribir `exigirSesion`, no la otra.
+  exigirSesion: _exigirSesion,
   exigirSesionAunqueDebaCambiarContrasena,
   config,
 }: {

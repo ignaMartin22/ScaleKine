@@ -1,12 +1,12 @@
 import { Router } from 'express';
 import request from 'supertest';
 import { describe, expect, it, vi } from 'vitest';
-import { DURACION_SESION_MS } from '../../src/modulos/m1-identidad/servicio.js';
 import { crearApp } from '../../src/app.js';
 import { cargarConfiguracion } from '../../src/comun/configuracion.js';
 import { RelojFijo } from '../../src/comun/reloj.js';
 import { hashearContrasena, verificarContrasena } from '../../src/modulos/m1-identidad/contrasenas.js';
 import { crearModuloIdentidad } from '../../src/modulos/m1-identidad/index.js';
+import { DURACION_SESION_MS } from '../../src/modulos/m1-identidad/servicio.js';
 import { ENTORNO_PRUEBA, loggerCapturado, ORIGEN_APP } from '../ayudantes.js';
 import { db } from './base.js';
 import { crearUsuario } from './fabricas.js';
@@ -273,9 +273,9 @@ describe('cambio de la propia contraseña (RF-07, RNF-03)', () => {
 });
 
 describe('cierre de las demás sesiones al cambiar la contraseña (RF-07)', () => {
-  async function dosSesiones(app: App) {
-    const propia = await ingresar(app);
-    const ajena = await ingresar(app);
+  async function dosSesiones(app: App, nombreUsuario = 'marcada1') {
+    const propia = await ingresar(app, TEMPORAL, nombreUsuario);
+    const ajena = await ingresar(app, TEMPORAL, nombreUsuario);
     expect(propia.cookie).not.toBe(ajena.cookie);
     return { propia: propia.cookie, ajena: ajena.cookie };
   }
@@ -299,9 +299,9 @@ describe('cierre de las demás sesiones al cambiar la contraseña (RF-07)', () =
   });
 
   it('en un cambio voluntario también cierra las demás sesiones', async () => {
-    await crearUsuario({ nombreUsuario: 'marcada1', hashContrasena: await hashTemporal });
+    await crearUsuario({ nombreUsuario: 'voluntaria1', hashContrasena: await hashTemporal });
     const app = await appConRutaProtegida();
-    const { propia, ajena } = await dosSesiones(app);
+    const { propia, ajena } = await dosSesiones(app, 'voluntaria1');
 
     const res = await cambiar(app, propia, { contrasenaActual: TEMPORAL, contrasenaNueva: NUEVA });
     expect(res.status).toBe(204);
@@ -339,7 +339,7 @@ describe('cierre de las demás sesiones al cambiar la contraseña (RF-07)', () =
   it('no pisa un restablecimiento concurrente de la contraseña (RF-08)', async () => {
     const usuario = await cuentaMarcada();
     const app = await appConRutaProtegida();
-    const { cookie } = await ingresar(app);
+    const { propia: cookie, ajena } = await dosSesiones(app);
 
     // Entre la lectura del hash y la escritura, un restablecimiento cambia la contraseña. Se simula
     // restableciéndola justo después de que el servicio lee el hash.
@@ -366,7 +366,41 @@ describe('cierre de las demás sesiones al cambiar la contraseña (RF-07)', () =
     const guardado = await db.usuario.findUniqueOrThrow({ where: { id: usuario.id } });
     expect(guardado.hashContrasena).toBe(hashRestablecido);
     expect(guardado.debeCambiarContrasena).toBe(true);
-    // La transacción se deshizo entera: ninguna sesión quedó revocada.
+    // La transacción se deshizo entera: la otra sesión no se revocó.
     expect(await db.sesion.count({ where: { usuarioId: usuario.id, revocadaEn: { not: null } } })).toBe(0);
+    expect((await request(app).get('/api/sesion').set('Cookie', ajena)).status).toBe(200);
+  });
+
+  it('un ingreso con la contraseña vieja concurrente con el cambio no deja una sesión (RF-07)', async () => {
+    const usuario = await cuentaMarcada();
+    const app = await appConRutaProtegida();
+    const { cookie } = await ingresar(app);
+
+    // El ingreso lee el hash y verifica; justo después, el dueño cambia la contraseña. Se simula
+    // cambiándola en cuanto el servicio termina de leer la cuenta durante el ingreso.
+    const original = db.usuario.findUnique.bind(db.usuario);
+    let primera = true;
+    const espia = vi.spyOn(db.usuario, 'findUnique').mockImplementation(((args: never) => {
+      const lectura = original(args);
+      if (!primera) return lectura;
+      primera = false;
+      return lectura.then(async (usuarioLeido) => {
+        const res = await cambiar(app, cookie, { contrasenaActual: TEMPORAL, contrasenaNueva: NUEVA });
+        expect(res.status).toBe(204);
+        return usuarioLeido;
+      });
+    }) as never);
+    let ingreso;
+    try {
+      ingreso = await ingresar(app);
+    } finally {
+      espia.mockRestore();
+    }
+
+    expect(ingreso.res.status).toBe(401);
+    expect(ingreso.res.body.error.codigo).toBe('credenciales_invalidas');
+    // Solo queda la sesión desde la que se hizo el cambio; el ingreso viejo no creó ninguna.
+    expect(await db.sesion.count({ where: { usuarioId: usuario.id } })).toBe(1);
+    expect(await db.sesion.count({ where: { usuarioId: usuario.id, revocadaEn: null } })).toBe(1);
   });
 });

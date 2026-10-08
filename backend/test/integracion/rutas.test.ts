@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { autorizarEscritura, esAutorizacionDeEscritura } from '../../src/comun/autorizarEscritura.js';
 import { cargarConfiguracion } from '../../src/comun/configuracion.js';
 import { RelojFijo } from '../../src/comun/reloj.js';
+import { esExigirSesionPermisivo } from '../../src/modulos/m1-identidad/middleware.js';
 import { crearRutas } from '../../src/rutas.js';
 import { ENTORNO_PRUEBA } from '../ayudantes.js';
 import { db } from './base.js';
@@ -57,6 +58,24 @@ function escriturasSinAutorizacion(capas: CapaExpress[]): string[] {
   return sinAutorizar;
 }
 
+/** Rutas cuyo stack incluye la variante de `exigirSesion` que deja pasar a la cuenta marcada. */
+function rutasConSesionPermisiva(capas: CapaExpress[]): string[] {
+  const encontradas: string[] = [];
+  for (const capa of capas) {
+    if (capa.route) {
+      const { path, methods, stack } = capa.route;
+      if (!stack.some((c) => esExigirSesionPermisivo(c.handle))) continue;
+      for (const metodo of Object.keys(methods).filter((m) => methods[m])) {
+        encontradas.push(`${metodo === '_all' ? 'ALL' : metodo.toUpperCase()} ${path}`);
+      }
+      continue;
+    }
+    const hijas = capasDeSubRouter(capa);
+    if (hijas) encontradas.push(...rutasConSesionPermisiva(hijas));
+  }
+  return encontradas;
+}
+
 const manejadorCualquiera: RequestHandler = (_req, res) => {
   res.end();
 };
@@ -101,5 +120,26 @@ describe('toda ruta de escritura de la API exige autorización por módulo (plan
     lectura.get('/x', manejadorCualquiera);
 
     expect(escriturasSinAutorizacion(comoInspeccionable(lectura).stack)).toEqual([]);
+  });
+});
+
+describe('la sesión que deja pasar a la cuenta marcada solo aparece donde corresponde (RF-06)', () => {
+  it('únicamente en consultar la sesión y cambiar la contraseña', async () => {
+    const rutas = await crearRutas({
+      db,
+      reloj: new RelojFijo('2026-10-07T12:00:00Z'),
+      config: cargarConfiguracion(ENTORNO_PRUEBA),
+    });
+
+    const permisivas = rutas.flatMap((router) => rutasConSesionPermisiva(comoInspeccionable(router).stack));
+
+    expect(permisivas.sort()).toEqual(['GET /sesion', 'PUT /sesion/contrasena']);
+  });
+
+  it('la detección reconoce la variante permisiva y no al resto de handlers', () => {
+    const router = Router();
+    router.get('/x', manejadorCualquiera);
+
+    expect(rutasConSesionPermisiva(comoInspeccionable(router).stack)).toEqual([]);
   });
 });

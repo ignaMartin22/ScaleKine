@@ -166,7 +166,9 @@ saca al turno de `en_espera` la conserva; una que lo devuelve a `reservado` la l
   redirección del frontend.
 - **RF-07**: el cambio exige la contraseña actual; en el primer ingreso, la actual es la temporal.
   En la misma transacción se revocan las demás sesiones de la cuenta, y se rechaza una nueva igual a
-  la actual.
+  la actual. Un cambio concurrente con otra escritura de la contraseña se rechaza con 409. El
+  ingreso crea su sesión en una transacción que reconfirma el hash verificado, para que no
+  sobreviva una sesión abierta con la contraseña anterior.
 - **RF-08 / RF-09**: restablecer y desactivar revocan todas las sesiones de la cuenta en la misma
   transacción. Una cuenta desactivada conserva su fila, porque `Turno` y `TurnoEvento` la
   referencian como autor.
@@ -178,7 +180,8 @@ saca al turno de `en_espera` la conserva; una que lo devuelve a `reservado` la l
   confía solo en la IP que informa el proxy local (`trust proxy` = 1).
 - **RNF-03 (contraseñas):** hash `argon2id` con los parámetros recomendados por OWASP; mínimo de 12
   caracteres; rechazo de las contraseñas de una lista embebida de contraseñas comunes. Se validan
-  igual al crear, cambiar y restablecer.
+  igual al crear, cambiar y restablecer. Los espacios de los extremos no cuentan para el largo ni
+  para la comparación con la lista, y una contraseña en blanco se rechaza.
 - **RNF-04 (segundo factor del administrador):** TOTP con `otplib`. El secreto se cifra con
   AES-256-GCM usando `CLAVE_CIFRADO`. La activación muestra un QR para la app autenticadora y 10
   códigos de recuperación que se ven una sola vez. Una sesión de administrador sin el segundo factor

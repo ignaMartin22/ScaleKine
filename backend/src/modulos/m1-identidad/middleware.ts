@@ -10,13 +10,41 @@ import type { ServicioIdentidad, SesionActiva } from './servicio.js';
  *
  * Por defecto también rechaza con 403 `debe_cambiar_contrasena` a la cuenta marcada para cambio de
  * contraseña (RF-06): así rige para toda ruta que exija sesión, incluidas las futuras, sin que
- * cada una tenga que acordarse. Solo las rutas que sirven para salir de ese estado (consultar la
- * sesión y cambiar la contraseña) piden `permitirCuentaMarcada`.
+ * cada una tenga que acordarse.
  */
 export function crearExigirSesion(
   servicio: Pick<ServicioIdentidad, 'sesionVigente'>,
   config: Pick<Configuracion, 'cookieSegura'>,
-  { permitirCuentaMarcada = false }: { permitirCuentaMarcada?: boolean } = {},
+): RequestHandler {
+  return armarExigirSesion(servicio, config, false);
+}
+
+/** Handlers devueltos por `crearExigirSesionAunqueDebaCambiarContrasena`, para la prueba guardiana. */
+const permisivos = new WeakSet<object>();
+
+/**
+ * Variante que deja pasar a la cuenta marcada para cambio de contraseña. Solo corresponde a las
+ * rutas que son la salida de ese estado: consultar la sesión y cambiar la contraseña (RF-06). No
+ * se exporta desde el índice del módulo; una prueba guardiana fija en qué rutas aparece.
+ */
+export function crearExigirSesionAunqueDebaCambiarContrasena(
+  servicio: Pick<ServicioIdentidad, 'sesionVigente'>,
+  config: Pick<Configuracion, 'cookieSegura'>,
+): RequestHandler {
+  const handler = armarExigirSesion(servicio, config, true);
+  permisivos.add(handler);
+  return handler;
+}
+
+/** Si `handler` es la variante permisiva. Lo usa la prueba que cubre todas las rutas. */
+export function esExigirSesionPermisivo(handler: unknown): boolean {
+  return permisivos.has(handler as object);
+}
+
+function armarExigirSesion(
+  servicio: Pick<ServicioIdentidad, 'sesionVigente'>,
+  config: Pick<Configuracion, 'cookieSegura'>,
+  permitirCuentaMarcada: boolean,
 ): RequestHandler {
   return async (req, res, next) => {
     try {
