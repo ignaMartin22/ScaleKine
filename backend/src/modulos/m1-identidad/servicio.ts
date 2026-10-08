@@ -3,7 +3,7 @@ import type { BaseDeDatos } from '../../comun/baseDeDatos.js';
 import { ErrorNegocio } from '../../comun/errores.js';
 import type { Reloj } from '../../comun/reloj.js';
 import type { Rol } from '../../generado/prisma/client.js';
-import { hashearContrasena, verificarContrasena } from './contrasenas.js';
+import { hashearContrasena, validarPoliticaContrasena, verificarContrasena } from './contrasenas.js';
 
 /** Duración fija de la sesión, sin renovación por actividad (RF-11, D-14). */
 export const DURACION_SESION_MS = 12 * 60 * 60 * 1000;
@@ -12,6 +12,8 @@ export interface UsuarioSesion {
   id: number;
   nombreUsuario: string;
   rol: Rol;
+  /** La cuenta debe elegir una contraseña propia antes de hacer cualquier otra cosa (RF-06). */
+  debeCambiarContrasena: boolean;
 }
 
 export interface SesionActiva {
@@ -55,12 +57,22 @@ export async function crearServicioIdentidad({ db, reloj }: { db: BaseDeDatos; r
       const creadaEn = reloj.ahora();
       const venceEn = new Date(creadaEn.getTime() + DURACION_SESION_MS);
       await db.sesion.create({
-        data: { hashToken: hashDeToken(token), usuarioId: usuario.id, creadaEn, venceEn },
+        data: {
+          hashToken: hashDeToken(token),
+          usuarioId: usuario.id,
+          creadaEn,
+          venceEn,
+        },
       });
       return {
         token,
         venceEn,
-        usuario: { id: usuario.id, nombreUsuario: usuario.nombreUsuario, rol: usuario.rol },
+        usuario: {
+          id: usuario.id,
+          nombreUsuario: usuario.nombreUsuario,
+          rol: usuario.rol,
+          debeCambiarContrasena: usuario.debeCambiarContrasena,
+        },
       };
     },
 
@@ -73,15 +85,61 @@ export async function crearServicioIdentidad({ db, reloj }: { db: BaseDeDatos; r
           id: true,
           venceEn: true,
           revocadaEn: true,
-          usuario: { select: { id: true, nombreUsuario: true, rol: true, activo: true } },
+          usuario: {
+            select: {
+              id: true,
+              nombreUsuario: true,
+              rol: true,
+              activo: true,
+              debeCambiarContrasena: true,
+            },
+          },
         },
       });
       if (!sesion || sesion.revocadaEn !== null) return null;
       // Al cumplirse las 12 horas exactas la sesión ya está vencida (RF-11).
       if (sesion.venceEn.getTime() <= reloj.ahora().getTime()) return null;
       if (!sesion.usuario.activo) return null;
-      const { id, nombreUsuario, rol } = sesion.usuario;
-      return { id: sesion.id, usuario: { id, nombreUsuario, rol } };
+      const { id, nombreUsuario, rol, debeCambiarContrasena } = sesion.usuario;
+      return {
+        id: sesion.id,
+        usuario: { id, nombreUsuario, rol, debeCambiarContrasena },
+      };
+    },
+
+    /**
+     * Cambio de la propia contraseña (RF-06, RF-07). Exige la actual (en el primer ingreso, la
+     * temporal) y aplica la política de RNF-03. Apaga la marca de cambio pendiente. Una contraseña
+     * actual incorrecta es 403 y no 401: el frontend trata todo 401 como sesión vencida.
+     */
+    async cambiarContrasena(
+      usuarioId: number,
+      contrasenaActual: string,
+      contrasenaNueva: string,
+    ): Promise<void> {
+      const usuario = await db.usuario.findUnique({
+        where: { id: usuarioId },
+        select: { hashContrasena: true },
+      });
+      if (!usuario || !(await verificarContrasena(usuario.hashContrasena, contrasenaActual))) {
+        throw new ErrorNegocio('contrasena_actual_incorrecta', 'La contraseña actual no es correcta.', 403);
+      }
+      validarPoliticaContrasena(contrasenaNueva);
+      // Elegir la misma que la temporal dejaría en uso la que conoce el administrador (RF-06).
+      if (contrasenaNueva === contrasenaActual) {
+        throw new ErrorNegocio(
+          'contrasena_igual_a_la_actual',
+          'La contraseña nueva tiene que ser distinta de la actual.',
+          400,
+        );
+      }
+      await db.usuario.update({
+        where: { id: usuarioId },
+        data: {
+          hashContrasena: await hashearContrasena(contrasenaNueva),
+          debeCambiarContrasena: false,
+        },
+      });
     },
 
     /** Cierre (RF-10): se marca la revocación; la fila se conserva. Es idempotente. */

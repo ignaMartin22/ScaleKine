@@ -16,8 +16,20 @@ export async function crearModuloIdentidad({
   config: Configuracion;
 }) {
   const servicio = await crearServicioIdentidad({ db, reloj });
+  // `exigirSesion` es el que usan todas las rutas de negocio: bloquea a la cuenta marcada (RF-06).
   const exigirSesion = crearExigirSesion(servicio, config);
-  return { servicio, exigirSesion, rutas: crearRutasIdentidad({ servicio, exigirSesion, config }) };
+  const exigirSesionPermitiendoCuentaMarcada = crearExigirSesion(servicio, config, {
+    permitirCuentaMarcada: true,
+  });
+  return {
+    servicio,
+    exigirSesion,
+    rutas: crearRutasIdentidad({
+      servicio,
+      exigirSesion: exigirSesionPermitiendoCuentaMarcada,
+      config,
+    }),
+  };
 }
 
 export { sesionActual } from './middleware.js';

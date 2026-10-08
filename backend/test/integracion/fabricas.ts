@@ -17,7 +17,13 @@ export function reiniciarFabricas(): void {
 }
 
 export async function crearUsuario(
-  datos: { rol?: Rol; nombreUsuario?: string; hashContrasena?: string; activo?: boolean } = {},
+  datos: {
+    rol?: Rol;
+    nombreUsuario?: string;
+    hashContrasena?: string;
+    activo?: boolean;
+    debeCambiarContrasena?: boolean;
+  } = {},
 ) {
   const n = siguiente();
   return db.usuario.create({
@@ -26,6 +32,8 @@ export async function crearUsuario(
       hashContrasena: datos.hashContrasena ?? 'hash-ficticio',
       rol: datos.rol ?? 'secretaria',
       activo: datos.activo ?? true,
+      // Por defecto la cuenta ficticia ya eligió su contraseña: la marca (RF-06) bloquea toda ruta.
+      debeCambiarContrasena: datos.debeCambiarContrasena ?? false,
       creadoEn: AHORA,
     },
   });
