@@ -20,11 +20,16 @@ interface RouterInspeccionable {
 const METODOS_DE_ESCRITURA = ['post', 'put', 'patch', 'delete', '_all'];
 
 /**
- * Escrituras que hace cualquier persona sobre su propia sesión, sin autorización por módulo:
- * ingreso y cierre. Una escritura sobre la propia cuenta, como el cambio de contraseña de T-11, se
- * agrega acá con su justificación.
+ * Escrituras que hace cualquier persona sobre su propia sesión o cuenta, sin autorización por
+ * módulo. Toda excepción nueva se agrega acá con su justificación.
  */
-const ESCRITURAS_DE_LA_PROPIA_SESION = ['POST /sesion', 'DELETE /sesion'];
+const ESCRITURAS_DE_LA_PROPIA_SESION = [
+  // Ingreso y cierre (RF-01, RF-10).
+  'POST /sesion',
+  'DELETE /sesion',
+  // Cambio de la contraseña propia con la actual, que puede hacer cualquier rol (RF-07, T-11).
+  'PUT /sesion/contrasena',
+];
 
 const comoInspeccionable = (router: Router) => router as unknown as RouterInspeccionable;
 
