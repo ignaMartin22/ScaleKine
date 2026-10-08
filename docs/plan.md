@@ -51,6 +51,7 @@ Entidades persistidas y sus relaciones. La forma física se define en las migrac
 - Ingresos fallidos seguidos, bloqueado hasta y cantidad de bloqueos consecutivos (RNF-02)
 - Secreto TOTP, cifrado con la clave de la aplicación, y si el segundo factor está activo (RNF-04,
   solo administrador)
+- Último paso TOTP aceptado, para que el mismo código no se reutilice dentro de su ventana (RNF-04)
 - Códigos de recuperación, guardados como hash y marcados al usarse (RNF-04)
 
 **`Sesion`** (M1)
