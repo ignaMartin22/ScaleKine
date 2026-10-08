@@ -4,6 +4,7 @@ import { ErrorNegocio } from '../../comun/errores.js';
 import type { Reloj } from '../../comun/reloj.js';
 import type { Rol } from '../../generado/prisma/client.js';
 import { hashearContrasena, validarPoliticaContrasena, verificarContrasena } from './contrasenas.js';
+import { crearLimiteIntentos, cuentaBloqueada, SIN_BLOQUEO } from './limiteIntentos.js';
 
 /** Duración fija de la sesión, sin renovación por actividad (RF-11, D-14). */
 export const DURACION_SESION_MS = 12 * 60 * 60 * 1000;
@@ -30,43 +31,70 @@ function errorCredenciales(): ErrorNegocio {
   return new ErrorNegocio('credenciales_invalidas', 'Las credenciales no son válidas.', 401);
 }
 
+function errorDemasiadosIntentos(): ErrorNegocio {
+  return new ErrorNegocio(
+    'demasiados_intentos',
+    'Hubo demasiados intentos fallidos desde esta conexión. Esperá unos minutos y volvé a intentar.',
+    429,
+  );
+}
+
 export async function crearServicioIdentidad({ db, reloj }: { db: BaseDeDatos; reloj: Reloj }) {
   // Hash de una contraseña al azar, calculado al crear el servicio: si argon2 falla se nota al
   // arrancar y no en el primer ingreso. Sirve para verificar contra algo cuando el usuario no
   // existe y que la respuesta tarde lo mismo (RF-02).
   const hashFicticio = await hashearContrasena(randomBytes(32).toString('base64url'));
+  const limite = crearLimiteIntentos({ db });
 
   return {
     /**
-     * Ingreso (RF-01, RF-02). Usuario inexistente, contraseña incorrecta y cuenta inactiva (RF-09)
-     * dan exactamente el mismo error, y en los tres casos se verifica un hash.
+     * Ingreso (RF-01, RF-02, RNF-02). Usuario inexistente, contraseña incorrecta, cuenta inactiva
+     * (RF-09) y cuenta bloqueada dan exactamente el mismo error, y en todos los casos se verifica un
+     * hash. El intento se reserva en la dirección antes de verificar y se libera si resulta correcto;
+     * cada rechazo suma además un fallo a la cuenta, si corresponde. Con la
+     * dirección bloqueada se responde 429 sin verificar nada: no revela nada sobre ninguna cuenta, y
+     * ese 429 no cuenta como un fallo nuevo.
      */
     async ingresar(
       nombreUsuario: string,
       contrasena: string,
+      ip: string,
     ): Promise<{ token: string; venceEn: Date; usuario: UsuarioSesion }> {
+      const ahora = reloj.ahora();
+      if (!(await limite.reservarIntentoDireccion(ip, ahora))) throw errorDemasiadosIntentos();
+
       const usuario = await db.usuario.findUnique({ where: { nombreUsuario } });
-      if (!usuario) {
-        await verificarContrasena(hashFicticio, contrasena);
+      // Argon2 corre siempre, también con la cuenta inexistente o bloqueada (RF-02).
+      const correcta = await verificarContrasena(usuario?.hashContrasena ?? hashFicticio, contrasena);
+      const bloqueada = usuario !== null && cuentaBloqueada(usuario.bloqueadoHasta, ahora);
+      if (!usuario || !correcta || !usuario.activo || bloqueada) {
+        await limite.confirmarFalloDireccion(ip, ahora);
+        // Solo una contraseña incorrecta cuenta contra la cuenta; el resto ejecuta la misma
+        // sentencia sin efecto, para que el tiempo de respuesta sea el mismo.
+        await limite.registrarFalloCuenta(usuario && !correcta ? usuario.id : null, ahora);
         throw errorCredenciales();
       }
-      const contrasenaCorrecta = await verificarContrasena(usuario.hashContrasena, contrasena);
-      if (!contrasenaCorrecta || !usuario.activo) throw errorCredenciales();
 
       const token = randomBytes(32).toString('base64url');
-      const creadaEn = reloj.ahora();
+      const creadaEn = ahora;
       const venceEn = new Date(creadaEn.getTime() + DURACION_SESION_MS);
-      await db.$transaction(async (tx) => {
+      const creada = await db.$transaction(async (tx) => {
         // La sesión se crea solo si el hash y la cuenta siguen como se verificaron. Tomar la fila
         // serializa este ingreso con un cambio o restablecimiento de contraseña (RF-07, RF-08): si
         // el ingreso la toma primero, la revocación de ese cambio ve la sesión nueva; si el cambio
-        // va primero, el WHERE ya no coincide y no se crea una sesión con la contraseña vieja. El
-        // reinicio de `ingresosFallidos` es lo que pide el límite de intentos por cuenta (RNF-02).
+        // va primero, el WHERE ya no coincide y no se crea una sesión con la contraseña vieja.
+        // Tampoco coincide si un bloqueo concurrente (RNF-02) ya se aplicó. Un ingreso correcto
+        // reinicia el límite por cuenta (RNF-02).
         const { count } = await tx.usuario.updateMany({
-          where: { id: usuario.id, hashContrasena: usuario.hashContrasena, activo: true },
-          data: { ingresosFallidos: 0 },
+          where: {
+            id: usuario.id,
+            hashContrasena: usuario.hashContrasena,
+            activo: true,
+            OR: [{ bloqueadoHasta: null }, { bloqueadoHasta: { lte: ahora } }],
+          },
+          data: SIN_BLOQUEO,
         });
-        if (count === 0) throw errorCredenciales();
+        if (count === 0) return false;
         await tx.sesion.create({
           data: {
             hashToken: hashDeToken(token),
@@ -75,7 +103,16 @@ export async function crearServicioIdentidad({ db, reloj }: { db: BaseDeDatos; r
             venceEn,
           },
         });
+        return true;
       });
+      if (!creada) {
+        // Rechazo por una carrera: el punto reservado de la dirección sigue contando, igual que el
+        // de cualquier otro rechazo, y la respuesta es la misma (RF-02).
+        await limite.confirmarFalloDireccion(ip, ahora);
+        throw errorCredenciales();
+      }
+      // Solo con la sesión confirmada se devuelve el punto: solo los fallos cuentan (RNF-02).
+      await limite.liberarIntentoDireccion(ip, ahora);
       return {
         token,
         venceEn,
@@ -124,25 +161,52 @@ export async function crearServicioIdentidad({ db, reloj }: { db: BaseDeDatos; r
      * temporal) y aplica la política de RNF-03. Apaga la marca de cambio pendiente. Una contraseña
      * actual incorrecta es 403 y no 401: el frontend trata todo 401 como sesión vencida.
      *
+     * Una actual incorrecta cuenta como intento fallido (RNF-02), igual que un ingreso rechazado:
+     * suma al mismo contador de la cuenta y de la dirección, así la sesión abierta no sirve para
+     * adivinar la contraseña sin límite. Con la cuenta bloqueada la respuesta es la misma que con una
+     * actual incorrecta, y con la dirección bloqueada es 429.
+     *
      * En la misma transacción revoca las demás sesiones de la cuenta (RF-07): quien conocía la
      * contraseña anterior, p. ej. la temporal, no conserva una sesión abierta. La sesión desde la que
      * se cambia sigue vigente.
      */
     async cambiarContrasena(
-      { usuarioId, sesionId }: { usuarioId: number; sesionId: number },
+      { usuarioId, sesionId, ip }: { usuarioId: number; sesionId: number; ip: string },
       contrasenaActual: string,
       contrasenaNueva: string,
     ): Promise<void> {
+      const ahora = reloj.ahora();
+      if (!(await limite.reservarIntentoDireccion(ip, ahora))) throw errorDemasiadosIntentos();
+
       const usuario = await db.usuario.findUnique({
         where: { id: usuarioId },
         select: { hashContrasena: true },
       });
-      if (!usuario || !(await verificarContrasena(usuario.hashContrasena, contrasenaActual))) {
+      const correcta = await verificarContrasena(usuario?.hashContrasena ?? hashFicticio, contrasenaActual);
+      // El bloqueo se lee DESPUÉS de verificar: en una ráfaga, argon2 hace cola y el bloqueo puede
+      // caer mientras tanto. Con la lectura vieja, una actual correcta correría un segundo argon2
+      // (el de la contraseña nueva) y tardaría el doble que un rechazo, delatando la contraseña
+      // (RNF-02). Se relee siempre, para que todo rechazo haga los mismos viajes a la base (RF-02).
+      const estado = await db.usuario.findUnique({
+        where: { id: usuarioId },
+        select: { bloqueadoHasta: true },
+      });
+      const bloqueada = estado !== null && cuentaBloqueada(estado.bloqueadoHasta, ahora);
+      if (!usuario || !correcta || bloqueada) {
+        await limite.confirmarFalloDireccion(ip, ahora);
+        await limite.registrarFalloCuenta(usuario && !correcta ? usuarioId : null, ahora);
         throw new ErrorNegocio('contrasena_actual_incorrecta', 'La contraseña actual no es correcta.', 403);
       }
-      validarPoliticaContrasena(contrasenaNueva);
+      // Los 400 siguientes ya revelan que la actual era correcta: no consumen cupo de la dirección.
+      try {
+        validarPoliticaContrasena(contrasenaNueva);
+      } catch (error) {
+        await limite.liberarIntentoDireccion(ip, ahora);
+        throw error;
+      }
       // Elegir la misma que la temporal dejaría en uso la que conoce el administrador (RF-06).
       if (contrasenaNueva === contrasenaActual) {
+        await limite.liberarIntentoDireccion(ip, ahora);
         throw new ErrorNegocio(
           'contrasena_igual_a_la_actual',
           'La contraseña nueva tiene que ser distinta de la actual.',
@@ -150,25 +214,49 @@ export async function crearServicioIdentidad({ db, reloj }: { db: BaseDeDatos; r
         );
       }
       const hashNuevo = await hashearContrasena(contrasenaNueva);
-      await db.$transaction(async (tx) => {
+      const resultado = await db.$transaction(async (tx) => {
         // Escritura condicionada al hash que se verificó: si un restablecimiento (RF-08) cambió la
-        // contraseña mientras tanto, no se lo pisa.
+        // contraseña mientras tanto, no se lo pisa; tampoco si un bloqueo concurrente (RNF-02) ya se
+        // aplicó. Un cambio correcto reinicia el límite por cuenta (RNF-02).
         const { count } = await tx.usuario.updateMany({
-          where: { id: usuarioId, hashContrasena: usuario.hashContrasena, activo: true },
-          data: { hashContrasena: hashNuevo, debeCambiarContrasena: false },
+          where: {
+            id: usuarioId,
+            hashContrasena: usuario.hashContrasena,
+            activo: true,
+            OR: [{ bloqueadoHasta: null }, { bloqueadoHasta: { lte: ahora } }],
+          },
+          data: { hashContrasena: hashNuevo, debeCambiarContrasena: false, ...SIN_BLOQUEO },
         });
         if (count === 0) {
-          throw new ErrorNegocio(
-            'contrasena_modificada',
-            'Tu contraseña cambió mientras la modificabas. Ingresá de nuevo.',
-            409,
-          );
+          // Si la cuenta quedó bloqueada en la carrera, la respuesta tiene que ser la de una actual
+          // incorrecta: otra distinta delataría que la contraseña era la correcta (RNF-02). Si no,
+          // fue un restablecimiento concurrente (RF-08).
+          const actual = await tx.usuario.findUnique({
+            where: { id: usuarioId },
+            select: { bloqueadoHasta: true },
+          });
+          return actual !== null && cuentaBloqueada(actual.bloqueadoHasta, ahora) ? 'bloqueada' : 'modificada';
         }
         await tx.sesion.updateMany({
           where: { usuarioId, id: { not: sesionId }, revocadaEn: null },
-          data: { revocadaEn: reloj.ahora() },
+          data: { revocadaEn: ahora },
         });
+        return 'cambiada';
       });
+      if (resultado === 'bloqueada') {
+        await limite.confirmarFalloDireccion(ip, ahora);
+        throw new ErrorNegocio('contrasena_actual_incorrecta', 'La contraseña actual no es correcta.', 403);
+      }
+      if (resultado === 'modificada') {
+        await limite.confirmarFalloDireccion(ip, ahora);
+        throw new ErrorNegocio(
+          'contrasena_modificada',
+          'Tu contraseña cambió mientras la modificabas. Ingresá de nuevo.',
+          409,
+        );
+      }
+      // Solo con el cambio confirmado se devuelve el punto: solo los fallos cuentan (RNF-02).
+      await limite.liberarIntentoDireccion(ip, ahora);
     },
 
     /** Cierre (RF-10): se marca la revocación; la fila se conserva. Es idempotente. */

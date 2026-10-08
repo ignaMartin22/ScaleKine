@@ -175,9 +175,36 @@ saca al turno de `en_espera` la conserva; una que lo devuelve a `reservado` la l
 - **RF-11**: cada petición y cada conexión de Socket.io verifican que la sesión no esté vencida ni
   revocada. Al conectar el socket se programa su desconexión para el momento del vencimiento, y el
   frontend vuelve al login.
-- **RNF-02 (límite de intentos):** el bloqueo por cuenta vive en `Usuario`; el de dirección IP usa
-  `rate-limiter-flexible` con almacenamiento en PostgreSQL, para que sobreviva a reinicios. Express
-  confía solo en la IP que informa el proxy local (`trust proxy` = 1).
+- **RNF-02 (límite de intentos):** cuentan igual los ingresos fallidos y los cambios de contraseña
+  rechazados por la contraseña actual (RF-07), para la cuenta y para la dirección.
+  - *Cuenta:* el bloqueo vive en `Usuario` (`ingresosFallidos`, `bloqueadoHasta`,
+    `bloqueosConsecutivos`). Cada fallo se suma en una sola sentencia `UPDATE`, sin leer y escribir
+    por separado, para que intentos concurrentes no se pierdan. Mientras la cuenta está bloqueada,
+    los intentos no cuentan ni extienden el bloqueo, y el rechazo es el mismo que el de credenciales
+    inválidas, verificando igual la contraseña con argon2 para que el tiempo no lo delate (RF-02).
+    `bloqueosConsecutivos`, que duplica cada bloqueo, vuelve a cero con un ingreso o un cambio de
+    contraseña correctos y con el restablecimiento (RF-08). Quedan tres diferencias residuales
+    aceptadas, de menos de un milisegundo a pocos ms frente a la variación de argon2: el `UPDATE` de
+    una cuenta existente con contraseña incorrecta escribe una fila y el de `id = 0` no, y el camino
+    de una carrera hace `BEGIN`/`UPDATE`/`COMMIT`. En el cambio de contraseña, si el bloqueo cae
+    mientras se hashea la nueva, la respuesta es la misma pero tarda un argon2 más; afecta solo a
+    los intentos ya en vuelo cuando cae el bloqueo. Si un cambio de contraseña pierde una carrera
+    contra un bloqueo, responde el mismo 403 que una actual incorrecta. El estado de bloqueo del
+    cambio de contraseña se lee después de verificar la actual, para que una actual correcta con la
+    cuenta ya bloqueada no corra el segundo argon2 y no se distinga por tiempo.
+  - *Dirección:* implementación propia de ventana fija sobre la tabla `limite_intentos`, que
+    sobrevive a reinicios. El intento se reserva en una sola sentencia (`INSERT … ON CONFLICT DO
+    UPDATE … WHERE`) antes de verificar la contraseña, así una ráfaga en paralelo no supera el
+    umbral, y se libera si resulta correcto: solo cuentan los fallos. La ventana de 15 minutos
+    empieza con el primer intento, también uno correcto, que deja la IP guardada con 0 puntos hasta
+    15 minutos; los intentos correctos no renuevan la ventana. Con 20 puntos la dirección queda
+    bloqueada, y el bloqueo de 15 minutos arranca con el rechazo que alcanza el umbral. Recibe 429
+    con su propio mensaje, que no revela nada sobre ninguna cuenta. Las filas vencidas se borran en
+    cada chequeo, para no conservar direcciones sin necesidad. La clave es la IP exacta: una IPv6
+    puede rotar dentro de su /64, y a eso lo frena igual el límite por cuenta. Se descartó
+    `rate-limiter-flexible`: calcula el tiempo con `Date.now()` y no admite el reloj inyectable, que
+    es un invariante del proyecto (§6.2).
+  - Express confía solo en la IP que informa el proxy local (`trust proxy` = 1).
 - **RNF-03 (contraseñas):** hash `argon2id` con los parámetros recomendados por OWASP; mínimo de 12
   caracteres; rechazo de las contraseñas de una lista embebida de contraseñas comunes. Se validan
   igual al crear, cambiar y restablecer. Los espacios de los extremos no cuentan para el largo ni

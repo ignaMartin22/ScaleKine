@@ -2,6 +2,7 @@ import type { BaseDeDatos } from '../comun/baseDeDatos.js';
 import { ErrorNegocio } from '../comun/errores.js';
 import type { Reloj } from '../comun/reloj.js';
 import { hashearContrasena } from '../modulos/m1-identidad/contrasenas.js';
+import { SIN_BLOQUEO } from '../modulos/m1-identidad/index.js';
 import { generarContrasenaTemporal } from './contrasenaTemporal.js';
 
 /**
@@ -129,11 +130,8 @@ export async function restablecerAdmin(
       data: {
         hashContrasena,
         debeCambiarContrasena: true,
-        // Un restablecimiento levanta el bloqueo de la cuenta (RNF-02). T-09 va a ofrecer una
-        // operación para esto en el módulo de identidad: cuando exista, usarla acá.
-        ingresosFallidos: 0,
-        bloqueadoHasta: null,
-        bloqueosConsecutivos: 0,
+        // Un restablecimiento levanta el bloqueo de la cuenta (RNF-02).
+        ...SIN_BLOQUEO,
       },
     });
     await tx.sesion.updateMany({

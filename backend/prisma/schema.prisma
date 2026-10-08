@@ -161,7 +161,8 @@ model TurnoEvento {
   @@index([turnoId])
 }
 
-/// Límite de intentos por dirección IP (RNF-02), en el formato que espera rate-limiter-flexible.
+/// Límite de intentos por dirección IP (RNF-02). Conserva el formato de rate-limiter-flexible (key, points,
+/// expire en ms), pero la lógica es propia (M1) porque usa el reloj inyectable.
 /// La tabla la crea esta migración porque scalekine_app no puede crear tablas.
 model LimiteIntentos {
   key    String  @id @db.VarChar(255)

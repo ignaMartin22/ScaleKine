@@ -10,13 +10,17 @@ import type { ServicioIdentidad, UsuarioSesion } from './servicio.js';
  * Rutas de sesión, montadas bajo `/api`:
  *
  * - `POST /api/sesion`: ingreso (RF-01, RF-02). Responde 200
- *   `{ usuario: { nombreUsuario, rol, debeCambiarContrasena } }` y escribe la cookie de sesión.
+ *   `{ usuario: { nombreUsuario, rol, debeCambiarContrasena } }` y escribe la cookie de sesión. Con
+ *   la dirección bloqueada por demasiados fallos responde 429 `demasiados_intentos` (RNF-02); con la
+ *   cuenta bloqueada, la misma respuesta que con credenciales inválidas, para no revelar que existe.
  * - `GET /api/sesion`: sesión actual. Mismo cuerpo; 401 si no hay una sesión válida.
  * - `PUT /api/sesion/contrasena`: cambio de la propia contraseña (RF-06, RF-07). Cuerpo
  *   `{ contrasenaActual, contrasenaNueva }`; 204 si se aplicó, 403 `contrasena_actual_incorrecta` si
  *   la actual no coincide (nunca 401: el frontend lo leería como sesión vencida), 400 si la nueva
  *   no cumple la política (RNF-03) o es igual a la actual, y 409 `contrasena_modificada` si otra
- *   escritura cambió la contraseña mientras tanto.
+ *   escritura cambió la contraseña mientras tanto. Una actual incorrecta cuenta como intento fallido
+ *   (RNF-02): con la cuenta bloqueada la respuesta es la misma 403 que con una actual incorrecta, y
+ *   con la dirección bloqueada es 429 `demasiados_intentos`.
  * - `DELETE /api/sesion`: cierre (RF-10). Revoca la sesión si hay cookie, siempre borra la cookie y
  *   responde 204; sin sesión también es 204.
  *
@@ -73,10 +77,14 @@ export function crearRutasIdentidad({
 }): Router {
   const router = Router();
 
-  router.post('/sesion', validar(esquemaIngreso), async (_req, res, next) => {
+  router.post('/sesion', validar(esquemaIngreso), async (req, res, next) => {
     try {
       const { body } = datosValidados(res.locals, esquemaIngreso);
-      const { token, venceEn, usuario } = await servicio.ingresar(body.nombreUsuario, body.contrasena);
+      const { token, venceEn, usuario } = await servicio.ingresar(
+        body.nombreUsuario,
+        body.contrasena,
+        req.ip ?? 'desconocida',
+      );
       escribirCookieSesion(res, config, token, venceEn);
       res.json({ usuario: cuerpoUsuario(usuario) });
     } catch (err) {
@@ -93,12 +101,12 @@ export function crearRutasIdentidad({
     '/sesion/contrasena',
     exigirSesionAunqueDebaCambiarContrasena,
     validar(esquemaCambioContrasena),
-    async (_req, res, next) => {
+    async (req, res, next) => {
       try {
         const { id, usuario } = sesionActual(res);
         const { body } = datosValidados(res.locals, esquemaCambioContrasena);
         await servicio.cambiarContrasena(
-          { usuarioId: usuario.id, sesionId: id },
+          { usuarioId: usuario.id, sesionId: id, ip: req.ip ?? 'desconocida' },
           body.contrasenaActual,
           body.contrasenaNueva,
         );

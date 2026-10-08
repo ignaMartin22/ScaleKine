@@ -31,5 +31,6 @@ export async function crearModuloIdentidad({
   };
 }
 
+export { SIN_BLOQUEO } from './limiteIntentos.js';
 export { sesionActual } from './middleware.js';
 export type { SesionActiva, UsuarioSesion } from './servicio.js';

@@ -379,12 +379,19 @@ exigido; el cómo está en `plan.md` y `despliegue.md`.
   *Por qué:* Datos de salud en texto plano por la red de la clínica o de un proveedor de internet
   son una filtración.
 
-- **RNF-02** — *Comportamiento no deseado:* Si una cuenta acumula 5 ingresos fallidos seguidos,
-  entonces se bloquea 15 minutos, y cada bloqueo siguiente dura el doble; si una misma dirección
-  acumula 20 ingresos fallidos en 15 minutos, entonces se bloquea esa dirección 15 minutos. El
-  mensaje de rechazo sigue sin revelar si la cuenta existe (RF-02). Un restablecimiento de
-  contraseña (RF-08) levanta el bloqueo de la cuenta.
-  *Por qué:* Sin límite, una contraseña se puede adivinar por fuerza bruta.
+- **RNF-02** — *Comportamiento no deseado:* Si una cuenta acumula 5 intentos fallidos seguidos
+  —ingresos fallidos e intentos fallidos de la contraseña actual al cambiarla (RF-07)—, entonces se
+  bloquea 15 minutos, y cada bloqueo siguiente dura el doble; si una misma dirección acumula 20 de
+  esos intentos fallidos en 15 minutos, entonces se bloquea esa dirección 15 minutos. Mientras la
+  cuenta está bloqueada, el rechazo es el mismo que el de una contraseña incorrecta (en el ingreso,
+  credenciales inválidas; en el cambio de contraseña, el 403 `contrasena_actual_incorrecta`), y el
+  mensaje sigue sin revelar si la cuenta existe (RF-02). Con la dirección bloqueada, la respuesta es
+  429 sin verificar la contraseña; solo cuentan los intentos fallidos, y un intento correcto no
+  consume cupo de la dirección. Un restablecimiento de contraseña (RF-08) levanta el bloqueo
+  de la cuenta.
+  *Por qué:* Sin límite, una contraseña se puede adivinar por fuerza bruta. El cambio de contraseña
+  también exige la actual: sin el mismo límite, quien robe una sesión abierta podría probar
+  contraseñas sin límite desde ahí.
 
 - **RNF-03** — *Restricción:* Las contraseñas tienen al menos 12 caracteres, no pueden figurar en
   una lista de contraseñas comunes, y nunca se almacenan ni se registran en texto legible.
@@ -633,8 +640,10 @@ El MVP se considera terminado cuando **todos** los puntos siguientes son verific
 
 - [ ] El sitio solo responde por HTTPS con TLS 1.2+, redirige HTTP, envía HSTS, y la cookie de
       sesión es `Secure`, `HttpOnly` y `SameSite=Strict` (RNF-01).
-- [ ] Cinco ingresos fallidos bloquean la cuenta 15 minutos, con bloqueos crecientes, y veinte desde
-      una dirección la bloquean; el mensaje no revela si la cuenta existe (RNF-02).
+- [ ] Cinco intentos fallidos, de ingreso o de la contraseña actual al cambiarla, bloquean la cuenta
+      15 minutos, con bloqueos crecientes, y veinte desde una dirección la bloquean, también si
+      llegan en paralelo; el mensaje no revela si la cuenta existe y un intento correcto no consume
+      cupo de la dirección (RNF-02).
 - [ ] Una contraseña de menos de 12 caracteres o común se rechaza (RNF-03).
 - [ ] El administrador no puede ingresar sin el código TOTP; los códigos de recuperación funcionan
       una sola vez (RNF-04).

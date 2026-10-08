@@ -132,11 +132,13 @@ El estado de cada tarea y lo que quedó a medio hacer están en [`avance.md`](./
 
 ### T-09 · B · Límite de intentos
 - Bloqueo por cuenta (5 fallos → 15 minutos, cada bloqueo siguiente dura el doble) y por IP (20
-  fallos en 15 minutos → 15 minutos), con `rate-limiter-flexible` sobre PostgreSQL. El
-  restablecimiento de contraseña levanta el bloqueo de la cuenta.
+  fallos en 15 minutos → 15 minutos), sobre PostgreSQL con el reloj inyectable. Cuentan los
+  ingresos fallidos y los cambios de contraseña rechazados por la contraseña actual. El intento se reserva en la IP antes
+  de verificar y se libera si resulta correcto, así una ráfaga en paralelo no supera el umbral.
 - **RF/RNF:** RNF-02.
 - **Hecho:** pruebas de integración de ambos umbrales y de la duración creciente, con reloj
-  inyectable. El mensaje es idéntico exista o no la cuenta.
+  inyectable, en el ingreso y en el cambio de contraseña, y de la ráfaga en paralelo desde una IP. El
+  mensaje es idéntico exista o no la cuenta.
 
 ### T-10 · B · Comando de instalación y operación
 - CLI con estos subcomandos:
@@ -172,7 +174,8 @@ El estado de cada tarea y lo que quedó a medio hacer están en [`avance.md`](./
   desactiva cuentas. Restablecer y desactivar revocan las sesiones de la cuenta en la misma
   transacción.
 - **RF/RNF:** RF-04, RF-08, RF-09.
-- **Hecho:** pruebas de integración de cada operación, incluida la revocación de sesiones abiertas.
+- **Hecho:** pruebas de integración de cada operación, incluida la revocación de sesiones abiertas
+  y que el restablecimiento de contraseña levanta el bloqueo de la cuenta (RNF-02).
 
 ### T-14 · F · Acceso y administración de cuentas
 - Login, cambio obligatorio de contraseña, activación y verificación del segundo factor (con
