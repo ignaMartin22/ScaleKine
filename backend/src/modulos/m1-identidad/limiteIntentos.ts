@@ -45,29 +45,27 @@ const claveDeDireccion = (ip: string) => `direccion:${ip}`;
 
 export function crearLimiteIntentos({ db }: { db: BaseDeDatos }) {
   return {
-    /** La dirección está bloqueada si llegó al umbral y la ventana todavía no venció (RNF-02). */
-    async direccionBloqueada(ip: string, ahora: Date): Promise<boolean> {
-      const ahoraMs = ahora.getTime();
-      const filas = await db.$queryRaw<{ bloqueada: boolean }[]>`
-        SELECT TRUE AS bloqueada FROM limite_intentos
-        WHERE key = ${claveDeDireccion(ip)}
-          AND points >= ${FALLOS_PARA_BLOQUEAR_DIRECCION}::int
-          AND expire > ${ahoraMs}::bigint`;
-      return filas.length > 0;
-    },
-
     /**
-     * Suma un fallo a la dirección en una ventana fija de 15 minutos que empieza con el primer fallo.
-     * Al llegar al umbral dentro de la ventana, `expire` pasa a ser el fin del bloqueo; al vencer,
-     * la dirección vuelve a empezar de cero. Antes se borran las filas vencidas, para no conservar
-     * direcciones sin necesidad (minimización de datos).
+     * Reserva un intento de la dirección ANTES de verificar la contraseña (RNF-02). Devuelve `false`
+     * si la dirección está bloqueada (el servicio responde 429 sin leer la cuenta ni correr argon2)
+     * y `true` si el intento quedó contado. Reservar antes de argon2, en una sola sentencia, evita
+     * que una ráfaga en paralelo pase entera el chequeo y supere el umbral de la ventana.
+     *
+     * Ventana fija de 15 minutos que empieza con el primer intento. Al alcanzar el umbral dentro de
+     * la ventana, `expire` pasa a ser el fin del bloqueo; al vencer, la dirección vuelve a empezar de
+     * cero. El `WHERE` del `DO UPDATE` rechaza el intento si la dirección ya está en el umbral con la
+     * ventana vigente. Antes se borran las filas vencidas en cada chequeo, para no conservar
+     * direcciones más tiempo del necesario (minimización de datos).
+     *
+     * Efecto conocido y aceptado: si el intento que reservó el punto 20 resulta correcto, la ventana
+     * queda extendida hasta el fin de bloqueo fijado al reservar. Es más restrictivo, nunca menos.
      */
-    async registrarFalloDireccion(ip: string, ahora: Date): Promise<void> {
+    async reservarIntentoDireccion(ip: string, ahora: Date): Promise<boolean> {
       const ahoraMs = ahora.getTime();
       const finVentana = ahoraMs + MINUTOS_VENTANA_DIRECCION * MS_POR_MINUTO;
       const finBloqueo = ahoraMs + MINUTOS_BLOQUEO_DIRECCION * MS_POR_MINUTO;
       await db.$executeRaw`DELETE FROM limite_intentos WHERE expire <= ${ahoraMs}::bigint`;
-      await db.$executeRaw`
+      const filas = await db.$queryRaw<{ points: number }[]>`
         INSERT INTO limite_intentos (key, points, expire)
         VALUES (${claveDeDireccion(ip)}, 1, ${finVentana}::bigint)
         ON CONFLICT (key) DO UPDATE SET
@@ -81,7 +79,23 @@ export function crearLimiteIntentos({ db }: { db: BaseDeDatos }) {
             WHEN limite_intentos.points + 1 = ${FALLOS_PARA_BLOQUEAR_DIRECCION}::int
               THEN ${finBloqueo}::bigint
             ELSE limite_intentos.expire
-          END`;
+          END
+        WHERE NOT (
+          limite_intentos.points >= ${FALLOS_PARA_BLOQUEAR_DIRECCION}::int
+          AND limite_intentos.expire > ${ahoraMs}::bigint
+        )
+        RETURNING points`;
+      return filas.length > 0;
+    },
+
+    /**
+     * Devuelve el punto reservado por un intento que resultó correcto (ingreso exitoso, o cambio de
+     * contraseña con la actual correcta): solo los fallos cuentan para la dirección (RNF-02).
+     */
+    async liberarIntentoDireccion(ip: string, ahora: Date): Promise<void> {
+      await db.$executeRaw`
+        UPDATE limite_intentos SET points = GREATEST(points - 1, 0)
+        WHERE key = ${claveDeDireccion(ip)} AND expire > ${ahora.getTime()}::bigint`;
     },
 
     /**

@@ -13,6 +13,8 @@ import { crearServicioIdentidad } from '../../src/modulos/m1-identidad/servicio.
 import { db } from './base.js';
 import { crearUsuario } from './fabricas.js';
 
+// Dirección ficticia desde la que ingresan las pruebas.
+const IP_PRUEBA = '203.0.113.50';
 const AHORA = '2026-10-07T12:00:00Z';
 const DATOS: DatosInstalacion = {
   usuario: 'administrador',
@@ -70,7 +72,7 @@ describe('instalar (RF-05, RF-13)', () => {
     const deps = dependencias();
     const { contrasenaTemporal } = await instalar(deps, DATOS);
 
-    const { usuario } = await (await servicio(deps)).ingresar('administrador', contrasenaTemporal);
+    const { usuario } = await (await servicio(deps)).ingresar('administrador', contrasenaTemporal, IP_PRUEBA);
 
     expect(usuario.rol).toBe('administrador');
     expect(usuario.debeCambiarContrasena).toBe(true);
@@ -80,7 +82,7 @@ describe('instalar (RF-05, RF-13)', () => {
     const deps = dependencias();
     const { contrasenaTemporal } = await instalar(deps, { ...DATOS, usuario: 'jefa' });
 
-    const { usuario } = await (await servicio(deps)).ingresar('jefa', contrasenaTemporal);
+    const { usuario } = await (await servicio(deps)).ingresar('jefa', contrasenaTemporal, IP_PRUEBA);
     expect(usuario.nombreUsuario).toBe('jefa');
   });
 
@@ -117,7 +119,7 @@ describe('instalar (RF-05, RF-13)', () => {
     expect(await db.usuario.count()).toBe(1);
     expect((await db.consultorio.findFirstOrThrow()).nombre).toBe('Consultorio Ficticio');
     await expect(
-      (await servicio(deps)).ingresar('administrador', primera.contrasenaTemporal),
+      (await servicio(deps)).ingresar('administrador', primera.contrasenaTemporal, IP_PRUEBA),
     ).resolves.toBeDefined();
   });
 
@@ -151,18 +153,18 @@ describe('restablecer-admin (plan.md §9)', () => {
 
     const identidad = await servicio(deps);
     expect(contrasenaTemporal).not.toBe(anterior);
-    await expect(identidad.ingresar('administrador', anterior)).rejects.toMatchObject({
+    await expect(identidad.ingresar('administrador', anterior, IP_PRUEBA)).rejects.toMatchObject({
       codigo: 'credenciales_invalidas',
     });
-    const { usuario } = await identidad.ingresar('administrador', contrasenaTemporal);
+    const { usuario } = await identidad.ingresar('administrador', contrasenaTemporal, IP_PRUEBA);
     expect(usuario.debeCambiarContrasena).toBe(true);
   });
 
   it('cierra todas las sesiones del administrador y no toca las de otras cuentas', async () => {
     const { deps, anterior } = await conAdministradorInstalado();
     const identidad = await servicio(deps);
-    const primera = await identidad.ingresar('administrador', anterior);
-    const segunda = await identidad.ingresar('administrador', anterior);
+    const primera = await identidad.ingresar('administrador', anterior, IP_PRUEBA);
+    const segunda = await identidad.ingresar('administrador', anterior, IP_PRUEBA);
     const otra = await crearUsuario({ nombreUsuario: 'otra1' });
     const sesionAjena = await db.sesion.create({
       data: {
@@ -239,7 +241,7 @@ describe('restablecer-admin (plan.md §9)', () => {
       });
     }) as never);
     try {
-      await expect(identidad.ingresar('administrador', anterior)).rejects.toMatchObject({
+      await expect(identidad.ingresar('administrador', anterior, IP_PRUEBA)).rejects.toMatchObject({
         codigo: 'credenciales_invalidas',
       });
     } finally {
@@ -304,15 +306,15 @@ describe('restablecer-2fa-admin (RNF-04)', () => {
     const despues = await administrador();
     expect(despues.hashContrasena).toBe(antes.hashContrasena);
     expect(despues.debeCambiarContrasena).toBe(true);
-    await expect((await servicio(deps)).ingresar('administrador', contrasenaTemporal)).resolves.toBeDefined();
+    await expect((await servicio(deps)).ingresar('administrador', contrasenaTemporal, IP_PRUEBA)).resolves.toBeDefined();
   });
 
   it('cierra las sesiones abiertas del administrador y no toca las de otras cuentas', async () => {
     const deps = dependencias();
     const { contrasenaTemporal } = await instalar(deps, DATOS);
     const identidad = await servicio(deps);
-    const primera = await identidad.ingresar('administrador', contrasenaTemporal);
-    const segunda = await identidad.ingresar('administrador', contrasenaTemporal);
+    const primera = await identidad.ingresar('administrador', contrasenaTemporal, IP_PRUEBA);
+    const segunda = await identidad.ingresar('administrador', contrasenaTemporal, IP_PRUEBA);
     // Una sesión que ya había verificado el segundo factor.
     await db.sesion.updateMany({ data: { segundoFactorVerificado: true } });
     const otra = await crearUsuario({ nombreUsuario: 'otra1' });
@@ -402,7 +404,7 @@ describe('revocar-sesiones (despliegue.md §12)', () => {
     const deps = dependencias();
     const { contrasenaTemporal } = await instalar(deps, DATOS);
     const identidad = await servicio(deps);
-    const { token } = await identidad.ingresar('administrador', contrasenaTemporal);
+    const { token } = await identidad.ingresar('administrador', contrasenaTemporal, IP_PRUEBA);
     expect(await identidad.sesionVigente(token)).not.toBeNull();
 
     await revocarSesiones(deps);

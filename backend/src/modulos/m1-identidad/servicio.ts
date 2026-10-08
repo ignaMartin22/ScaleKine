@@ -50,7 +50,8 @@ export async function crearServicioIdentidad({ db, reloj }: { db: BaseDeDatos; r
     /**
      * Ingreso (RF-01, RF-02, RNF-02). Usuario inexistente, contraseña incorrecta, cuenta inactiva
      * (RF-09) y cuenta bloqueada dan exactamente el mismo error, y en todos los casos se verifica un
-     * hash. Cada rechazo suma un fallo a la dirección y, si corresponde, a la cuenta. Con la
+     * hash. El intento se reserva en la dirección antes de verificar y se libera si resulta correcto;
+     * cada rechazo suma además un fallo a la cuenta, si corresponde. Con la
      * dirección bloqueada se responde 429 sin verificar nada: no revela nada sobre ninguna cuenta, y
      * ese 429 no cuenta como un fallo nuevo.
      */
@@ -60,19 +61,19 @@ export async function crearServicioIdentidad({ db, reloj }: { db: BaseDeDatos; r
       ip: string,
     ): Promise<{ token: string; venceEn: Date; usuario: UsuarioSesion }> {
       const ahora = reloj.ahora();
-      if (await limite.direccionBloqueada(ip, ahora)) throw errorDemasiadosIntentos();
+      if (!(await limite.reservarIntentoDireccion(ip, ahora))) throw errorDemasiadosIntentos();
 
       const usuario = await db.usuario.findUnique({ where: { nombreUsuario } });
       // Argon2 corre siempre, también con la cuenta inexistente o bloqueada (RF-02).
       const correcta = await verificarContrasena(usuario?.hashContrasena ?? hashFicticio, contrasena);
       const bloqueada = usuario !== null && cuentaBloqueada(usuario.bloqueadoHasta, ahora);
       if (!usuario || !correcta || !usuario.activo || bloqueada) {
-        await limite.registrarFalloDireccion(ip, ahora);
         // Solo una contraseña incorrecta cuenta contra la cuenta; el resto ejecuta la misma
         // sentencia sin efecto, para que el tiempo de respuesta sea el mismo.
         await limite.registrarFalloCuenta(usuario && !correcta ? usuario.id : null, ahora);
         throw errorCredenciales();
       }
+      await limite.liberarIntentoDireccion(ip, ahora);
 
       const token = randomBytes(32).toString('base64url');
       const creadaEn = ahora;
@@ -166,7 +167,7 @@ export async function crearServicioIdentidad({ db, reloj }: { db: BaseDeDatos; r
       contrasenaNueva: string,
     ): Promise<void> {
       const ahora = reloj.ahora();
-      if (await limite.direccionBloqueada(ip, ahora)) throw errorDemasiadosIntentos();
+      if (!(await limite.reservarIntentoDireccion(ip, ahora))) throw errorDemasiadosIntentos();
 
       const usuario = await db.usuario.findUnique({
         where: { id: usuarioId },
@@ -175,10 +176,10 @@ export async function crearServicioIdentidad({ db, reloj }: { db: BaseDeDatos; r
       const correcta = await verificarContrasena(usuario?.hashContrasena ?? hashFicticio, contrasenaActual);
       const bloqueada = usuario !== null && cuentaBloqueada(usuario.bloqueadoHasta, ahora);
       if (!usuario || !correcta || bloqueada) {
-        await limite.registrarFalloDireccion(ip, ahora);
         await limite.registrarFalloCuenta(usuario && !correcta ? usuarioId : null, ahora);
         throw new ErrorNegocio('contrasena_actual_incorrecta', 'La contraseña actual no es correcta.', 403);
       }
+      await limite.liberarIntentoDireccion(ip, ahora);
       validarPoliticaContrasena(contrasenaNueva);
       // Elegir la misma que la temporal dejaría en uso la que conoce el administrador (RF-06).
       if (contrasenaNueva === contrasenaActual) {

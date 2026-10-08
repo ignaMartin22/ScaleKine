@@ -1,5 +1,5 @@
 import request from 'supertest';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { crearApp } from '../../src/app.js';
 import { cargarConfiguracion } from '../../src/comun/configuracion.js';
 import { RelojFijo } from '../../src/comun/reloj.js';
@@ -247,6 +247,37 @@ describe('límite de intentos por cuenta en el ingreso (RNF-02)', () => {
     expect(guardado.bloqueadoHasta).not.toBeNull();
   });
 
+  it('un bloqueo aplicado entre la lectura de la cuenta y la sesión impide crearla', LARGA, async () => {
+    const usuario = await crearCuenta('cuenta1');
+    const { app, reloj } = await appConIdentidad();
+    const sesionesAntes = await sesionesDe(usuario.id);
+
+    // La cuenta se bloquea justo después de que el servicio la leyó sin bloqueo.
+    const original = db.usuario.findUnique.bind(db.usuario);
+    let primera = true;
+    const espia = vi.spyOn(db.usuario, 'findUnique').mockImplementation(((args: never) => {
+      const lectura = original(args);
+      if (!primera) return lectura;
+      primera = false;
+      return lectura.then(async (usuarioLeido) => {
+        await db.usuario.update({
+          where: { id: usuario.id },
+          data: { bloqueadoHasta: mas(reloj.ahora(), QUINCE_MIN) },
+        });
+        return usuarioLeido;
+      });
+    }) as never);
+    try {
+      const res = await ingresarBien(app, 'cuenta1');
+      expect(res.status).toBe(401);
+      expect(res.body).toEqual(ERROR_CREDENCIALES);
+    } finally {
+      espia.mockRestore();
+    }
+
+    expect(await sesionesDe(usuario.id)).toBe(sesionesAntes);
+  });
+
   it('el rechazo es indistinguible entre contraseña incorrecta, usuario inexistente, cuenta inactiva y cuenta bloqueada (RF-02)', LARGA, async () => {
     await crearCuenta('existente1');
     await crearCuenta('inactiva1', { activo: false });
@@ -306,6 +337,68 @@ describe('límite de intentos por cuenta en el cambio de contraseña (RNF-02)', 
     expect((await cambiar(app, cookie, CLAVE)).body).toEqual(ERROR_ACTUAL_INCORRECTA);
   });
 
+  it('el primer bloqueo por cambios dura 15 minutos exactos', LARGA, async () => {
+    const { app, reloj } = await appConIdentidad();
+    const { usuario, cookie } = await cuentaConSesion(app, 'cuenta1');
+
+    const bloqueo = reloj.ahora();
+    await repetir(5, () => cambiar(app, cookie, INCORRECTA));
+    expect((await limiteDe(usuario.id)).bloqueadoHasta).toEqual(mas(bloqueo, QUINCE_MIN));
+
+    reloj.avanzar(QUINCE_MIN - 1);
+    const bloqueada = await cambiar(app, cookie, CLAVE);
+    expect(bloqueada.status).toBe(403);
+    expect(bloqueada.body).toEqual(ERROR_ACTUAL_INCORRECTA);
+    reloj.avanzar(1);
+    expect((await cambiar(app, cookie, CLAVE)).status).toBe(204);
+  });
+
+  it('el segundo bloqueo por cambios dura 30 minutos exactos', LARGA, async () => {
+    const { app, reloj } = await appConIdentidad();
+    const { cookie } = await cuentaConSesion(app, 'cuenta1');
+
+    await repetir(5, () => cambiar(app, cookie, INCORRECTA));
+    reloj.avanzar(QUINCE_MIN);
+    await repetir(5, () => cambiar(app, cookie, INCORRECTA));
+
+    reloj.avanzar(2 * QUINCE_MIN - 1);
+    expect((await cambiar(app, cookie, CLAVE)).status).toBe(403);
+    reloj.avanzar(1);
+    expect((await cambiar(app, cookie, CLAVE)).status).toBe(204);
+  });
+
+  it('un bloqueo aplicado entre la lectura de la cuenta y el cambio impide cambiar la contraseña', LARGA, async () => {
+    const { app, reloj } = await appConIdentidad();
+    const { usuario, cookie } = await cuentaConSesion(app, 'cuenta1');
+    const hashAntes = (await db.usuario.findUniqueOrThrow({ where: { id: usuario.id } })).hashContrasena;
+
+    // La cuenta se bloquea justo después de que el servicio la leyó sin bloqueo.
+    const original = db.usuario.findUnique.bind(db.usuario);
+    let primera = true;
+    const espia = vi.spyOn(db.usuario, 'findUnique').mockImplementation(((args: never) => {
+      const lectura = original(args);
+      if (!primera) return lectura;
+      primera = false;
+      return lectura.then(async (usuarioLeido) => {
+        await db.usuario.update({
+          where: { id: usuario.id },
+          data: { bloqueadoHasta: mas(reloj.ahora(), QUINCE_MIN) },
+        });
+        return usuarioLeido;
+      });
+    }) as never);
+    try {
+      const res = await cambiar(app, cookie, CLAVE);
+      expect(res.status).toBe(409);
+    } finally {
+      espia.mockRestore();
+    }
+
+    const guardado = await db.usuario.findUniqueOrThrow({ where: { id: usuario.id } });
+    expect(guardado.hashContrasena).toBe(hashAntes);
+    expect(guardado.bloqueadoHasta).toEqual(mas(reloj.ahora(), QUINCE_MIN));
+  });
+
   it('un cambio correcto deja los tres campos sin fallos ni bloqueo', LARGA, async () => {
     const { app, reloj } = await appConIdentidad();
     const { usuario, cookie } = await cuentaConSesion(app, 'cuenta1');
@@ -357,6 +450,35 @@ describe('límite de intentos por dirección (RNF-02)', () => {
     expect((await ingresarBien(app, 'valida1', X)).status).toBe(429);
     reloj.avanzar(1);
     expect((await ingresarBien(app, 'valida1', X)).status).toBe(200);
+  });
+
+  it('una ráfaga de 25 ingresos fallidos en paralelo deja pasar exactamente 20 a verificar', LARGA, async () => {
+    const { app } = await appConIdentidad();
+
+    const respuestas = await Promise.all(Array.from({ length: 25 }, (_, i) => fallar(app, `fantasma${i}`, X)));
+
+    expect(respuestas.filter((res) => res.status === 401)).toHaveLength(20);
+    const rechazadas = respuestas.filter((res) => res.status === 429);
+    expect(rechazadas).toHaveLength(5);
+    for (const res of rechazadas) expect(res.body).toEqual(ERROR_DEMASIADOS_INTENTOS);
+    const fila = await db.limiteIntentos.findUniqueOrThrow({ where: { key: `direccion:${X}` } });
+    expect(fila.points).toBe(20);
+  });
+
+  it('un ingreso correcto no consume un punto de la dirección', LARGA, async () => {
+    await cuentasDeLaDireccion();
+    const { app } = await appConIdentidad();
+
+    await repetir(19, (i) => fallarDesdeX(app, i));
+    expect((await ingresarBien(app, 'valida1', X)).status).toBe(200);
+    const fila = await db.limiteIntentos.findUniqueOrThrow({ where: { key: `direccion:${X}` } });
+    expect(fila.points).toBe(19);
+
+    // El fallo 20 todavía se verifica (401); recién con él la dirección queda bloqueada.
+    expect((await fallarDesdeX(app, 19)).status).toBe(401);
+    const bloqueado = await ingresarBien(app, 'valida1', X);
+    expect(bloqueado.status).toBe(429);
+    expect(bloqueado.body).toEqual(ERROR_DEMASIADOS_INTENTOS);
   });
 
   it('la ventana empieza con el primer fallo y vence a los 15 minutos', LARGA, async () => {

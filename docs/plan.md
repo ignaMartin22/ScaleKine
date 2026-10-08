@@ -185,9 +185,13 @@ saca al turno de `en_espera` la conserva; una que lo devuelve a `reservado` la l
     `bloqueosConsecutivos`, que duplica cada bloqueo, vuelve a cero con un ingreso o un cambio de
     contraseña correctos y con el restablecimiento (RF-08).
   - *Dirección:* implementación propia de ventana fija sobre la tabla `limite_intentos`, que
-    sobrevive a reinicios. La ventana de 15 minutos empieza con el primer fallo; al llegar a 20, la
-    dirección queda bloqueada 15 minutos y recibe 429 con su propio mensaje, que no revela nada sobre
-    ninguna cuenta. Las filas vencidas se borran, para no conservar direcciones sin necesidad. Se
+    sobrevive a reinicios. El intento se reserva en una sola sentencia (`INSERT … ON CONFLICT DO
+    UPDATE … WHERE`) antes de verificar la contraseña, así una ráfaga en paralelo no supera el
+    umbral, y se libera si resulta correcto: solo cuentan los fallos. La ventana de 15 minutos
+    empieza con el primer intento; al llegar a 20, la dirección queda bloqueada 15 minutos y recibe
+    429 con su propio mensaje, que no revela nada sobre ninguna cuenta. Las filas vencidas se borran
+    en cada chequeo, para no conservar direcciones sin necesidad. La clave es la IP exacta: una IPv6
+    puede rotar dentro de su /64, y a eso lo frena igual el límite por cuenta. Se
     descartó `rate-limiter-flexible`: calcula el tiempo con `Date.now()` y no admite el reloj
     inyectable, que es un invariante del proyecto (§6.2).
   - Express confía solo en la IP que informa el proxy local (`trust proxy` = 1).
