@@ -447,68 +447,80 @@ describe('autorización (RF-03)', () => {
 
 describe('carreras con un ingreso concurrente (RF-08, RF-09)', () => {
   /**
-   * El ingreso lee la cuenta y verifica la contraseña; justo después se ejecuta `accion`, y recién
-   * entonces el ingreso intenta crear su sesión. Se simula ejecutando `accion` apenas el servicio
-   * termina de leer la cuenta durante el ingreso.
+   * Ejecuta `accion` y hace que un ingreso arranque justo después de la PRIMERA sentencia de
+   * escritura (`usuario.updateMany` o `sesion.updateMany`) de la transacción del servicio de cuentas.
+   * Con el orden correcto esa primera sentencia es la de `Usuario` y ya tiene el lock de la fila: el
+   * `updateMany` del ingreso espera y al liberarse ve la cuenta cambiada. Con el orden invertido, las
+   * sesiones ya están revocadas y el ingreso crea y confirma una sesión que nadie revoca.
+   *
+   * El ingreso no se espera dentro de la transacción (con el orden correcto sería un bloqueo mutuo):
+   * se espera como mucho 500 ms para darle tiempo a llegar a su escritura.
    */
-  async function ingresarConAccionEnElMedio(app: App, accion: () => Promise<void>) {
-    const original = db.usuario.findUnique.bind(db.usuario);
-    let primera = true;
-    const espia = vi.spyOn(db.usuario, 'findUnique').mockImplementation(((args: never) => {
-      const lectura = original(args);
-      if (!primera) return lectura;
-      primera = false;
-      return lectura.then(async (leido) => {
-        await accion();
-        return leido;
+  async function ejecutarConIngresoTrasLaPrimeraSentencia(app: App, accion: () => Promise<void>) {
+    const original = db.$transaction.bind(db);
+    let armado = true;
+    let ingreso: ReturnType<typeof ingresar> | undefined;
+    const espia = vi.spyOn(db, '$transaction').mockImplementation(((
+      callback: (tx: never) => Promise<unknown>,
+    ) => {
+      // Solo la primera transacción es la del servicio de cuentas; la del ingreso ya no se envuelve.
+      if (!armado) return original(callback as never);
+      armado = false;
+      return original(async (tx) => {
+        let primera = true;
+        const despuesDeLaPrimera = async <T>(sentencia: Promise<T>): Promise<T> => {
+          const resultado = await sentencia;
+          if (primera) {
+            primera = false;
+            ingreso = ingresar(app, 'secre1', CLAVE);
+            await Promise.race([ingreso, new Promise((resolver) => setTimeout(resolver, 500))]);
+          }
+          return resultado;
+        };
+        const intermediario = {
+          usuario: { updateMany: (args: never) => despuesDeLaPrimera(tx.usuario.updateMany(args)) },
+          sesion: { updateMany: (args: never) => despuesDeLaPrimera(tx.sesion.updateMany(args)) },
+        };
+        return callback(intermediario as never);
       });
     }) as never);
     try {
-      return await ingresar(app, 'secre1', CLAVE);
+      await accion();
     } finally {
       espia.mockRestore();
     }
+    expect(ingreso).toBeDefined();
+    return (await ingreso)!;
   }
 
-  it('un ingreso concurrente con una desactivación no deja una sesión viva', async () => {
+  async function verificarSinSesionViva(app: App, usuarioId: number, cookie: string) {
+    expect(await db.sesion.count({ where: { usuarioId, revocadaEn: null } })).toBe(0);
+    if (cookie !== '') expect((await sesionActual(app, cookie)).status).toBe(401);
+  }
+
+  it('un ingreso que entra entre las dos sentencias de la desactivación no deja una sesión viva', async () => {
     const app = await crearAppDePrueba();
     const admin = await ingresarComoAdministrador(app);
-    const usuario = await crearUsuario({
-      nombreUsuario: 'secre1',
-      hashContrasena: await hashClave,
-    });
+    const usuario = await crearUsuario({ nombreUsuario: 'secre1', hashContrasena: await hashClave });
 
-    const { res } = await ingresarConAccionEnElMedio(app, async () => {
+    const { cookie } = await ejecutarConIngresoTrasLaPrimeraSentencia(app, async () => {
       expect((await desactivar(app, admin, usuario.id)).status).toBe(204);
     });
 
-    expect(res.status).toBe(401);
-    expect(res.body.error.codigo).toBe('credenciales_invalidas');
-    expect(
-      await db.sesion.count({
-        where: { usuarioId: usuario.id, revocadaEn: null },
-      }),
-    ).toBe(0);
+    await verificarSinSesionViva(app, usuario.id, cookie);
+    expect((await ingresar(app, 'secre1', CLAVE)).res.status).toBe(401);
   });
 
-  it('un ingreso concurrente con un restablecimiento no deja una sesión con la contraseña vieja', async () => {
+  it('un ingreso que entra entre las dos sentencias del restablecimiento no deja una sesión viva', async () => {
     const app = await crearAppDePrueba();
     const admin = await ingresarComoAdministrador(app);
-    const usuario = await crearUsuario({
-      nombreUsuario: 'secre1',
-      hashContrasena: await hashClave,
-    });
+    const usuario = await crearUsuario({ nombreUsuario: 'secre1', hashContrasena: await hashClave });
 
-    const { res } = await ingresarConAccionEnElMedio(app, async () => {
+    const { cookie } = await ejecutarConIngresoTrasLaPrimeraSentencia(app, async () => {
       expect((await restablecer(app, admin, usuario.id)).status).toBe(204);
     });
 
-    expect(res.status).toBe(401);
-    expect(
-      await db.sesion.count({
-        where: { usuarioId: usuario.id, revocadaEn: null },
-      }),
-    ).toBe(0);
+    await verificarSinSesionViva(app, usuario.id, cookie);
     expect((await ingresar(app, 'secre1', TEMPORAL)).res.status).toBe(200);
   });
 });

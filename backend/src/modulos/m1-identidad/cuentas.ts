@@ -125,6 +125,7 @@ export function crearServicioCuentas({ db, reloj }: { db: BaseDeDatos; reloj: Re
       await cuentaGestionable(id);
       const ahora = reloj.ahora();
       await db.$transaction(async (tx) => {
+        // Sin `activo: true`: es idempotente, y revocar las sesiones de una cuenta ya inactiva no hace daño.
         await tx.usuario.updateMany({
           where: { id, rol: { not: 'administrador' } },
           data: { activo: false },
