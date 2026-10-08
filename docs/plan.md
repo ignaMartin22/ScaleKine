@@ -173,6 +173,11 @@ saca al turno de `en_espera` la conserva; una que lo devuelve a `reservado` la l
 - **RF-08 / RF-09**: restablecer y desactivar revocan todas las sesiones de la cuenta en la misma
   transacción. Una cuenta desactivada conserva su fila, porque `Turno` y `TurnoEvento` la
   referencian como autor.
+  Rutas bajo `/api/cuentas`, todas con `autorizarEscritura('cuentas')` (también el GET): listar,
+  crear (solo secretaría, con temporal elegida por el administrador), `/:id/restablecimiento` y
+  `/:id/desactivacion`. Se escribe primero `Usuario` y después las sesiones. El restablecimiento
+  levanta el bloqueo por intentos. El administrador no se gestiona por la API (409): se lo
+  restablece por CLI. Desactivar es idempotente y no hay reactivación.
 - **RF-11**: cada petición y cada conexión de Socket.io verifican que la sesión no esté vencida ni
   revocada. Al conectar el socket se programa su desconexión para el momento del vencimiento, y el
   frontend vuelve al login.
