@@ -132,11 +132,13 @@ El estado de cada tarea y lo que quedó a medio hacer están en [`avance.md`](./
 
 ### T-09 · B · Límite de intentos
 - Bloqueo por cuenta (5 fallos → 15 minutos, cada bloqueo siguiente dura el doble) y por IP (20
-  fallos en 15 minutos → 15 minutos), con `rate-limiter-flexible` sobre PostgreSQL. El
+  fallos en 15 minutos → 15 minutos), sobre PostgreSQL con el reloj inyectable. Cuentan los
+  ingresos fallidos y los cambios de contraseña rechazados por la contraseña actual. El
   restablecimiento de contraseña levanta el bloqueo de la cuenta.
 - **RF/RNF:** RNF-02.
 - **Hecho:** pruebas de integración de ambos umbrales y de la duración creciente, con reloj
-  inyectable. El mensaje es idéntico exista o no la cuenta.
+  inyectable, en el ingreso y en el cambio de contraseña. El mensaje es idéntico exista o no la
+  cuenta.
 
 ### T-10 · B · Comando de instalación y operación
 - CLI con estos subcomandos:
