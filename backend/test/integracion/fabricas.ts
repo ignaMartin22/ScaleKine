@@ -1,4 +1,9 @@
+import request from 'supertest';
 import type { Bloque, EstadoTurno, Rol } from '../../src/generado/prisma/client.js';
+import { hashearContrasena } from '../../src/modulos/m1-identidad/contrasenas.js';
+import { hashDeToken } from '../../src/modulos/m1-identidad/servicio.js';
+import { cifrarSecreto, generarSecretoTotp } from '../../src/modulos/m1-identidad/segundoFactor.js';
+import { CLAVE_CIFRADO_PRUEBA, ORIGEN_APP } from '../ayudantes.js';
 import { db } from './base.js';
 
 /**
@@ -23,6 +28,7 @@ export async function crearUsuario(
     hashContrasena?: string;
     activo?: boolean;
     debeCambiarContrasena?: boolean;
+    totpActivo?: boolean;
   } = {},
 ) {
   const n = siguiente();
@@ -34,9 +40,50 @@ export async function crearUsuario(
       activo: datos.activo ?? true,
       // Por defecto la cuenta ficticia ya eligió su contraseña: la marca (RF-06) bloquea toda ruta.
       debeCambiarContrasena: datos.debeCambiarContrasena ?? false,
+      totpActivo: datos.totpActivo ?? false,
       creadoEn: AHORA,
     },
   });
+}
+
+/** Contraseña de las cuentas que crea `ingresarComoAdministradorVerificado`. */
+export const CONTRASENA_ADMINISTRADOR_VERIFICADO = 'clave-de-prueba-larga';
+
+// Argon2 es lento a propósito: se calcula una vez y se reutiliza.
+let hashAdministrador: Promise<string> | undefined;
+
+/**
+ * Deja una sesión de administrador lista para usar rutas de negocio (RNF-04): crea la cuenta con el
+ * segundo factor activo (secreto cifrado con la clave de prueba), ingresa por la API real y marca la
+ * sesión como verificada en la base. Desde que el administrador exige el segundo factor, toda prueba
+ * que necesite una sesión de administrador completa debe usar esta función y no debilitar el
+ * middleware. No hace falta que `app` tenga `CLAVE_CIFRADO`.
+ */
+export async function ingresarComoAdministradorVerificado(
+  app: Parameters<typeof request>[0],
+  datos: { nombreUsuario?: string } = {},
+) {
+  hashAdministrador ??= hashearContrasena(CONTRASENA_ADMINISTRADOR_VERIFICADO);
+  const base = await crearUsuario({
+    rol: 'administrador',
+    nombreUsuario: datos.nombreUsuario,
+    hashContrasena: await hashAdministrador,
+    totpActivo: true,
+  });
+  const clave = Buffer.from(CLAVE_CIFRADO_PRUEBA, 'base64');
+  const usuario = await db.usuario.update({
+    where: { id: base.id },
+    data: { secretoTotpCifrado: cifrarSecreto(generarSecretoTotp(), clave, base.id) },
+  });
+  const res = await request(app)
+    .post('/api/sesion')
+    .set('Origin', ORIGEN_APP)
+    .send({ nombreUsuario: usuario.nombreUsuario, contrasena: CONTRASENA_ADMINISTRADOR_VERIFICADO });
+  if (res.status !== 200) throw new Error(`El ingreso del administrador de prueba dio ${res.status}.`);
+  const token = /^sesion=([^;]*)/.exec((res.headers['set-cookie'] as string[] | undefined)?.[0] ?? '')?.[1];
+  if (!token) throw new Error('El ingreso no trajo cookie.');
+  await db.sesion.update({ where: { hashToken: hashDeToken(token) }, data: { segundoFactorVerificado: true } });
+  return { usuario, token, cookie: `sesion=${token}` };
 }
 
 export async function crearKinesiologo(datos: { bloque?: Bloque } = {}) {
