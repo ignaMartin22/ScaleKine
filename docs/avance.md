@@ -19,10 +19,10 @@ criterios de "hecho" en [`tasks.md`](./tasks.md). Se actualiza cada vez que se f
 | T-06 · Integración continua | Hecha | #1 | Verificada con el #2: una dependencia vulnerable a propósito dejó el pipeline en rojo (cerrado sin fusionar). |
 | T-07 · Sesiones | Hecha | #8 y #9 | El #9 aplica las observaciones de la revisión de seguridad. |
 | T-08 · Autorización por rol | Hecha | #12 | Incluye la prueba guardiana de rutas (ver §3). |
-| T-09 · Límite de intentos | Hecha | #15 | Tres rondas de revisión de seguridad; ver §5. |
+| T-09 · Límite de intentos | Hecha | #15 | Tres rondas de revisión de seguridad; ver §2. |
 | T-10 · CLI de instalación | Hecha | #14 | |
 | T-11 · Contraseñas | Hecha | #11 y #13 | El #13 aplica dos rondas de revisión de seguridad. |
-| T-12 · Segundo factor | Hecha | #17 | Tres rondas de revisión de seguridad; ver §5. |
+| T-12 · Segundo factor | Hecha | #17 | Tres rondas de revisión de seguridad; ver §2. |
 | T-13 · Gestión de cuentas | Hecha | #18 | Revisada por el orquestador (no es crítica en `tasks.md`). |
 | T-15 · Grilla | Hecha | #6 | Adelantada a la ola 1, porque es un módulo puro. |
 | T-20 · Tabla de transiciones | Hecha | #7 | Adelantada a la ola 1, porque es un módulo puro. |
