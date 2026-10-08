@@ -135,6 +135,33 @@ npm run build              # compila a dist/
 El backend no arranca si falta `ZONA_HORARIA` o, en producción, `CLAVE_CIFRADO`. `GET /api/salud`
 responde `ok`.
 
+#### Comandos de instalación y operación
+
+La CLI de `backend/src/cli/` usa la misma configuración, la misma conexión (`scalekine_app`) y el
+mismo reloj que el backend, y no arranca el servidor. En desarrollo lee `../.env`:
+
+```sh
+cd backend
+npm run cli -- instalar --nombre "Consultorio" --direccion "Calle 123" --telefono "11 5555 0000" [--usuario administrador]
+npm run cli -- restablecer-admin [--usuario <nombre>]
+npm run cli -- restablecer-2fa-admin [--usuario <nombre>]
+npm run cli -- revocar-sesiones
+```
+
+En producción se ejecuta el código compilado dentro del contenedor `api`, que ya tiene las variables
+de entorno: `docker compose exec api node dist/cli/index.js <subcomando> [opciones]`.
+
+- `instalar`: crea el administrador (activo y marcado para cambio de contraseña, RF-05) y el
+  consultorio (RF-13). La contraseña temporal se genera al azar y se muestra **una sola vez** por la
+  salida estándar: no se guarda ni se registra. Si ya hay un administrador o un consultorio, se
+  niega sin modificar nada.
+- `restablecer-admin`: genera una nueva contraseña temporal (también una sola vez), marca la cuenta
+  para cambio, levanta el bloqueo por intentos y cierra todas las sesiones del administrador.
+- `restablecer-2fa-admin`: desactiva el segundo factor del administrador para que lo vuelva a
+  activar en su próximo ingreso.
+- `revocar-sesiones`: revoca las sesiones de todas las cuentas; es el primer paso ante un incidente
+  (`docs/despliegue.md` §12).
+
 ### Frontend
 
 ```sh
@@ -155,7 +182,7 @@ crítico (`inlineCritical: false`). `verificar-csp` usa el Chrome o Edge instala
 
 1. `docker compose up -d` — levanta PostgreSQL.
 2. Migraciones de Prisma en `backend/`.
-3. Comando de instalación — crea la cuenta de administrador (contraseña temporal, se muestra una sola vez) y los datos del consultorio.
+3. Comando de instalación (`npm run cli -- instalar`) — crea la cuenta de administrador (contraseña temporal, se muestra una sola vez) y los datos del consultorio.
 4. Levantar backend y frontend, e ingresar como administrador para elegir la contraseña definitiva.
 
 ## Trabajo en paralelo
