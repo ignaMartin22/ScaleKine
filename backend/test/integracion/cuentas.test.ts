@@ -7,7 +7,12 @@ import { hashearContrasena, verificarContrasena } from '../../src/modulos/m1-ide
 import { crearRutas } from '../../src/rutas.js';
 import { ENTORNO_PRUEBA, loggerCapturado, ORIGEN_APP } from '../ayudantes.js';
 import { db } from './base.js';
-import { AHORA, crearUsuario } from './fabricas.js';
+import {
+  AHORA,
+  CONTRASENA_ADMINISTRADOR_VERIFICADO,
+  crearUsuario,
+  ingresarComoAdministradorVerificado,
+} from './fabricas.js';
 
 const CLAVE = 'clave-de-prueba-0001';
 const TEMPORAL = 'temporal-del-admin-1';
@@ -37,18 +42,9 @@ async function ingresar(app: App, nombreUsuario: string, contrasena: string) {
   return { res, cookie };
 }
 
-/**
- * Crea un administrador e ingresa con él.
- * Después de T-12 esta función tiene que dejar el segundo factor verificado (ayudante compartido de T-12).
- */
+/** Administrador con el segundo factor verificado (RNF-04), por el ayudante compartido. */
 async function ingresarComoAdministrador(app: App) {
-  await crearUsuario({
-    rol: 'administrador',
-    nombreUsuario: 'admin1',
-    hashContrasena: await hashClave,
-  });
-  const { res, cookie } = await ingresar(app, 'admin1', CLAVE);
-  expect(res.status).toBe(200);
+  const { cookie } = await ingresarComoAdministradorVerificado(app, { nombreUsuario: 'admin1' });
   return cookie;
 }
 
@@ -291,6 +287,26 @@ describe('restablecer una contraseña (RF-08)', () => {
     expect((await ingresar(app, 'secre1', TEMPORAL)).res.status).toBe(200);
   });
 
+  it('no toca los campos del segundo factor de la cuenta', async () => {
+    const app = await crearAppDePrueba();
+    const admin = await ingresarComoAdministrador(app);
+    const usuario = await crearUsuario({
+      nombreUsuario: 'kine1',
+      rol: 'kinesiologo',
+      hashContrasena: await hashClave,
+    });
+    await db.usuario.update({
+      where: { id: usuario.id },
+      data: { totpActivo: true, codigosRecuperacion: ['hash-ficticio-1', 'hash-ficticio-2'] },
+    });
+
+    expect((await restablecer(app, admin, usuario.id)).status).toBe(204);
+
+    const guardada = await db.usuario.findUniqueOrThrow({ where: { id: usuario.id } });
+    expect(guardada.totpActivo).toBe(true);
+    expect(guardada.codigosRecuperacion).toEqual(['hash-ficticio-1', 'hash-ficticio-2']);
+  });
+
   it('rechaza una temporal fuera de la política, sin tocar la cuenta', async () => {
     const app = await crearAppDePrueba();
     const admin = await ingresarComoAdministrador(app);
@@ -319,7 +335,7 @@ describe('restablecer una contraseña (RF-08)', () => {
     expect(deAdmin.status).toBe(409);
     expect(deAdmin.body.error.codigo).toBe('cuenta_de_administrador');
     const hashAdmin = (await db.usuario.findUniqueOrThrow({ where: { id: adminDb.id } })).hashContrasena;
-    expect(await verificarContrasena(hashAdmin, CLAVE)).toBe(true);
+    expect(await verificarContrasena(hashAdmin, CONTRASENA_ADMINISTRADOR_VERIFICADO)).toBe(true);
 
     const inexistente = await restablecer(app, admin, 99999);
     expect(inexistente.status).toBe(404);
@@ -429,6 +445,35 @@ describe('autorización (RF-03)', () => {
     const intacto = await db.usuario.findUniqueOrThrow({
       where: { id: objetivo.id },
     });
+    expect(intacto.activo).toBe(true);
+    expect(await verificarContrasena(intacto.hashContrasena, CLAVE)).toBe(true);
+  });
+
+  it('un administrador con la sesión sin verificar recibe 403 en las cuatro rutas y no cambia nada', async () => {
+    const app = await crearAppDePrueba();
+    const objetivo = await crearUsuario({ nombreUsuario: 'objetivo1', hashContrasena: await hashClave });
+    await crearUsuario({
+      rol: 'administrador',
+      nombreUsuario: 'admin-sin-verificar',
+      hashContrasena: await hashClave,
+      totpActivo: true,
+    });
+    const { res, cookie } = await ingresar(app, 'admin-sin-verificar', CLAVE);
+    expect(res.status).toBe(200);
+    expect(res.body.pasoPendiente).toBe('verificar_segundo_factor');
+
+    const respuestas = [
+      await request(app).get('/api/cuentas').set('Cookie', cookie),
+      await crear(app, cookie, { nombreUsuario: 'intruso', contrasenaTemporal: TEMPORAL }),
+      await restablecer(app, cookie, objetivo.id),
+      await desactivar(app, cookie, objetivo.id),
+    ];
+    for (const r of respuestas) {
+      expect(r.status).toBe(403);
+      expect(r.body.error.codigo).toBe('debe_verificar_segundo_factor');
+    }
+    expect(await db.usuario.count({ where: { nombreUsuario: 'intruso' } })).toBe(0);
+    const intacto = await db.usuario.findUniqueOrThrow({ where: { id: objetivo.id } });
     expect(intacto.activo).toBe(true);
     expect(await verificarContrasena(intacto.hashContrasena, CLAVE)).toBe(true);
   });
