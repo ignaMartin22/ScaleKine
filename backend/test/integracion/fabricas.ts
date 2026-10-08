@@ -16,13 +16,16 @@ export function reiniciarFabricas(): void {
   secuencia = 0;
 }
 
-export async function crearUsuario(datos: { rol?: Rol; nombreUsuario?: string } = {}) {
+export async function crearUsuario(
+  datos: { rol?: Rol; nombreUsuario?: string; hashContrasena?: string; activo?: boolean } = {},
+) {
   const n = siguiente();
   return db.usuario.create({
     data: {
       nombreUsuario: datos.nombreUsuario ?? `usuario${n}`,
-      hashContrasena: 'hash-ficticio',
+      hashContrasena: datos.hashContrasena ?? 'hash-ficticio',
       rol: datos.rol ?? 'secretaria',
+      activo: datos.activo ?? true,
       creadoEn: AHORA,
     },
   });
