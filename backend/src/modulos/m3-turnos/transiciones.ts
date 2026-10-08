@@ -3,6 +3,7 @@
  * backend donde viven las transiciones: `transicionar` solo acepta lo que está acá y la misma tabla
  * responde qué acciones mostrar (RF-34). La corrección (RF-35) es una operación aparte, no una fila.
  */
+import { puedeEscribir } from '../../comun/autorizacion.js';
 import { ErrorNegocio } from '../../comun/errores.js';
 
 export type EstadoTurno = 'reservado' | 'en_espera' | 'asistio' | 'no_asistio' | 'anulado';
@@ -39,11 +40,6 @@ export interface AccionesDisponibles {
   readonly puedeCorregir: boolean;
 }
 
-/** Quién puede marcar y corregir estados: el kinesiólogo es de solo lectura. */
-function puedeEscribir(rol: Rol): boolean {
-  return rol === 'administrador' || rol === 'secretaria';
-}
-
 export function buscarTransicion(desde: EstadoTurno, hacia: EstadoTurno): Transicion | undefined {
   return TRANSICIONES.find((t) => t.desde === desde && t.hacia === hacia);
 }
@@ -53,7 +49,7 @@ export function buscarTransicion(desde: EstadoTurno, hacia: EstadoTurno): Transi
  * ese estado más la corrección para secretaría y administrador; ninguna para el kinesiólogo.
  */
 export function accionesDisponibles(estado: EstadoTurno, rol: Rol): AccionesDisponibles {
-  if (!puedeEscribir(rol)) return { transiciones: [], puedeCorregir: false };
+  if (!puedeEscribir(rol, 'turnos')) return { transiciones: [], puedeCorregir: false };
   return {
     transiciones: TRANSICIONES.filter((t) => t.desde === estado),
     puedeCorregir: true,
@@ -65,7 +61,7 @@ export function accionesDisponibles(estado: EstadoTurno, rol: Rol): AccionesDisp
  * `null` si puede.
  */
 export function motivoDeRechazo(rol: Rol, desde: EstadoTurno, hacia: EstadoTurno): string | null {
-  if (!puedeEscribir(rol)) return 'Tu rol no permite modificar turnos.';
+  if (!puedeEscribir(rol, 'turnos')) return 'Tu rol no permite modificar turnos.';
   if (buscarTransicion(desde, hacia)) return null;
   if (desde === hacia) return 'El turno ya está en ese estado.';
   return 'Ese cambio de estado no está permitido; si fue un error, usá la corrección.';
@@ -75,7 +71,7 @@ export function motivoDeRechazo(rol: Rol, desde: EstadoTurno, hacia: EstadoTurno
 export function validarTransicion(rol: Rol, desde: EstadoTurno, hacia: EstadoTurno): Transicion {
   const motivo = motivoDeRechazo(rol, desde, hacia);
   if (motivo !== null) {
-    const escribe = puedeEscribir(rol);
+    const escribe = puedeEscribir(rol, 'turnos');
     throw new ErrorNegocio(
       escribe ? 'transicion_no_permitida' : 'rol_sin_permiso',
       motivo,
