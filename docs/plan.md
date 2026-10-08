@@ -183,7 +183,7 @@ saca al turno de `en_espera` la conserva; una que lo devuelve a `reservado` la l
     los intentos no cuentan ni extienden el bloqueo, y el rechazo es el mismo que el de credenciales
     inválidas, verificando igual la contraseña con argon2 para que el tiempo no lo delate (RF-02).
     `bloqueosConsecutivos`, que duplica cada bloqueo, vuelve a cero con un ingreso o un cambio de
-    contraseña correctos y con el restablecimiento (RF-08). Quedan dos diferencias residuales
+    contraseña correctos y con el restablecimiento (RF-08). Quedan tres diferencias residuales
     aceptadas, de menos de un milisegundo a pocos ms frente a la variación de argon2: el `UPDATE` de
     una cuenta existente con contraseña incorrecta escribe una fila y el de `id = 0` no, y el camino
     de una carrera hace `BEGIN`/`UPDATE`/`COMMIT`. En el cambio de contraseña, si el bloqueo cae
