@@ -183,13 +183,18 @@ saca al turno de `en_espera` la conserva; una que lo devuelve a `reservado` la l
     los intentos no cuentan ni extienden el bloqueo, y el rechazo es el mismo que el de credenciales
     inválidas, verificando igual la contraseña con argon2 para que el tiempo no lo delate (RF-02).
     `bloqueosConsecutivos`, que duplica cada bloqueo, vuelve a cero con un ingreso o un cambio de
-    contraseña correctos y con el restablecimiento (RF-08).
+    contraseña correctos y con el restablecimiento (RF-08). Quedan dos
+    diferencias residuales aceptadas, de menos de un milisegundo a pocos ms frente a la variación de
+    argon2: el `UPDATE` de una cuenta existente con contraseña incorrecta escribe una fila y el de
+    `id = 0` no, y el camino de una carrera hace `BEGIN`/`UPDATE`/`ROLLBACK`. Si un cambio de
+    contraseña pierde una carrera contra un bloqueo, responde el mismo 403 que una actual incorrecta.
   - *Dirección:* implementación propia de ventana fija sobre la tabla `limite_intentos`, que
     sobrevive a reinicios. El intento se reserva en una sola sentencia (`INSERT … ON CONFLICT DO
     UPDATE … WHERE`) antes de verificar la contraseña, así una ráfaga en paralelo no supera el
     umbral, y se libera si resulta correcto: solo cuentan los fallos. La ventana de 15 minutos
-    empieza con el primer intento; al llegar a 20, la dirección queda bloqueada 15 minutos y recibe
-    429 con su propio mensaje, que no revela nada sobre ninguna cuenta. Las filas vencidas se borran
+    empieza con el primer intento, también uno correcto, que deja la IP guardada con 0 puntos hasta
+    15 minutos; los intentos correctos no renuevan la ventana. Con 20 puntos la dirección queda
+    bloqueada, y el bloqueo de 15 minutos arranca con el rechazo que alcanza el umbral. Recibe 429 con su propio mensaje, que no revela nada sobre ninguna cuenta. Las filas vencidas se borran
     en cada chequeo, para no conservar direcciones sin necesidad. La clave es la IP exacta: una IPv6
     puede rotar dentro de su /64, y a eso lo frena igual el límite por cuenta. Se
     descartó `rate-limiter-flexible`: calcula el tiempo con `Date.now()` y no admite el reloj

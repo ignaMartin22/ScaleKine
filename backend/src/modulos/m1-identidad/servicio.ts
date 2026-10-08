@@ -68,17 +68,17 @@ export async function crearServicioIdentidad({ db, reloj }: { db: BaseDeDatos; r
       const correcta = await verificarContrasena(usuario?.hashContrasena ?? hashFicticio, contrasena);
       const bloqueada = usuario !== null && cuentaBloqueada(usuario.bloqueadoHasta, ahora);
       if (!usuario || !correcta || !usuario.activo || bloqueada) {
+        await limite.confirmarFalloDireccion(ip, ahora);
         // Solo una contraseña incorrecta cuenta contra la cuenta; el resto ejecuta la misma
         // sentencia sin efecto, para que el tiempo de respuesta sea el mismo.
         await limite.registrarFalloCuenta(usuario && !correcta ? usuario.id : null, ahora);
         throw errorCredenciales();
       }
-      await limite.liberarIntentoDireccion(ip, ahora);
 
       const token = randomBytes(32).toString('base64url');
       const creadaEn = ahora;
       const venceEn = new Date(creadaEn.getTime() + DURACION_SESION_MS);
-      await db.$transaction(async (tx) => {
+      const creada = await db.$transaction(async (tx) => {
         // La sesión se crea solo si el hash y la cuenta siguen como se verificaron. Tomar la fila
         // serializa este ingreso con un cambio o restablecimiento de contraseña (RF-07, RF-08): si
         // el ingreso la toma primero, la revocación de ese cambio ve la sesión nueva; si el cambio
@@ -94,7 +94,7 @@ export async function crearServicioIdentidad({ db, reloj }: { db: BaseDeDatos; r
           },
           data: SIN_BLOQUEO,
         });
-        if (count === 0) throw errorCredenciales();
+        if (count === 0) return false;
         await tx.sesion.create({
           data: {
             hashToken: hashDeToken(token),
@@ -103,7 +103,16 @@ export async function crearServicioIdentidad({ db, reloj }: { db: BaseDeDatos; r
             venceEn,
           },
         });
+        return true;
       });
+      if (!creada) {
+        // Rechazo por una carrera: el punto reservado de la dirección sigue contando, igual que el
+        // de cualquier otro rechazo, y la respuesta es la misma (RF-02).
+        await limite.confirmarFalloDireccion(ip, ahora);
+        throw errorCredenciales();
+      }
+      // Solo con la sesión confirmada se devuelve el punto: solo los fallos cuentan (RNF-02).
+      await limite.liberarIntentoDireccion(ip, ahora);
       return {
         token,
         venceEn,
@@ -176,13 +185,20 @@ export async function crearServicioIdentidad({ db, reloj }: { db: BaseDeDatos; r
       const correcta = await verificarContrasena(usuario?.hashContrasena ?? hashFicticio, contrasenaActual);
       const bloqueada = usuario !== null && cuentaBloqueada(usuario.bloqueadoHasta, ahora);
       if (!usuario || !correcta || bloqueada) {
+        await limite.confirmarFalloDireccion(ip, ahora);
         await limite.registrarFalloCuenta(usuario && !correcta ? usuarioId : null, ahora);
         throw new ErrorNegocio('contrasena_actual_incorrecta', 'La contraseña actual no es correcta.', 403);
       }
-      await limite.liberarIntentoDireccion(ip, ahora);
-      validarPoliticaContrasena(contrasenaNueva);
+      // Los 400 siguientes ya revelan que la actual era correcta: no consumen cupo de la dirección.
+      try {
+        validarPoliticaContrasena(contrasenaNueva);
+      } catch (error) {
+        await limite.liberarIntentoDireccion(ip, ahora);
+        throw error;
+      }
       // Elegir la misma que la temporal dejaría en uso la que conoce el administrador (RF-06).
       if (contrasenaNueva === contrasenaActual) {
+        await limite.liberarIntentoDireccion(ip, ahora);
         throw new ErrorNegocio(
           'contrasena_igual_a_la_actual',
           'La contraseña nueva tiene que ser distinta de la actual.',
@@ -190,7 +206,7 @@ export async function crearServicioIdentidad({ db, reloj }: { db: BaseDeDatos; r
         );
       }
       const hashNuevo = await hashearContrasena(contrasenaNueva);
-      await db.$transaction(async (tx) => {
+      const resultado = await db.$transaction(async (tx) => {
         // Escritura condicionada al hash que se verificó: si un restablecimiento (RF-08) cambió la
         // contraseña mientras tanto, no se lo pisa; tampoco si un bloqueo concurrente (RNF-02) ya se
         // aplicó. Un cambio correcto reinicia el límite por cuenta (RNF-02).
@@ -204,17 +220,35 @@ export async function crearServicioIdentidad({ db, reloj }: { db: BaseDeDatos; r
           data: { hashContrasena: hashNuevo, debeCambiarContrasena: false, ...SIN_BLOQUEO },
         });
         if (count === 0) {
-          throw new ErrorNegocio(
-            'contrasena_modificada',
-            'Tu contraseña cambió mientras la modificabas. Ingresá de nuevo.',
-            409,
-          );
+          // Si la cuenta quedó bloqueada en la carrera, la respuesta tiene que ser la de una actual
+          // incorrecta: otra distinta delataría que la contraseña era la correcta (RNF-02). Si no,
+          // fue un restablecimiento concurrente (RF-08).
+          const actual = await tx.usuario.findUnique({
+            where: { id: usuarioId },
+            select: { bloqueadoHasta: true },
+          });
+          return actual !== null && cuentaBloqueada(actual.bloqueadoHasta, ahora) ? 'bloqueada' : 'modificada';
         }
         await tx.sesion.updateMany({
           where: { usuarioId, id: { not: sesionId }, revocadaEn: null },
           data: { revocadaEn: ahora },
         });
+        return 'cambiada';
       });
+      if (resultado === 'bloqueada') {
+        await limite.confirmarFalloDireccion(ip, ahora);
+        throw new ErrorNegocio('contrasena_actual_incorrecta', 'La contraseña actual no es correcta.', 403);
+      }
+      if (resultado === 'modificada') {
+        await limite.confirmarFalloDireccion(ip, ahora);
+        throw new ErrorNegocio(
+          'contrasena_modificada',
+          'Tu contraseña cambió mientras la modificabas. Ingresá de nuevo.',
+          409,
+        );
+      }
+      // Solo con el cambio confirmado se devuelve el punto: solo los fallos cuentan (RNF-02).
+      await limite.liberarIntentoDireccion(ip, ahora);
     },
 
     /** Cierre (RF-10): se marca la revocación; la fila se conserva. Es idempotente. */

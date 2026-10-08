@@ -104,6 +104,9 @@ async function repetir(veces: number, accion: (i: number) => Promise<unknown>) {
   for (let i = 0; i < veces; i += 1) await accion(i);
 }
 
+// Dirección fija de las pruebas de carrera, para leer su fila del límite.
+const IP_CARRERA = '203.0.113.99';
+
 const mas = (fecha: Date, ms: number) => new Date(fecha.getTime() + ms);
 
 describe('límite de intentos por cuenta en el ingreso (RNF-02)', () => {
@@ -268,7 +271,7 @@ describe('límite de intentos por cuenta en el ingreso (RNF-02)', () => {
       });
     }) as never);
     try {
-      const res = await ingresarBien(app, 'cuenta1');
+      const res = await ingresarBien(app, 'cuenta1', IP_CARRERA);
       expect(res.status).toBe(401);
       expect(res.body).toEqual(ERROR_CREDENCIALES);
     } finally {
@@ -276,6 +279,9 @@ describe('límite de intentos por cuenta en el ingreso (RNF-02)', () => {
     }
 
     expect(await sesionesDe(usuario.id)).toBe(sesionesAntes);
+    // El rechazo por la carrera sigue contando para la dirección: no se le devolvió el punto.
+    const fila = await db.limiteIntentos.findUniqueOrThrow({ where: { key: `direccion:${IP_CARRERA}` } });
+    expect(fila.points).toBe(1);
   });
 
   it('el rechazo es indistinguible entre contraseña incorrecta, usuario inexistente, cuenta inactiva y cuenta bloqueada (RF-02)', LARGA, async () => {
@@ -388,15 +394,47 @@ describe('límite de intentos por cuenta en el cambio de contraseña (RNF-02)', 
       });
     }) as never);
     try {
+      // Mismo error que una actual incorrecta: otra respuesta delataría que la contraseña era la correcta.
+      const res = await cambiar(app, cookie, CLAVE, IP_CARRERA);
+      expect(res.status).toBe(403);
+      expect(res.body).toEqual(ERROR_ACTUAL_INCORRECTA);
+    } finally {
+      espia.mockRestore();
+    }
+    const fila = await db.limiteIntentos.findUniqueOrThrow({ where: { key: `direccion:${IP_CARRERA}` } });
+    expect(fila.points).toBe(1);
+
+    const guardado = await db.usuario.findUniqueOrThrow({ where: { id: usuario.id } });
+    expect(guardado.hashContrasena).toBe(hashAntes);
+    expect(guardado.bloqueadoHasta).toEqual(mas(reloj.ahora(), QUINCE_MIN));
+  });
+
+  it('un cambio de hash concurrente (restablecimiento) sin bloqueo sigue dando 409', LARGA, async () => {
+    const { app } = await appConIdentidad();
+    const { usuario, cookie } = await cuentaConSesion(app, 'cuenta1');
+    const hashRestablecido = await hashearContrasena('restablecida-por-admin-9');
+
+    const original = db.usuario.findUnique.bind(db.usuario);
+    let primera = true;
+    const espia = vi.spyOn(db.usuario, 'findUnique').mockImplementation(((args: never) => {
+      const lectura = original(args);
+      if (!primera) return lectura;
+      primera = false;
+      return lectura.then(async (usuarioLeido) => {
+        await db.usuario.update({ where: { id: usuario.id }, data: { hashContrasena: hashRestablecido } });
+        return usuarioLeido;
+      });
+    }) as never);
+    try {
       const res = await cambiar(app, cookie, CLAVE);
       expect(res.status).toBe(409);
+      expect(res.body.error.codigo).toBe('contrasena_modificada');
     } finally {
       espia.mockRestore();
     }
 
     const guardado = await db.usuario.findUniqueOrThrow({ where: { id: usuario.id } });
-    expect(guardado.hashContrasena).toBe(hashAntes);
-    expect(guardado.bloqueadoHasta).toEqual(mas(reloj.ahora(), QUINCE_MIN));
+    expect(guardado.hashContrasena).toBe(hashRestablecido);
   });
 
   it('un cambio correcto deja los tres campos sin fallos ni bloqueo', LARGA, async () => {
@@ -479,6 +517,39 @@ describe('límite de intentos por dirección (RNF-02)', () => {
     const bloqueado = await ingresarBien(app, 'valida1', X);
     expect(bloqueado.status).toBe(429);
     expect(bloqueado.body).toEqual(ERROR_DEMASIADOS_INTENTOS);
+  });
+
+  it('los ingresos correctos no renuevan la ventana: vence a los 15 minutos del primer intento', LARGA, async () => {
+    await cuentasDeLaDireccion();
+    const { app, reloj } = await appConIdentidad();
+
+    await repetir(19, (i) => fallarDesdeX(app, i));
+    reloj.avanzar(10 * MINUTO);
+    expect((await ingresarBien(app, 'valida1', X)).status).toBe(200);
+    reloj.avanzar(5 * MINUTO + 1);
+
+    // Pasaron 15 minutos y 1 ms desde el primer fallo: la ventana venció y este fallo no bloquea.
+    expect((await fallarDesdeX(app, 19)).status).toBe(401);
+    expect((await ingresarBien(app, 'valida1', X)).status).toBe(200);
+    const fila = await db.limiteIntentos.findUniqueOrThrow({ where: { key: `direccion:${X}` } });
+    expect(fila.points).toBe(1);
+  });
+
+  it('el bloqueo dura 15 minutos desde el fallo que alcanza el umbral', LARGA, async () => {
+    await cuentasDeLaDireccion();
+    const { app, reloj } = await appConIdentidad();
+
+    await repetir(19, (i) => fallarDesdeX(app, i));
+    reloj.avanzar(5 * MINUTO);
+    expect((await fallarDesdeX(app, 19)).status).toBe(401);
+
+    // Pasada la ventana original (a los 15 minutos del primer fallo) sigue bloqueada.
+    reloj.avanzar(10 * MINUTO);
+    expect((await ingresarBien(app, 'valida1', X)).status).toBe(429);
+    reloj.avanzar(5 * MINUTO - 1);
+    expect((await ingresarBien(app, 'valida1', X)).status).toBe(429);
+    reloj.avanzar(1);
+    expect((await ingresarBien(app, 'valida1', X)).status).toBe(200);
   });
 
   it('la ventana empieza con el primer fallo y vence a los 15 minutos', LARGA, async () => {
