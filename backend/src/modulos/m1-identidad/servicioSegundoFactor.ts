@@ -146,7 +146,7 @@ export function crearServicioSegundoFactor({
 
       const usuario = await db.usuario.findUnique({
         where: { id: usuarioId },
-        select: { totpActivo: true, secretoTotpCifrado: true, codigosRecuperacion: true },
+        select: { totpActivo: true, secretoTotpCifrado: true, codigosRecuperacion: true, ultimoPasoTotp: true },
       });
       const leidos = usuario?.codigosRecuperacion ?? [];
       let aceptado: Aceptado | null = null;
@@ -154,7 +154,11 @@ export function crearServicioSegundoFactor({
         if (esCodigoTotp(codigo)) {
           const secreto = descifrarSecreto(usuario.secretoTotpCifrado, clave, usuarioId);
           const paso = verificarCodigoTotp(secreto, codigo, ahora);
-          if (paso !== null) aceptado = { tipo: 'totp', paso };
+          // Un código ya usado (en serie) se rechaza acá, por el mismo camino que un inválido; la
+          // escritura condicionada de abajo queda solo para las carreras entre pedidos en paralelo.
+          if (paso !== null && (usuario.ultimoPasoTotp === null || paso > usuario.ultimoPasoTotp)) {
+            aceptado = { tipo: 'totp', paso };
+          }
         } else {
           const hash = hashCodigoRecuperacion(codigo);
           if (leidos.includes(hash)) aceptado = { tipo: 'recuperacion', hash };

@@ -267,6 +267,20 @@ describe('activación del segundo factor (RNF-04)', () => {
   }, LARGA.timeout);
 });
 
+describe('verificación sin clave de cifrado (RNF-04)', () => {
+  it('sin CLAVE_CIFRADO la verificación da 503 segundo_factor_sin_configurar y no cuenta como fallo', async () => {
+    const { usuario } = await crearCuenta('admin1', { totp: true });
+    const { app } = await appConIdentidad({ conClave: false });
+    const { cookie } = await ingresar(app, 'admin1');
+
+    const res = await verificar(app, cookie, '123456');
+
+    expect(res.status).toBe(503);
+    expect(res.body.error.codigo).toBe('segundo_factor_sin_configurar');
+    expect((await estadoDe(usuario.id)).ingresosFallidos).toBe(0);
+  }, LARGA.timeout);
+});
+
 describe('ingreso de un administrador con el segundo factor activo (RNF-04)', () => {
   it('antes de verificar, las demás rutas dan 403 debe_verificar_segundo_factor', async () => {
     await crearCuenta('admin1', { totp: true });

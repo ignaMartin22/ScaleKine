@@ -80,6 +80,11 @@ export async function ingresarComoAdministradorVerificado(
     .set('Origin', ORIGEN_APP)
     .send({ nombreUsuario: usuario.nombreUsuario, contrasena: CONTRASENA_ADMINISTRADOR_VERIFICADO });
   if (res.status !== 200) throw new Error(`El ingreso del administrador de prueba dio ${res.status}.`);
+  // Se exige el paso real antes de marcar la sesión: si el ingreso ya no pide el segundo factor, esta
+  // función no debe tapar el cambio.
+  if (res.body?.pasoPendiente !== 'verificar_segundo_factor') {
+    throw new Error('El ingreso del administrador de prueba no pidió verificar el segundo factor.');
+  }
   const token = /^sesion=([^;]*)/.exec((res.headers['set-cookie'] as string[] | undefined)?.[0] ?? '')?.[1];
   if (!token) throw new Error('El ingreso no trajo cookie.');
   await db.sesion.update({ where: { hashToken: hashDeToken(token) }, data: { segundoFactorVerificado: true } });

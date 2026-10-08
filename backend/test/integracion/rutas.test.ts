@@ -1,11 +1,11 @@
-import { Router, type RequestHandler } from 'express';
+import express, { Router, type RequestHandler } from 'express';
 import { describe, expect, it } from 'vitest';
 import { autorizarEscritura, esAutorizacionDeEscritura } from '../../src/comun/autorizarEscritura.js';
 import { cargarConfiguracion } from '../../src/comun/configuracion.js';
 import { RelojFijo } from '../../src/comun/reloj.js';
 import { crearExigirSesionConPasos, pasosAdmitidosPor } from '../../src/modulos/m1-identidad/middleware.js';
 import { crearRutas } from '../../src/rutas.js';
-import { ENTORNO_PRUEBA } from '../ayudantes.js';
+import { appDePrueba, ENTORNO_PRUEBA } from '../ayudantes.js';
 import { db } from './base.js';
 
 /** Lo mínimo que se lee de las capas de un router de Express 5. */
@@ -39,6 +39,15 @@ const ESCRITURAS_DE_LA_PROPIA_SESION = [
 
 const comoInspeccionable = (router: Router) => router as unknown as RouterInspeccionable;
 
+/**
+ * Capas de la app completa, no solo de sus routers: así también se detecta un `app.use(variante)`.
+ * En Express 5 la pila de la app está en `app.router.stack`. Limitación: una variante envuelta en un
+ * closure propio (otro handler que la llama por dentro) no se reconoce, porque la guardiana
+ * identifica los handlers por referencia.
+ */
+const pilaDeApp = (app: unknown): CapaExpress[] => (app as { router: RouterInspeccionable }).router.stack;
+const pilaDeLaApi = (rutas: Router[]): CapaExpress[] => pilaDeApp(appDePrueba(rutas).app);
+
 /** Si la capa es un sub-router, sus capas. */
 function capasDeSubRouter(capa: CapaExpress): CapaExpress[] | undefined {
   const stack = (capa.handle as Partial<RouterInspeccionable> | undefined)?.stack;
@@ -66,7 +75,6 @@ function escriturasSinAutorizacion(capas: CapaExpress[]): string[] {
 /** Identifica una variante de `exigirSesion` por los pasos pendientes que admite. */
 const claveDeVariante = (pasos: readonly string[]) => [...pasos].sort().join('+');
 
-const VARIANTE_SIN_PASOS = claveDeVariante(['ninguno']);
 const VARIANTE_CUALQUIER_PASO = claveDeVariante([
   'ninguno',
   'verificar_segundo_factor',
@@ -94,6 +102,24 @@ function rutasPorVariante(capas: CapaExpress[], encontradas: Record<string, stri
     }
     const hijas = capasDeSubRouter(capa);
     if (hijas) rutasPorVariante(hijas, encontradas);
+  }
+  return encontradas;
+}
+
+/** Rutas cuyo stack no tiene ninguna variante de `exigirSesion`, como `MÉTODO /ruta`. */
+function rutasSinVariante(capas: CapaExpress[]): string[] {
+  const encontradas: string[] = [];
+  for (const capa of capas) {
+    if (capa.route) {
+      const { path, methods, stack } = capa.route;
+      if (stack.some((c) => pasosAdmitidosPor(c.handle))) continue;
+      for (const metodo of Object.keys(methods).filter((m) => methods[m])) {
+        encontradas.push(nombreDeRuta(metodo, path));
+      }
+      continue;
+    }
+    const hijas = capasDeSubRouter(capa);
+    if (hijas) encontradas.push(...rutasSinVariante(hijas));
   }
   return encontradas;
 }
@@ -127,11 +153,10 @@ describe('toda ruta de escritura de la API exige autorización por módulo (plan
       config: cargarConfiguracion(ENTORNO_PRUEBA),
     });
 
-    const sinAutorizar = rutas
-      .flatMap((router) => escriturasSinAutorizacion(comoInspeccionable(router).stack))
-      .filter((ruta) => !ESCRITURAS_DE_LA_PROPIA_SESION.includes(ruta));
+    const sinAutorizar = escriturasSinAutorizacion(pilaDeLaApi(rutas));
 
-    expect(sinAutorizar).toEqual([]);
+    // Multiconjunto exacto: la lista blanca no puede tener entradas de más ni de menos.
+    expect(sinAutorizar.sort()).toEqual([...ESCRITURAS_DE_LA_PROPIA_SESION].sort());
   });
 
   it('la guardiana detecta una escritura sin autorización y acepta una con autorización', () => {
@@ -172,8 +197,8 @@ describe('cada variante de exigirSesion aparece solo donde corresponde (RF-06, R
       reloj: new RelojFijo('2026-10-07T12:00:00Z'),
       config: cargarConfiguracion(ENTORNO_PRUEBA),
     });
-    const encontradas: Record<string, string[]> = {};
-    for (const router of rutas) rutasPorVariante(comoInspeccionable(router).stack, encontradas);
+    const pila = pilaDeLaApi(rutas);
+    const encontradas = rutasPorVariante(pila);
     for (const lista of Object.values(encontradas)) lista.sort();
 
     // Las rutas de negocio (T-13 en adelante) usarán la variante que solo admite `ninguno`: al
@@ -187,7 +212,34 @@ describe('cada variante de exigirSesion aparece solo donde corresponde (RF-06, R
       ],
       [VARIANTE_VERIFICACION]: ['POST /sesion/segundo-factor/verificar'],
     });
-    expect(VARIANTE_SIN_PASOS).toBe('ninguno');
+  });
+
+  it('las rutas sin ninguna variante son solo las que no necesitan sesión previa', async () => {
+    const rutas = await crearRutas({
+      db,
+      reloj: new RelojFijo('2026-10-07T12:00:00Z'),
+      config: cargarConfiguracion(ENTORNO_PRUEBA),
+    });
+
+    // Ingreso (todavía no hay sesión), cierre (idempotente: sin sesión también da 204, RF-10) y el
+    // chequeo de disponibilidad del monitor (sin datos). Toda ruta nueva usa una variante o se suma
+    // acá con su justificación.
+    expect(rutasSinVariante(pilaDeLaApi(rutas)).sort()).toEqual(['DELETE /sesion', 'GET /api/salud', 'POST /sesion']);
+  });
+
+  it('autoprueba: una ruta GET sin exigirSesion aparece en el grupo sin variante', () => {
+    const router = Router();
+    router.get('/olvidada', manejadorCualquiera);
+    router.get('/ok', crearExigirSesionConPasos(sesionFicticia, configCookie, ['ninguno']), manejadorCualquiera);
+
+    expect(rutasSinVariante(comoInspeccionable(router).stack)).toEqual(['GET /olvidada']);
+  });
+
+  it('la guardiana detecta un app.use(variante permisiva) en la app', () => {
+    const app = express();
+    app.use(crearExigirSesionConPasos(sesionFicticia, configCookie, ['verificar_segundo_factor']));
+
+    expect(variantesPermisivasMontadasConUse(pilaDeApp(app))).toEqual([claveDeVariante(['verificar_segundo_factor'])]);
   });
 
   it('ninguna variante que admita un paso pendiente se monta con router.use en las rutas reales', async () => {
@@ -197,7 +249,7 @@ describe('cada variante de exigirSesion aparece solo donde corresponde (RF-06, R
       config: cargarConfiguracion(ENTORNO_PRUEBA),
     });
 
-    const montadas = rutas.flatMap((router) => variantesPermisivasMontadasConUse(comoInspeccionable(router).stack));
+    const montadas = variantesPermisivasMontadasConUse(pilaDeLaApi(rutas));
 
     expect(montadas).toEqual([]);
   });
