@@ -198,6 +198,8 @@ export function crearServicioSegundoFactor({
                 // los dos, y el mismo código solo una vez. No se arma la lista nueva desde la leída
                 // (reviviría un código que otro pedido acaba de gastar).
                 await tx.$executeRaw`
+                  -- Los tres campos de reinicio repiten SIN_BLOQUEO (limiteIntentos.ts); una prueba de
+                  -- unidad fija que sean exactamente estos.
                   UPDATE "Usuario"
                   SET "codigosRecuperacion" = array_remove("codigosRecuperacion", ${consumido.hash}),
                       "ingresosFallidos" = 0, "bloqueadoHasta" = NULL, "bloqueosConsecutivos" = 0

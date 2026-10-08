@@ -762,3 +762,46 @@ describe('códigos de recuperación distintos a la vez (RNF-04)', () => {
     ]);
   }, LARGA.timeout);
 });
+
+describe('el ingreso del administrador con TOTP toma la fila de la cuenta (RF-07, RF-08, RNF-02)', () => {
+  it('un cambio de contraseña sin confirmar frena al ingreso con la contraseña vieja, que termina rechazado y sin sesión', async () => {
+    const { usuario } = await crearCuenta('admin1', { totp: true });
+    const { app } = await appConIdentidad();
+    const hashNuevo = await hashearContrasena('otra-clave-de-prueba-larga');
+    let confirmar!: () => void;
+    const puedeConfirmar = new Promise<void>((resolver) => {
+      confirmar = resolver;
+    });
+    let tomada!: () => void;
+    const filaTomada = new Promise<void>((resolver) => {
+      tomada = resolver;
+    });
+    // Otra conexión: cambia el hash y mantiene la transacción abierta (la fila queda bloqueada).
+    const transaccion = db.$transaction(async (tx) => {
+      await tx.usuario.update({ where: { id: usuario.id }, data: { hashContrasena: hashNuevo } });
+      tomada();
+      await puedeConfirmar;
+    });
+    await filaTomada;
+
+    let terminado = false;
+    const ingreso = request(app)
+      .post('/api/sesion')
+      .set('Origin', ORIGEN_APP)
+      .set('X-Forwarded-For', ipNueva())
+      .send({ nombreUsuario: 'admin1', contrasena: CLAVE })
+      .then((res) => {
+        terminado = true;
+        return res;
+      });
+    await new Promise((resolver) => setTimeout(resolver, 800));
+    expect(terminado).toBe(false);
+
+    confirmar();
+    await transaccion;
+    const res = await ingreso;
+
+    expect(res.status).toBe(401);
+    expect(await sesionesDe(usuario.id)).toHaveLength(0);
+  }, LARGA.timeout);
+});

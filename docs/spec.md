@@ -389,10 +389,10 @@ exigido; el cómo está en `plan.md` y `despliegue.md`.
   `segundo_factor_invalido`), y el mensaje sigue sin revelar si la cuenta existe (RF-02). Los
   códigos fallidos del segundo factor reciben el mismo rechazo sea el código inválido, ya usado o
   con la cuenta bloqueada. Para el administrador con el segundo factor activo, el ingreso cuenta
-  como correcto recién cuando verifica el código: acertar solo la contraseña no reinicia los fallos
-  seguidos. Con la dirección bloqueada, la respuesta es 429 sin verificar la contraseña; solo
-  cuentan los intentos fallidos, y un intento correcto no consume cupo de la dirección. Un
-  restablecimiento de contraseña (RF-08) levanta el bloqueo de la cuenta.
+  como correcto para el límite por cuenta recién cuando verifica el código: acertar solo la
+  contraseña no reinicia los fallos seguidos. Con la dirección bloqueada, la respuesta es 429 sin
+  verificar la contraseña; solo cuentan los intentos fallidos, y un intento correcto no consume cupo
+  de la dirección. Un restablecimiento de contraseña (RF-08) levanta el bloqueo de la cuenta.
   *Por qué:* Sin límite, una contraseña se puede adivinar por fuerza bruta. El cambio de contraseña
   también exige la actual: sin el mismo límite, quien robe una sesión abierta podría probar
   contraseñas sin límite desde ahí. Con el segundo factor, una contraseña robada no debe permitir

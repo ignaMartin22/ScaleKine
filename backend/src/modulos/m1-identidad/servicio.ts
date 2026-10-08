@@ -101,7 +101,10 @@ export async function crearServicioIdentidad({ db, reloj }: { db: BaseDeDatos; r
             activo: true,
             OR: [{ bloqueadoHasta: null }, { bloqueadoHasta: { lte: ahora } }],
           },
-          data: reiniciaLimite ? SIN_BLOQUEO : {},
+          // No vale `data: {}`: Prisma no emite un UPDATE sino un SELECT sin lock, y el ingreso
+          // perdería la serialización con un cambio o restablecimiento de contraseña y con un
+          // bloqueo concurrente. El incremento en 0 emite el UPDATE (toma la fila) sin tocar los fallos.
+          data: reiniciaLimite ? SIN_BLOQUEO : { ingresosFallidos: { increment: 0 } },
         });
         if (count === 0) return false;
         await tx.sesion.create({
