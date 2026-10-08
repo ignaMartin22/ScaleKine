@@ -84,6 +84,7 @@ const VARIANTE_CUALQUIER_PASO = claveDeVariante([
 const VARIANTE_CAMBIO_CONTRASENA = claveDeVariante(['ninguno', 'cambiar_contrasena']);
 const VARIANTE_ACTIVACION = claveDeVariante(['activar_segundo_factor']);
 const VARIANTE_VERIFICACION = claveDeVariante(['verificar_segundo_factor']);
+const VARIANTE_NEGOCIO = claveDeVariante(['ninguno']);
 
 const nombreDeRuta = (metodo: string, path: string) => `${metodo === '_all' ? 'ALL' : metodo.toUpperCase()} ${path}`;
 
@@ -211,6 +212,13 @@ describe('cada variante de exigirSesion aparece solo donde corresponde (RF-06, R
         'POST /sesion/segundo-factor/activacion/confirmar',
       ],
       [VARIANTE_VERIFICACION]: ['POST /sesion/segundo-factor/verificar'],
+      // Gestión de cuentas (T-13, RF-04, RF-08, RF-09).
+      [VARIANTE_NEGOCIO]: [
+        'GET /cuentas',
+        'POST /cuentas',
+        'POST /cuentas/:id/desactivacion',
+        'POST /cuentas/:id/restablecimiento',
+      ],
     });
   });
 
