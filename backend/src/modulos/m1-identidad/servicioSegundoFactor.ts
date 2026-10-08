@@ -176,22 +176,32 @@ export function crearServicioSegundoFactor({
       try {
         resultado = await db.$transaction(async (tx) => {
           const base = { id: usuarioId, activo: true, totpActivo: true };
-          const { count } =
+          const count =
             consumido.tipo === 'totp'
-              ? await tx.usuario.updateMany({
-                  where: {
-                    ...base,
-                    AND: [
-                      { OR: [{ ultimoPasoTotp: null }, { ultimoPasoTotp: { lt: consumido.paso } }] },
-                      { OR: sinBloqueo },
-                    ],
-                  },
-                  data: { ultimoPasoTotp: consumido.paso, ...SIN_BLOQUEO },
-                })
-              : await tx.usuario.updateMany({
-                  where: { ...base, codigosRecuperacion: { equals: leidos }, OR: sinBloqueo },
-                  data: { codigosRecuperacion: leidos.filter((h) => h !== consumido.hash), ...SIN_BLOQUEO },
-                });
+              ? (
+                  await tx.usuario.updateMany({
+                    where: {
+                      ...base,
+                      AND: [
+                        { OR: [{ ultimoPasoTotp: null }, { ultimoPasoTotp: { lt: consumido.paso } }] },
+                        { OR: sinBloqueo },
+                      ],
+                    },
+                    data: { ultimoPasoTotp: consumido.paso, ...SIN_BLOQUEO },
+                  })
+                ).count
+              : // Quita el hash de forma atómica en la base: dos códigos distintos en paralelo se gastan
+                // los dos, y el mismo código solo una vez. No se arma la lista nueva desde la leída
+                // (reviviría un código que otro pedido acaba de gastar).
+                await tx.$executeRaw`
+                  UPDATE "Usuario"
+                  SET "codigosRecuperacion" = array_remove("codigosRecuperacion", ${consumido.hash}),
+                      "ingresosFallidos" = 0, "bloqueadoHasta" = NULL, "bloqueosConsecutivos" = 0
+                  WHERE id = ${usuarioId}::int
+                    AND activo
+                    AND "totpActivo"
+                    AND ${consumido.hash} = ANY("codigosRecuperacion")
+                    AND ("bloqueadoHasta" IS NULL OR "bloqueadoHasta" <= ${ahora}::timestamptz)`;
           if (count === 0) return 'rechazado';
           const sesion = await tx.sesion.updateMany({
             where: { id: sesionId, usuarioId, revocadaEn: null },

@@ -678,3 +678,73 @@ describe('registros (RNF-08)', () => {
     for (const valor of sensibles) expect(registrado).not.toContain(valor);
   }, LARGA.timeout);
 });
+
+describe('el ingreso correcto y el límite por cuenta con segundo factor (RNF-02, RNF-04)', () => {
+  it('administrador con TOTP: los fallos de código y de ingreso suman al mismo contador y cortan el ciclo', async () => {
+    const { usuario, secreto } = await crearCuenta('admin1', { totp: true });
+    const { app } = await appConIdentidad();
+    const invalido = codigoInvalido(secreto!);
+    let { cookie } = await ingresar(app, 'admin1');
+
+    for (let i = 0; i < 4; i += 1) expect((await verificar(app, cookie, invalido)).status).toBe(403);
+    expect((await estadoDe(usuario.id)).ingresosFallidos).toBe(4);
+    // Ingresar de nuevo con la contraseña correcta no reinicia el contador.
+    ({ cookie } = await ingresar(app, 'admin1'));
+    expect((await estadoDe(usuario.id)).ingresosFallidos).toBe(4);
+
+    expect((await verificar(app, cookie, invalido)).status).toBe(403);
+    expect((await estadoDe(usuario.id)).bloqueadoHasta).not.toBeNull();
+    const rechazado = await request(app)
+      .post('/api/sesion')
+      .set('Origin', ORIGEN_APP)
+      .set('X-Forwarded-For', ipNueva())
+      .send({ nombreUsuario: 'admin1', contrasena: CLAVE });
+    expect(rechazado.status).toBe(401);
+  }, LARGA.timeout);
+
+  it('tras verificar con éxito el contador queda en 0', async () => {
+    const { usuario, secreto } = await crearCuenta('admin1', { totp: true });
+    const { app } = await appConIdentidad();
+    const { cookie } = await ingresar(app, 'admin1');
+    for (let i = 0; i < 3; i += 1) await verificar(app, cookie, codigoInvalido(secreto!));
+    expect((await estadoDe(usuario.id)).ingresosFallidos).toBe(3);
+
+    expect((await verificar(app, cookie, codigoTotp(secreto!, INICIO))).status).toBe(204);
+
+    const fila = await estadoDe(usuario.id);
+    expect(fila).toMatchObject({ ingresosFallidos: 0, bloqueadoHasta: null, bloqueosConsecutivos: 0 });
+  }, LARGA.timeout);
+
+  it.each<[string, Rol, boolean]>([
+    ['secretaria', 'secretaria', false],
+    ['kinesiólogo', 'kinesiologo', false],
+    ['administrador sin TOTP activo', 'administrador', false],
+  ])('%s: el ingreso correcto sigue reiniciando el contador', async (_nombre, rol, totp) => {
+    const { usuario } = await crearCuenta('persona1', { rol, totp });
+    await db.usuario.update({ where: { id: usuario.id }, data: { ingresosFallidos: 3 } });
+    const { app } = await appConIdentidad();
+
+    await ingresar(app, 'persona1');
+
+    expect((await estadoDe(usuario.id)).ingresosFallidos).toBe(0);
+  }, LARGA.timeout);
+});
+
+describe('códigos de recuperación distintos a la vez (RNF-04)', () => {
+  it('dos códigos distintos en paralelo: los dos verifican y los dos desaparecen de la lista', async () => {
+    const { usuario } = await crearCuenta('admin1', { totp: true });
+    const { app } = await appConIdentidad();
+    const a = await ingresar(app, 'admin1');
+    const b = await ingresar(app, 'admin1');
+
+    const respuestas = await Promise.all([
+      verificar(app, a.cookie, CODIGOS_RECUPERACION[0]!),
+      verificar(app, b.cookie, CODIGOS_RECUPERACION[1]!),
+    ]);
+
+    expect(respuestas.map((r) => r.status)).toEqual([204, 204]);
+    expect((await estadoDe(usuario.id)).codigosRecuperacion).toEqual([
+      hashCodigoRecuperacion(CODIGOS_RECUPERACION[2]!),
+    ]);
+  }, LARGA.timeout);
+});

@@ -216,7 +216,11 @@ saca al turno de `en_espera` la conserva; una que lo devuelve a `reservado` la l
   verificado solo accede a la pantalla de verificación (mismo mecanismo de bloqueo que RF-06: la
   sesión tiene a lo sumo un paso pendiente y cada variante del middleware declara cuáles admite). Un
   código inválido o repetido cuenta contra el límite de intentos (RNF-02); un TOTP o un código de
-  recuperación no se reutiliza, ni en serie ni en paralelo, por escrituras condicionadas. El
+  recuperación no se reutiliza, ni en serie ni en paralelo, por escrituras condicionadas (el hash del
+  código de recuperación se quita con un `UPDATE` atómico). Para el administrador con segundo factor
+  activo, un ingreso correcto con la contraseña NO reinicia el límite por cuenta: los fallos de
+  contraseña y de código suman al mismo contador y lo reinicia la verificación del segundo factor
+  ya confirmada; así, conocer la contraseña no permite probar códigos sin fin. El
   comando de instalación incluye un subcomando para restablecer el segundo factor desde el servidor;
   también cierra las sesiones abiertas del administrador, porque una sesión que ya verificó el
   segundo factor no tiene que sobrevivir a la pérdida de la aplicación autenticadora.
