@@ -1,6 +1,6 @@
 # Avance de la implementación
 
-Estado al 2026-10-08, con la ola 2 terminada. Este documento registra qué está hecho, qué quedó a
+Estado al 2026-10-12, con la ola 3 en curso. Este documento registra qué está hecho, qué quedó a
 medio camino y cómo retomarlo. No reemplaza a las fuentes de verdad: los requisitos están en
 [`spec.md`](./spec.md), las decisiones de diseño en [`plan.md`](./plan.md) y el orden y los
 criterios de "hecho" en [`tasks.md`](./tasks.md). Se actualiza cada vez que se fusiona un PR.
@@ -26,12 +26,15 @@ criterios de "hecho" en [`tasks.md`](./tasks.md). Se actualiza cada vez que se f
 | T-13 · Gestión de cuentas | Hecha | #18 | Revisada por el orquestador (no es crítica en `tasks.md`). |
 | T-15 · Grilla | Hecha | #6 | Adelantada a la ola 1, porque es un módulo puro. |
 | T-20 · Tabla de transiciones | Hecha | #7 | Adelantada a la ola 1, porque es un módulo puro. |
-| T-14, T-16 a T-19, T-21 a T-40 | Pendientes | — | Olas 3 a 7 de `tasks.md`. |
+| T-14 · Acceso y cuentas (frontend) | En curso | #22 (acceso) | El #22 cubre ingreso, cambio de contraseña, segundo factor, cierre y vencimiento, y pasó el recorrido manual del usuario. Falta la administración de cuentas (segundo PR). |
+| T-16 · Consultorio | Hecha | #23 | Incluye la regla de lectura de M2 (`autorizarLectura`) y la guardiana de lecturas. |
+| T-17 · Kinesiólogos | En curso | — | Carril A. |
+| T-18, T-19, T-21 a T-40 | Pendientes | — | Olas 3 a 7 de `tasks.md`. |
 
 Otros PRs fusionados:
 - #10 vuelve `@types/node` a la versión 24 y limita los saltos de versión que propone Dependabot.
-- #16 documenta el avance al pausar la ola 2.
-- #3 y #4 son de Dependabot.
+- #16 y #19 documentan el avance; #21 precisa la spec y el plan para la ola 3 (DNI, lectura de M2 y alta de kinesiólogo).
+- #3, #4 y #20 son de Dependabot.
 - El #5 (TypeScript 7 en el frontend) se cerró: Angular 22 exige TypeScript `~6.0`.
 
 ---
@@ -113,12 +116,14 @@ Las que cambian requisitos o diseño ya están en la spec o el plan. Esta lista 
 | La sesión de PostgreSQL tiene que estar en UTC: adapter-pg envía las fechas sin desfase. Con otra zona, el bloqueo de T-09 duraría horas de más. | Fijar `timezone=UTC` en la conexión (`DATABASE_URL` o `baseDeDatos.ts`). | Sin tarea asignada |
 | `scalekine_app` puede modificar `TurnoEvento` (auditoría, RF-46). | Dejarlo solo con `SELECT` e `INSERT` (`despliegue.md` §7). | Propuesta sin decidir |
 | `plan.md` §5.2 dice que `FRONTEND_ORIGIN` es "para CORS", pero no hay CORS: se usa para verificar el `Origin` de las escrituras. | Corregir la descripción. | Propuesta sin decidir |
-| El modelo del frontend (`nucleo/sesion/modelo.ts`) no declara `debeCambiarContrasena` ni el estado del segundo factor (`segundoFactor` y `pasoPendiente` de `/api/sesion`). | Hacerlo en T-14. | Pendiente de T-14 |
+| El modelo del frontend (`nucleo/sesion/modelo.ts`) no declara `debeCambiarContrasena` ni el estado del segundo factor (`segundoFactor` y `pasoPendiente` de `/api/sesion`). | Hecho en T-14. | Resuelto en #22 |
 | El README indica `docker compose exec api node dist/cli/index.js` para producción. | Confirmarlo cuando exista la imagen. | Pendiente de T-35 |
 | Pruebas intermitentes en la máquina local con dos carriles corriendo: un primer argon2 que supera los 15 s del límite y una conexión rechazada por PostgreSQL. En el CI nunca pasó. Además, 4 pruebas de unidad triviales (`configuracion`, `logger`, `seguridad` y `errores`) superaron el límite por defecto de 5 s del proyecto `unidad`: con la caché de transformación fría (después de `npm install` o `prisma generate`) o con la máquina cargada. Repetidas con la máquina libre, pasan las 114, y en el CI nunca fallaron. | Si se repite, subir `testTimeout` de integración o precalentar argon2; para unidad, fijar un `testTimeout` explícito en `vitest.config.ts`. | En observación |
 | OneDrive bloquea por momentos escrituras en `.git/objects` ("Permission denied"). | Pausar la sincronización mientras trabajan los carriles, o mover el repositorio fuera de OneDrive. | En observación |
 | La guardiana de rutas no detecta una variante del middleware envuelta en un closure (detecta por identidad). | Mantenerlo documentado en el comentario de la guardiana; revisar en code review. | En observación |
-| Docker Desktop tiene que estar corriendo para las pruebas de integración locales; un worker lo encendió sin preguntar. | Los encargos dicen "no tocar Docker"; si no está corriendo, el worker lo reporta. | Resuelto en los encargos |
+| Docker Desktop tiene que estar corriendo para las pruebas de integración locales; un worker lo encendió sin preguntar. Además, encender Docker Desktop no levanta el contenedor `scalekine-postgres-1`: hace falta `docker compose up -d` (o `docker start scalekine-postgres-1`). | Los encargos dicen "no tocar Docker"; si PostgreSQL no responde, el worker lo reporta y frena. | Resuelto en los encargos |
+| `.env.example` deja `CLAVE_CIFRADO` vacía, y en desarrollo el backend arranca igual: el error aparece recién al activar el segundo factor ("falta la clave de cifrado"). Pasó en el recorrido manual del #22. | Indicar en el README cómo generarla (`node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`) o avisar al arrancar en desarrollo si falta. | Sin tarea asignada |
+| La base `scalekine_desarrollo` no recibe sola las migraciones nuevas: al probar el #22 le faltaba la del segundo factor (error P2022). | Correr `npm run db:migrar` en `backend/` después de traer migraciones nuevas. | Anotado |
 
 ---
 
@@ -189,6 +194,18 @@ Si un PR se fusiona antes de terminar la revisión, las correcciones van en una 
 - Correr `revisor-seguridad` sobre un commit fijo (`git show <sha>:<ruta>`) permitió revisar en
   paralelo mientras el worker corregía.
 
-**Para retomar la ola 2:**
-La ola 2 está terminada. Sigue la ola 3 de `tasks.md`: T-16 → T-17 → T-18 en el carril A y T-14
-en el carril B.
+**Ola 3 (en curso):**
+- Antes de lanzar los carriles se cerraron en la spec y el plan tres huecos que la ola 3 necesitaba
+  (#21): el formato del DNI, quién lee los datos maestros y el contrato del alta de kinesiólogo.
+- Cada carril recibe una sola tarea (o un solo PR) por encargo; el siguiente se lanza cuando el
+  anterior está fusionado, porque las tareas de un carril se apoyan en las anteriores.
+- **No correr `prettier --write` sobre carpetas enteras:** el backend no tiene configuración de
+  prettier, y un worker reformateó unos 60 archivos con comillas dobles (lo deshizo antes de
+  commitear). Los encargos ahora lo prohíben.
+- Para el recorrido manual de una tarea de frontend, el orquestador levanta backend y `ng serve`
+  desde el worktree del carril (el proxy apunta al puerto 3000), instala el sistema en
+  `scalekine_desarrollo` con el CLI y crea cuentas ficticias. En Windows, detener la tarea de
+  `npx` puede dejar vivo el proceso `node`: verificar qué proceso escucha en el puerto.
+
+**Para retomar:**
+Sigue la ola 3: T-17 → T-18 en el carril A y el segundo PR de T-14 en el carril B.
