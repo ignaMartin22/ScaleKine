@@ -7,8 +7,10 @@ import { crearModuloIdentidad } from './modulos/m1-identidad/index.js';
 import { crearRutasCuentas } from './modulos/m1-identidad/rutasCuentas.js';
 import { crearServicioConsultorio } from './modulos/m2-maestros/consultorio.js';
 import { crearServicioKinesiologos } from './modulos/m2-maestros/kinesiologos.js';
+import { crearServicioPacientes } from './modulos/m2-maestros/pacientes.js';
 import { crearRutasConsultorio } from './modulos/m2-maestros/rutasConsultorio.js';
 import { crearRutasKinesiologos } from './modulos/m2-maestros/rutasKinesiologos.js';
+import { crearRutasPacientes } from './modulos/m2-maestros/rutasPacientes.js';
 
 /**
  * Lista única de los routers de la API: la usan el servidor y la prueba que exige autorización en
@@ -38,5 +40,9 @@ export async function crearRutas({
     servicio: crearServicioKinesiologos({ db, reloj }),
     exigirSesion: identidad.exigirSesion,
   });
-  return [identidad.rutas, cuentas, consultorio, kinesiologos];
+  const pacientes = crearRutasPacientes({
+    servicio: crearServicioPacientes({ db }),
+    exigirSesion: identidad.exigirSesion,
+  });
+  return [identidad.rutas, cuentas, consultorio, kinesiologos, pacientes];
 }

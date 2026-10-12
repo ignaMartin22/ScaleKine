@@ -267,17 +267,22 @@ describe('cada variante de exigirSesion aparece solo donde corresponde (RF-06, R
         'POST /sesion/segundo-factor/activacion/confirmar',
       ],
       [VARIANTE_VERIFICACION]: ['POST /sesion/segundo-factor/verificar'],
-      // Gestión de cuentas (T-13, RF-04, RF-08, RF-09) datos del consultorio (T-16, RF-13) y kinesiólogos (T-17, RF-14, RF-16).
+      // Gestión de cuentas (T-13, RF-04, RF-08, RF-09) datos del consultorio (T-16, RF-13) y kinesiólogos (T-17, RF-14, RF-16)
+      // y pacientes (T-18, RF-17 a RF-21).
       [VARIANTE_NEGOCIO]: [
         'GET /consultorio',
         'GET /cuentas',
         'GET /kinesiologos',
+        'GET /pacientes',
+        'GET /pacientes/:id',
         'POST /cuentas',
         'POST /cuentas/:id/desactivacion',
         'POST /cuentas/:id/restablecimiento',
         'POST /kinesiologos',
+        'POST /pacientes',
         'PUT /consultorio',
         'PUT /kinesiologos/:id/bloque',
+        'PUT /pacientes/:id',
       ],
     });
   });
