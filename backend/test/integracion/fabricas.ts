@@ -102,12 +102,12 @@ export async function crearKinesiologo(datos: { bloque?: Bloque } = {}) {
   });
 }
 
-export async function crearPaciente(datos: { dni?: string } = {}) {
+export async function crearPaciente(datos: { dni?: string; nombre?: string } = {}) {
   const n = siguiente();
   return db.paciente.create({
     data: {
       dni: datos.dni ?? String(90_000_000 + n),
-      nombre: `Paciente Ficticio ${n}`,
+      nombre: datos.nombre ?? `Paciente Ficticio ${n}`,
       telefono: `11 5555 ${String(n).padStart(4, '0')}`,
       obraSocial: 'Particular',
     },
