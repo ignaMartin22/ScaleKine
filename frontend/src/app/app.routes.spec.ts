@@ -52,6 +52,14 @@ describe('rutas por rol (RF-01)', () => {
     expect((await navegar('/secretaria', 'administrador')).url).toBe('/secretaria');
   });
 
+  it('la secretaría no entra a las cuentas', async () => {
+    expect((await navegar('/admin/cuentas', 'secretaria')).url).toBe('/secretaria');
+  });
+
+  it('el kinesiólogo no entra a las cuentas', async () => {
+    expect((await navegar('/admin/cuentas', 'kinesiologo')).url).toBe('/kinesiologo');
+  });
+
   it('el kinesiólogo no entra a la agenda de secretaría', async () => {
     expect((await navegar('/secretaria', 'kinesiologo')).url).toBe('/kinesiologo');
   });

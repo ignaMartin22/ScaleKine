@@ -133,4 +133,22 @@ describe('cliente HTTP', () => {
 
     expect(sesion.pasoPendiente()).toBe(paso);
   });
+
+  it.each(['constructor', 'toString', '__proto__', 'hasOwnProperty'])(
+    'un 403 con el código heredado %s no navega a ningún paso',
+    async (codigo) => {
+      const { http, servidor, sesion, router } = preparar();
+      sesion.establecer(estadoDePrueba('administrador'));
+      const navegar = vi.spyOn(router, 'navigateByUrl').mockResolvedValue(true);
+
+      const resultado = errorDe(firstValueFrom(http.get('/api/turnos')));
+      servidor
+        .expectOne('/api/turnos')
+        .flush({ error: { codigo, mensaje: 'No.' } }, { status: 403, statusText: 'Forbidden' });
+
+      expect(await resultado).toMatchObject({ codigo });
+      servidor.expectNone('/api/sesion');
+      expect(navegar).not.toHaveBeenCalled();
+    },
+  );
 });

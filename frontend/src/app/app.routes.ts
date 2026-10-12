@@ -9,6 +9,7 @@ import {
 } from './nucleo/sesion/guardas';
 import { ActivarSegundoFactor } from './paginas/activar-segundo-factor';
 import { CambiarContrasena } from './paginas/cambiar-contrasena';
+import { CuentasAdmin } from './paginas/cuentas-admin';
 import { Ingresar } from './paginas/ingresar';
 import { InicioAdmin } from './paginas/inicio-admin';
 import { InicioKinesiologo } from './paginas/inicio-kinesiologo';
@@ -60,7 +61,10 @@ export const routes: Routes = [
     canActivate: [guardaDeRol(['administrador'])],
     component: Disposicion,
     data: { seccion: 'Administración' },
-    children: [{ path: '', component: InicioAdmin }],
+    children: [
+      { path: '', component: InicioAdmin },
+      { path: 'cuentas', title: 'Cuentas · ScaleKine', component: CuentasAdmin },
+    ],
   },
   {
     path: 'secretaria',
