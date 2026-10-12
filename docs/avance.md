@@ -1,6 +1,6 @@
 # Avance de la implementación
 
-Estado al 2026-10-12, con la ola 3 en curso. Este documento registra qué está hecho, qué quedó a
+Estado al 2026-10-12, con la ola 3 en pausa y casi cerrada. Este documento registra qué está hecho, qué quedó a
 medio camino y cómo retomarlo. No reemplaza a las fuentes de verdad: los requisitos están en
 [`spec.md`](./spec.md), las decisiones de diseño en [`plan.md`](./plan.md) y el orden y los
 criterios de "hecho" en [`tasks.md`](./tasks.md). Se actualiza cada vez que se fusiona un PR.
@@ -26,14 +26,17 @@ criterios de "hecho" en [`tasks.md`](./tasks.md). Se actualiza cada vez que se f
 | T-13 · Gestión de cuentas | Hecha | #18 | Revisada por el orquestador (no es crítica en `tasks.md`). |
 | T-15 · Grilla | Hecha | #6 | Adelantada a la ola 1, porque es un módulo puro. |
 | T-20 · Tabla de transiciones | Hecha | #7 | Adelantada a la ola 1, porque es un módulo puro. |
-| T-14 · Acceso y cuentas (frontend) | En curso | #22 (acceso) | El #22 cubre ingreso, cambio de contraseña, segundo factor, cierre y vencimiento, y pasó el recorrido manual del usuario. Falta la administración de cuentas (segundo PR). |
+| T-14 · Acceso y cuentas (frontend) | Hecha | #22 y #25 | #22: ingreso, cambio de contraseña, segundo factor, cierre y vencimiento. #25: administración de cuentas. Las dos partes pasaron el recorrido manual del usuario. |
 | T-16 · Consultorio | Hecha | #23 | Incluye la regla de lectura de M2 (`autorizarLectura`) y la guardiana de lecturas. |
-| T-17 · Kinesiólogos | En curso | — | Carril A. |
-| T-18, T-19, T-21 a T-40 | Pendientes | — | Olas 3 a 7 de `tasks.md`. |
+| T-17 · Kinesiólogos | Hecha | #26 | Alta de cuenta y perfil en una transacción, cambio de bloque y listado con filtro. Las cuentas de kinesiólogo se gestionan desde `/api/cuentas`. |
+| T-18 · Pacientes | PR abierto, listo para fusionar | #28 | Revisado por el orquestador, con pruebas de mutación. Falta que el usuario lo fusione. Ver §2b. |
+| T-19 · Pantallas de M2 (frontend) | Parte 1 en revisión | #27 (consultorio y kinesiólogos) | Revisado por el orquestador; falta el recorrido manual del usuario, que se cortó (ver §2b). La parte 2 (sección Pacientes) espera a que se fusionen el #28 y el #27. |
+| T-21 a T-40 | Pendientes | — | Olas 4 a 7 de `tasks.md`. |
 
 Otros PRs fusionados:
 - #10 vuelve `@types/node` a la versión 24 y limita los saltos de versión que propone Dependabot.
 - #16 y #19 documentan el avance; #21 precisa la spec y el plan para la ola 3 (DNI, lectura de M2 y alta de kinesiólogo).
+- #24 documenta el avance durante la ola 3.
 - #3, #4 y #20 son de Dependabot.
 - El #5 (TypeScript 7 en el frontend) se cerró: Angular 22 exige TypeScript `~6.0`.
 
@@ -84,6 +87,43 @@ Otros PRs fusionados:
 
 ---
 
+## 2b. Ola 3: estado al pausar
+
+**Fusionado:** T-14 (#22 y #25), T-16 (#23) y T-17 (#26), más la documentación (#21 y #24).
+
+**PRs abiertos:**
+- **#28 · T-18 pacientes.** Listo para fusionar: CI en verde, 483 pruebas, y 5 mutaciones
+  detectadas (3 del carril y 2 del orquestador). Decisiones del carril:
+  - La búsqueda va por query (`GET /api/pacientes?dni=…` o `?nombre=…`, exactamente uno), porque el
+    registro de peticiones descarta la query string y así el DNI no queda en los logs.
+  - Un DNI buscado que no existe responde 200 con lista vacía (es el caso "ofrecer el alta"); uno
+    con formato inválido, 400.
+  - La búsqueda por nombre pide al menos 3 caracteres, devuelve a lo sumo 20 pacientes y no
+    distingue mayúsculas, pero sí tildes.
+  - Prisma no escapa los comodines de LIKE (`%%%` devolvía todos los pacientes): se escapan `%`, `_`
+    y `\` en `escaparComodines`.
+  - Aceptado: `1234567.5` se lee como el DNI `12345675`, porque la spec acepta puntos en cualquier
+    lugar. Exigir los puntos en los miles sería un cambio de spec.
+- **#27 · T-19 parte 1 (consultorio y kinesiólogos).** CI en verde, 105 pruebas y 3 mutaciones
+  detectadas. Falta el recorrido manual del usuario, que se cortó: Claude Code detuvo los
+  servidores de prueba porque la máquina se quedó sin memoria. Los pasos están en el cuerpo del PR.
+
+**Decisiones del usuario para antes de T-22:**
+1. Una migración revoca el `UPDATE` de `scalekine_app` sobre `TurnoEvento`, que queda solo con
+   `SELECT` e `INSERT`. Lleva su prueba de permisos y la actualización de `despliegue.md` §7.
+2. Fijar `timezone=UTC` en la conexión (`baseDeDatos.ts`), con una prueba.
+
+Las dos van en un PR de "ajustes previos a la ola 4", en el carril A, después del #28. Es la única
+tarea con migración en ese momento.
+
+**Datos de la base de desarrollo** (`scalekine_desarrollo`, todos ficticios):
+- El sistema está instalado con un consultorio de prueba.
+- El administrador del usuario tiene el segundo factor activo.
+- Hay cuentas `secretaria`, `kinesio` y `secretaria2` (esta última desactivada en la prueba del #25).
+- Puede haber un kinesiólogo `ana` si el recorrido del #27 llegó a crearlo.
+
+---
+
 ## 3. Decisiones tomadas durante la implementación
 
 Las que cambian requisitos o diseño ya están en la spec o el plan. Esta lista sirve para encontrarlas.
@@ -106,6 +146,9 @@ Las que cambian requisitos o diseño ya están en la spec o el plan. Esta lista 
 | DNI de 7 u 8 dígitos; se aceptan puntos y espacios al ingresarlo y se guarda solo con los dígitos (decisión del usuario). | `spec.md` RF-18, `plan.md` §3 M2 |
 | Regla de lectura de M2 en `comun/autorizacion.ts`: consultorio, kinesiólogos y pacientes los leen `secretaria` y `administrador`, no el `kinesiologo` (decisión del usuario). | `plan.md` §3 M2 y §4.8 |
 | Alta de kinesiólogo como las cuentas de T-13: temporal elegida por el administrador, cuenta gestionada desde `/api/cuentas`, del perfil solo se cambia el bloque (decisión del usuario). | `plan.md` §3 M2 |
+| Contrato de kinesiólogos: `GET /api/kinesiologos?bloque=`, `POST /api/kinesiologos` y `PUT /api/kinesiologos/:id/bloque` (PUT porque el sub-recurso se reemplaza entero). | Comentario de `m2-maestros/rutasKinesiologos.ts` (#26) |
+| Contrato de pacientes: alta, edición, ficha y búsqueda por query con DNI o nombre (ver §2b). | Comentario de `m2-maestros/rutasPacientes.ts` (#28, abierto) |
+| `TurnoEvento` sin `UPDATE` para la aplicación, y conexión a PostgreSQL en UTC (decisión del usuario, pendiente de implementar). | §2b |
 
 ---
 
@@ -113,8 +156,8 @@ Las que cambian requisitos o diseño ya están en la spec o el plan. Esta lista 
 
 | Tema | Propuesta | Estado |
 |---|---|---|
-| La sesión de PostgreSQL tiene que estar en UTC: adapter-pg envía las fechas sin desfase. Con otra zona, el bloqueo de T-09 duraría horas de más. | Fijar `timezone=UTC` en la conexión (`DATABASE_URL` o `baseDeDatos.ts`). | Sin tarea asignada |
-| `scalekine_app` puede modificar `TurnoEvento` (auditoría, RF-46). | Dejarlo solo con `SELECT` e `INSERT` (`despliegue.md` §7). | Propuesta sin decidir |
+| La sesión de PostgreSQL tiene que estar en UTC: adapter-pg envía las fechas sin desfase. Con otra zona, el bloqueo de T-09 duraría horas de más. | Fijar `timezone=UTC` en la conexión (`DATABASE_URL` o `baseDeDatos.ts`). | Decidido; va en los ajustes previos a la ola 4 (§2b) |
+| `scalekine_app` puede modificar `TurnoEvento` (auditoría, RF-46). | Dejarlo solo con `SELECT` e `INSERT` (`despliegue.md` §7). | Decidido; va en los ajustes previos a la ola 4 (§2b) |
 | `plan.md` §5.2 dice que `FRONTEND_ORIGIN` es "para CORS", pero no hay CORS: se usa para verificar el `Origin` de las escrituras. | Corregir la descripción. | Propuesta sin decidir |
 | El modelo del frontend (`nucleo/sesion/modelo.ts`) no declara `debeCambiarContrasena` ni el estado del segundo factor (`segundoFactor` y `pasoPendiente` de `/api/sesion`). | Hecho en T-14. | Resuelto en #22 |
 | El README indica `docker compose exec api node dist/cli/index.js` para producción. | Confirmarlo cuando exista la imagen. | Pendiente de T-35 |
@@ -124,6 +167,8 @@ Las que cambian requisitos o diseño ya están en la spec o el plan. Esta lista 
 | Docker Desktop tiene que estar corriendo para las pruebas de integración locales; un worker lo encendió sin preguntar. Además, encender Docker Desktop no levanta el contenedor `scalekine-postgres-1`: hace falta `docker compose up -d` (o `docker start scalekine-postgres-1`). | Los encargos dicen "no tocar Docker"; si PostgreSQL no responde, el worker lo reporta y frena. | Resuelto en los encargos |
 | `.env.example` deja `CLAVE_CIFRADO` vacía, y en desarrollo el backend arranca igual: el error aparece recién al activar el segundo factor ("falta la clave de cifrado"). Pasó en el recorrido manual del #22. | Indicar en el README cómo generarla (`node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`) o avisar al arrancar en desarrollo si falta. | Sin tarea asignada |
 | La base `scalekine_desarrollo` no recibe sola las migraciones nuevas: al probar el #22 le faltaba la del segundo factor (error P2022). | Correr `npm run db:migrar` en `backend/` después de traer migraciones nuevas. | Anotado |
+| PostgreSQL se cortó a ratos durante T-18 (conexiones rechazadas y timeouts). Al repetir, todo pasó. | Si se repite, revisar el contenedor (`docker inspect scalekine-postgres-1`) y la memoria de la máquina. | En observación |
+| Con poca memoria libre, Claude Code detiene los procesos en segundo plano, incluidos los servidores de un recorrido manual. | Cerrar lo que no se use antes de un recorrido manual; no relanzarlos sin que el usuario lo pida. | En observación |
 
 ---
 
@@ -207,5 +252,18 @@ Si un PR se fusiona antes de terminar la revisión, las correcciones van en una 
   `scalekine_desarrollo` con el CLI y crea cuentas ficticias. En Windows, detener la tarea de
   `npx` puede dejar vivo el proceso `node`: verificar qué proceso escucha en el puerto.
 
+- Para levantar los servidores de un recorrido manual, usar `node` directo y no `npx`: en Windows,
+  detener `npx` deja vivo el `node` hijo ocupando el puerto. Backend:
+  `PORT=3000 node --import tsx --env-file=../.env src/servidor.ts` en `backend/`. Frontend:
+  `node node_modules/@angular/cli/bin/ng.js serve --port 4200` en `frontend/`.
+- La revisión de los PRs no críticos tuvo dos pasos: el carril corre las mutaciones que pide el
+  encargo, y el orquestador agrega las suyas antes de declarar el PR listo para fusionar. En la
+  ola 3, ninguna mutación sobrevivió.
+
 **Para retomar:**
-Sigue la ola 3: T-17 → T-18 en el carril A y el segundo PR de T-14 en el carril B.
+1. Fusionar el #28 (T-18).
+2. Terminar el recorrido manual del #27 (los pasos están en el PR) y fusionarlo.
+3. Carril A: los ajustes previos a la ola 4 (§2b).
+4. Carril B: T-19 parte 2, la sección Pacientes con buscador y ficha editable.
+5. Ola 4: T-22 → T-23 → T-24 en el carril A, con `revisor-seguridad`; T-21 → T-25 → T-26 en el
+   carril B, después de T-19.
