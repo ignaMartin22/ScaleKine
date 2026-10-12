@@ -201,19 +201,23 @@ El estado de cada tarea y lo que quedó a medio hacer están en [`avance.md`](./
 
 ### T-16 · B · Consultorio
 - Lectura y edición de nombre, dirección y teléfono por `secretaria` y `administrador`.
+- Regla de lectura de M2 en `comun/autorizacion.ts` y su middleware, y la prueba guardiana de rutas
+  extendida a las lecturas de M2 (`plan.md` §4.8).
 - **RF/RNF:** RF-13.
 - **Hecho:** pruebas de integración de edición y del rechazo para `kinesiologo`.
 
 ### T-17 · B · Kinesiólogos
-- Alta de `Usuario` + `Kinesiologo` en una transacción (administrador), cambio de bloque y listado
-  por bloque.
+- Alta de `Usuario` + `Kinesiologo` en una transacción (administrador), con la contraseña
+  temporal elegida por el administrador y la política de RNF-03; cambio de bloque y listado por
+  bloque.
 - **RF/RNF:** RF-14, RF-16.
 - **Hecho:** pruebas de integración: el alta crea las dos filas o ninguna, y cambiar de bloque no
   toca turnos.
 
 ### T-18 · B · Pacientes
 - Alta con DNI, nombre y apellido, teléfono y obra social obligatorios.
-- Validación del formato de DNI y edición con revalidación.
+- Validación del formato de DNI (7 u 8 dígitos, sin puntos ni espacios al guardar) y edición con
+  revalidación.
 - Búsqueda exacta por DNI y parcial por nombre.
 - **RF/RNF:** RF-17, RF-18, RF-19, RF-20, RF-21 (búsqueda).
 - **Hecho:** pruebas de unidad del formato de DNI y de integración de unicidad, edición y búsqueda.

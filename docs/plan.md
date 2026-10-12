@@ -239,11 +239,19 @@ saca al turno de `en_espera` la conserva; una que lo devuelve a `reservado` la l
 - **RF-13**: una sola fila de `Consultorio`, creada por el comando de instalación y editable por
   `secretaria` y `administrador`. El ticket la lee al generarse, así que un cambio rige desde el
   próximo ticket sin invalidar nada.
+- **Lectura:** consultorio, kinesiólogos y pacientes los leen `secretaria` y `administrador`; el
+  `kinesiologo` se rechaza (D-16). La regla se declara en `comun/autorizacion.ts`, junto a la de
+  escritura (§4.8).
 - **RF-14**: alta de `Usuario` con rol `kinesiologo` y de `Kinesiologo` en la misma transacción,
-  ejecutada por el administrador.
+  ejecutada por el administrador. Como en las cuentas de secretaría (M1), la contraseña temporal
+  la elige el administrador y pasa por la política de RNF-03, que se reutiliza de M1. Después del
+  alta, la cuenta se restablece y se desactiva desde `/api/cuentas`; del perfil solo se cambia el
+  bloque (RF-16).
 - **RF-15 / RF-16**: el bloque determina qué horas de inicio ofrece la grilla. Un cambio de bloque
   solo afecta los cálculos de disponibilidad; los turnos existentes no se tocan.
-- **RF-18**: formato de DNI validado en el backend; unicidad garantizada por el esquema.
+- **RF-18**: formato de DNI validado en el backend (7 u 8 dígitos; puntos y espacios se quitan
+  antes de validar y se guarda solo con los dígitos); unicidad garantizada por el esquema. La
+  búsqueda exacta (RF-19) normaliza el DNI de la misma forma.
 - **RF-19**: un único endpoint de búsqueda exacta por DNI que la pantalla de asignación consulta
   apenas se completa el campo. Si no hay coincidencia, el mismo formulario pasa al alta.
 - **RF-21**: búsqueda por nombre con coincidencias parciales; por DNI, exacta. La ficha del paciente
@@ -389,7 +397,9 @@ no escribe. No hay escenario realista de dos escrituras cruzadas sobre el mismo 
 
 **Elegido:** cada rol tiene declarado en qué módulos puede escribir (todos para `administrador`;
 M2 pacientes y consultorio, y M3, para `secretaria`; ninguno para `kinesiologo`), y esa declaración se aplica en un
-único middleware.
+único middleware. En el mismo archivo se declara qué datos maestros lee cada rol: los de M2 los
+leen `secretaria` y `administrador`, y no el `kinesiologo` (D-16). Las lecturas de turnos que el
+kinesiólogo sí puede hacer filtran por la sesión (M4).
 
 *Descartado:* declarar permisos endpoint por endpoint. Es más flexible, pero cada endpoint nuevo
 abre la posibilidad de olvidar el chequeo, y la regla de negocio es global (D-3).
