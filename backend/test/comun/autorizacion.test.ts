@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   ESCRITURA_POR_ROL,
+  LECTURA_POR_ROL,
   puedeEscribir,
+  puedeLeer,
   type ModuloEscritura,
+  type ModuloLectura,
 } from '../../src/comun/autorizacion.js';
 import type { Rol } from '../../src/generado/prisma/client.js';
 
@@ -38,5 +41,34 @@ describe('puedeEscribir (RF-03)', () => {
 
   it.each(casos)('%s en %s: %s', (rol, modulo, esperado) => {
     expect(puedeEscribir(rol, modulo)).toBe(esperado);
+  });
+});
+
+describe('tabla de lectura de datos maestros por rol (D-16, plan.md §4.8)', () => {
+  it('es exactamente la que declara la spec', () => {
+    expect(LECTURA_POR_ROL).toEqual({
+      administrador: ['consultorio', 'kinesiologos', 'pacientes'],
+      secretaria: ['consultorio', 'kinesiologos', 'pacientes'],
+      kinesiologo: [],
+    });
+  });
+});
+
+describe('puedeLeer (D-16)', () => {
+  // El resultado esperado de cada combinación está escrito a mano: no se deriva de la tabla.
+  const casos: [Rol, ModuloLectura, boolean][] = [
+    ['administrador', 'consultorio', true],
+    ['administrador', 'kinesiologos', true],
+    ['administrador', 'pacientes', true],
+    ['secretaria', 'consultorio', true],
+    ['secretaria', 'kinesiologos', true],
+    ['secretaria', 'pacientes', true],
+    ['kinesiologo', 'consultorio', false],
+    ['kinesiologo', 'kinesiologos', false],
+    ['kinesiologo', 'pacientes', false],
+  ];
+
+  it.each(casos)('%s en %s: %s', (rol, modulo, esperado) => {
+    expect(puedeLeer(rol, modulo)).toBe(esperado);
   });
 });

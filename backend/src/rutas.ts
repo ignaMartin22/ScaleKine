@@ -5,6 +5,8 @@ import type { Reloj } from './comun/reloj.js';
 import { crearServicioCuentas } from './modulos/m1-identidad/cuentas.js';
 import { crearModuloIdentidad } from './modulos/m1-identidad/index.js';
 import { crearRutasCuentas } from './modulos/m1-identidad/rutasCuentas.js';
+import { crearServicioConsultorio } from './modulos/m2-maestros/consultorio.js';
+import { crearRutasConsultorio } from './modulos/m2-maestros/rutasConsultorio.js';
 
 /**
  * Lista única de los routers de la API: la usan el servidor y la prueba que exige autorización en
@@ -26,5 +28,9 @@ export async function crearRutas({
     servicio: crearServicioCuentas({ db, reloj }),
     exigirSesion: identidad.exigirSesion,
   });
-  return [identidad.rutas, cuentas];
+  const consultorio = crearRutasConsultorio({
+    servicio: crearServicioConsultorio({ db }),
+    exigirSesion: identidad.exigirSesion,
+  });
+  return [identidad.rutas, cuentas, consultorio];
 }
