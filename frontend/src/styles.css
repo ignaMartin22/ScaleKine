@@ -160,3 +160,40 @@ a {
     display: block;
   }
 }
+
+.tarjeta.ancha {
+  max-width: 44rem;
+  margin-left: 0;
+  margin-right: 0;
+}
+
+.boton.peligro {
+  background: #b3261e;
+  border-color: #b3261e;
+}
+
+.tabla-contenedor {
+  overflow-x: auto;
+}
+
+.tabla {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.tabla th,
+.tabla td {
+  padding: 0.5rem 0.625rem;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--borde);
+}
+
+.solo-lectores {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

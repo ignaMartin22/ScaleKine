@@ -2,7 +2,7 @@ import { HttpErrorResponse, type HttpInterceptorFn } from '@angular/common/http'
 import { inject } from '@angular/core';
 import { Router } from '@angular/router';
 import { catchError, throwError } from 'rxjs';
-import { PASO_POR_CODIGO_DE_ERROR, RUTA_POR_PASO } from '../sesion/modelo';
+import { pasoDeCodigoDeError, RUTA_POR_PASO } from '../sesion/modelo';
 import { Sesion } from '../sesion/sesion';
 import { aErrorApi } from './error-api';
 
@@ -33,7 +33,7 @@ export const erroresDeApi: HttpInterceptorFn = (peticion, siguiente) => {
         void router.navigateByUrl('/ingresar');
       }
       const errorApi = aErrorApi(error);
-      const paso = error.status === 403 ? PASO_POR_CODIGO_DE_ERROR[errorApi.codigo] : undefined;
+      const paso = error.status === 403 ? pasoDeCodigoDeError(errorApi.codigo) : undefined;
       if (paso) void sesion.recargar().then(() => router.navigateByUrl(RUTA_POR_PASO[paso]));
       return throwError(() => errorApi);
     }),

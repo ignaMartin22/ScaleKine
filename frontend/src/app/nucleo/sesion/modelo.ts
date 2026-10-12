@@ -39,11 +39,16 @@ export const RUTA_POR_PASO: Record<PasoPendiente, string> = {
 };
 
 /** Código con el que el backend rechaza una ruta de negocio según el paso pendiente. */
-export const PASO_POR_CODIGO_DE_ERROR: Record<string, PasoPendiente | undefined> = {
-  debe_verificar_segundo_factor: 'verificar_segundo_factor',
-  debe_cambiar_contrasena: 'cambiar_contrasena',
-  debe_activar_segundo_factor: 'activar_segundo_factor',
-};
+const PASO_POR_CODIGO_DE_ERROR: ReadonlyMap<string, PasoPendiente> = new Map([
+  ['debe_verificar_segundo_factor', 'verificar_segundo_factor'],
+  ['debe_cambiar_contrasena', 'cambiar_contrasena'],
+  ['debe_activar_segundo_factor', 'activar_segundo_factor'],
+]);
+
+/** Paso pendiente que corresponde a un código de error, o `undefined` si el código no es de un paso. */
+export function pasoDeCodigoDeError(codigo: string): PasoPendiente | undefined {
+  return PASO_POR_CODIGO_DE_ERROR.get(codigo);
+}
 
 /** A dónde va una sesión: a su paso pendiente o, si no tiene, al inicio de su rol. */
 export function destinoDeSesion(estado: Pick<EstadoSesion, 'usuario' | 'pasoPendiente'>): string {
