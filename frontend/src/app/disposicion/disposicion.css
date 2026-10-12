@@ -31,3 +31,9 @@
   flex: 1;
   padding: 1rem;
 }
+
+.menu {
+  display: flex;
+  align-items: baseline;
+  gap: 1rem;
+}

@@ -4,16 +4,21 @@ import { TestBed } from '@angular/core/testing';
 import { provideRouter, Router, withComponentInputBinding } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
 import { routes } from './app.routes';
+import { estadoDePrueba } from './nucleo/sesion/estados-de-prueba';
 import type { Rol } from './nucleo/sesion/modelo';
 import { Sesion } from './nucleo/sesion/sesion';
 
 async function navegar(ruta: string, rol: Rol | null): Promise<{ url: string; texto: string }> {
   TestBed.configureTestingModule({
-    providers: [provideRouter(routes, withComponentInputBinding()), provideHttpClient(), provideHttpClientTesting()],
+    providers: [
+      provideRouter(routes, withComponentInputBinding()),
+      provideHttpClient(),
+      provideHttpClientTesting(),
+    ],
   });
   // La consulta al backend se prueba en sesion.spec.ts; acá se fija el resultado.
   const sesion = TestBed.inject(Sesion);
-  if (rol) sesion.establecer({ nombreUsuario: 'usuario.ficticio', rol });
+  if (rol) sesion.establecer(estadoDePrueba(rol));
   else sesion.limpiar();
 
   const harness = await RouterTestingHarness.create();
