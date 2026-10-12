@@ -1,6 +1,7 @@
 import express, { Router, type RequestHandler } from 'express';
 import { describe, expect, it } from 'vitest';
 import { autorizarEscritura, esAutorizacionDeEscritura } from '../../src/comun/autorizarEscritura.js';
+import { autorizarLectura, esAutorizacionDeLectura } from '../../src/comun/autorizarLectura.js';
 import { cargarConfiguracion } from '../../src/comun/configuracion.js';
 import { RelojFijo } from '../../src/comun/reloj.js';
 import { crearExigirSesionConPasos, pasosAdmitidosPor } from '../../src/modulos/m1-identidad/middleware.js';
@@ -68,6 +69,29 @@ function escriturasSinAutorizacion(capas: CapaExpress[]): string[] {
     }
     const hijas = capasDeSubRouter(capa);
     if (hijas) sinAutorizar.push(...escriturasSinAutorizacion(hijas));
+  }
+  return sinAutorizar;
+}
+
+/**
+ * Rutas de M2 (consultorio, kinesiólogos, pacientes): sus GET exigen `autorizarLectura` (D-16). Se
+ * reconocen por el primer segmento de la ruta; un módulo nuevo de M2 agrega su prefijo acá.
+ */
+const PREFIJOS_DE_M2 = ['/consultorio', '/kinesiologos', '/pacientes'];
+const esRutaDeM2 = (path: string) => PREFIJOS_DE_M2.some((p) => path === p || path.startsWith(`${p}/`));
+
+/** GET de M2 que ningún handler de su stack autoriza como lectura, como `GET /ruta`. */
+function lecturasDeM2SinAutorizacion(capas: CapaExpress[]): string[] {
+  const sinAutorizar: string[] = [];
+  for (const capa of capas) {
+    if (capa.route) {
+      const { path, methods, stack } = capa.route;
+      if (!esRutaDeM2(path) || !(methods.get || methods._all)) continue;
+      if (!stack.some((c) => esAutorizacionDeLectura(c.handle))) sinAutorizar.push(`GET ${path}`);
+      continue;
+    }
+    const hijas = capasDeSubRouter(capa);
+    if (hijas) sinAutorizar.push(...lecturasDeM2SinAutorizacion(hijas));
   }
   return sinAutorizar;
 }
@@ -180,11 +204,42 @@ describe('toda ruta de escritura de la API exige autorización por módulo (plan
     expect(escriturasSinAutorizacion(comoInspeccionable(todas).stack)).toEqual(['ALL /x']);
   });
 
-  it('las lecturas no exigen autorización', () => {
+  it('las lecturas fuera de M2 no exigen autorización de escritura', () => {
     const lectura = Router();
     lectura.get('/x', manejadorCualquiera);
 
     expect(escriturasSinAutorizacion(comoInspeccionable(lectura).stack)).toEqual([]);
+  });
+});
+
+describe('todo GET de M2 exige autorización de lectura (D-16, plan.md §4.8)', () => {
+  it('los GET reales de M2 están autorizados', async () => {
+    const rutas = await crearRutas({
+      db,
+      reloj: new RelojFijo('2026-10-07T12:00:00Z'),
+      config: cargarConfiguracion(ENTORNO_PRUEBA),
+    });
+    const pila = pilaDeLaApi(rutas);
+
+    expect(lecturasDeM2SinAutorizacion(pila)).toEqual([]);
+    // Que la prueba no pase en vacío: el GET del consultorio existe y se inspecciona.
+    expect(rutasPorVariante(pila)[VARIANTE_NEGOCIO]).toContain('GET /consultorio');
+  });
+
+  it('la guardiana detecta un GET de M2 sin autorización, también anidado, y acepta uno autorizado', () => {
+    const olvidada = Router();
+    olvidada.get('/pacientes/:id', manejadorCualquiera);
+    const autorizada = Router();
+    autorizada.get('/kinesiologos', autorizarLectura('kinesiologos'), manejadorCualquiera);
+    const anidada = Router();
+    anidada.use('/api', olvidada);
+    const ajena = Router();
+    ajena.get('/cuentas', manejadorCualquiera);
+
+    expect(lecturasDeM2SinAutorizacion(comoInspeccionable(olvidada).stack)).toEqual(['GET /pacientes/:id']);
+    expect(lecturasDeM2SinAutorizacion(comoInspeccionable(autorizada).stack)).toEqual([]);
+    expect(lecturasDeM2SinAutorizacion(comoInspeccionable(anidada).stack)).toEqual(['GET /pacientes/:id']);
+    expect(lecturasDeM2SinAutorizacion(comoInspeccionable(ajena).stack)).toEqual([]);
   });
 });
 
@@ -212,12 +267,14 @@ describe('cada variante de exigirSesion aparece solo donde corresponde (RF-06, R
         'POST /sesion/segundo-factor/activacion/confirmar',
       ],
       [VARIANTE_VERIFICACION]: ['POST /sesion/segundo-factor/verificar'],
-      // Gestión de cuentas (T-13, RF-04, RF-08, RF-09).
+      // Gestión de cuentas (T-13, RF-04, RF-08, RF-09) y datos del consultorio (T-16, RF-13).
       [VARIANTE_NEGOCIO]: [
+        'GET /consultorio',
         'GET /cuentas',
         'POST /cuentas',
         'POST /cuentas/:id/desactivacion',
         'POST /cuentas/:id/restablecimiento',
+        'PUT /consultorio',
       ],
     });
   });
