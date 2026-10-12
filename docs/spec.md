@@ -175,7 +175,8 @@ administrador (D-18). Las acciones sobre cuentas y kinesiólogos son exclusivas 
 
 - **RF-18** — *Comportamiento no deseado:* Si el DNI no tiene un formato válido, o ya está
   registrado en otro paciente, o falta alguno de los datos de RF-17, entonces el sistema impide el
-  alta o la edición e informa el motivo.
+  alta o la edición e informa el motivo. Un DNI válido tiene 7 u 8 dígitos; al ingresarlo se
+  aceptan puntos y espacios, y se guarda solo con los dígitos.
   *Por qué:* El DNI es la clave con la que se recupera al paciente en cada turno siguiente (RF-19);
   un DNI duplicado o mal tipeado rompe esa recuperación.
 

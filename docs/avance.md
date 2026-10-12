@@ -100,6 +100,9 @@ Las que cambian requisitos o diseño ya están en la spec o el plan. Esta lista 
 | Los códigos del segundo factor cuentan para RNF-02, y para el administrador con TOTP solo la verificación reinicia el contador (decisión del usuario). | `spec.md` RNF-02 y §7, `plan.md` §3 M1 (#17) |
 | Contrato de gestión de cuentas (T-13). | `plan.md` §3 M1, viñeta RF-08 / RF-09 (#18) |
 | Límite por dirección: reserva antes de argon2, liberación al confirmar, bloqueo desde el rechazo que alcanza el umbral. | `plan.md` §3 M1 (#15) |
+| DNI de 7 u 8 dígitos; se aceptan puntos y espacios al ingresarlo y se guarda solo con los dígitos (decisión del usuario). | `spec.md` RF-18, `plan.md` §3 M2 |
+| Regla de lectura de M2 en `comun/autorizacion.ts`: consultorio, kinesiólogos y pacientes los leen `secretaria` y `administrador`, no el `kinesiologo` (decisión del usuario). | `plan.md` §3 M2 y §4.8 |
+| Alta de kinesiólogo como las cuentas de T-13: temporal elegida por el administrador, cuenta gestionada desde `/api/cuentas`, del perfil solo se cambia el bloque (decisión del usuario). | `plan.md` §3 M2 |
 
 ---
 
