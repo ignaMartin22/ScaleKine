@@ -4,6 +4,14 @@
   @if (usuario(); as u) {
     <span class="usuario">{{ u.nombreUsuario }} · {{ nombreDelRol() }}</span>
   }
+  <nav class="menu" aria-label="Cuenta">
+    @if (puedeCambiarContrasena()) {
+      <a routerLink="/cambiar-contrasena">Cambiar contraseña</a>
+    }
+    <button type="button" class="enlace" [disabled]="cerrando()" (click)="cerrarSesion()">
+      Cerrar sesión
+    </button>
+  </nav>
 </header>
 <main class="contenido">
   <router-outlet />
