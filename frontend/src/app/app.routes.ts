@@ -9,11 +9,13 @@ import {
 } from './nucleo/sesion/guardas';
 import { ActivarSegundoFactor } from './paginas/activar-segundo-factor';
 import { CambiarContrasena } from './paginas/cambiar-contrasena';
+import { ConsultorioPagina } from './paginas/consultorio';
 import { CuentasAdmin } from './paginas/cuentas-admin';
 import { Ingresar } from './paginas/ingresar';
 import { InicioAdmin } from './paginas/inicio-admin';
 import { InicioKinesiologo } from './paginas/inicio-kinesiologo';
 import { InicioSecretaria } from './paginas/inicio-secretaria';
+import { KinesiologosAdmin } from './paginas/kinesiologos-admin';
 import { NoEncontrada } from './paginas/no-encontrada';
 import { VerificarSegundoFactor } from './paginas/verificar-segundo-factor';
 
@@ -64,6 +66,7 @@ export const routes: Routes = [
     children: [
       { path: '', component: InicioAdmin },
       { path: 'cuentas', title: 'Cuentas · ScaleKine', component: CuentasAdmin },
+      { path: 'kinesiologos', title: 'Kinesiólogos · ScaleKine', component: KinesiologosAdmin },
     ],
   },
   {
@@ -72,7 +75,10 @@ export const routes: Routes = [
     canActivate: [guardaDeRol(['secretaria', 'administrador'])],
     component: Disposicion,
     data: { seccion: 'Agenda' },
-    children: [{ path: '', component: InicioSecretaria }],
+    children: [
+      { path: '', component: InicioSecretaria },
+      { path: 'consultorio', title: 'Consultorio · ScaleKine', component: ConsultorioPagina },
+    ],
   },
   {
     path: 'kinesiologo',

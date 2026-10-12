@@ -10,6 +10,8 @@ import { RouterLink } from '@angular/router';
     <nav aria-label="Administración">
       <ul>
         <li><a routerLink="/admin/cuentas">Cuentas</a></li>
+        <li><a routerLink="/admin/kinesiologos">Kinesiólogos</a></li>
+        <li><a routerLink="/secretaria/consultorio">Datos del consultorio</a></li>
       </ul>
     </nav>
   `,

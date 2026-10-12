@@ -64,6 +64,34 @@ describe('rutas por rol (RF-01)', () => {
     expect((await navegar('/secretaria', 'kinesiologo')).url).toBe('/kinesiologo');
   });
 
+  it('la secretaría entra al consultorio', async () => {
+    expect((await navegar('/secretaria/consultorio', 'secretaria')).url).toBe(
+      '/secretaria/consultorio',
+    );
+  });
+
+  it('el administrador entra al consultorio', async () => {
+    expect((await navegar('/secretaria/consultorio', 'administrador')).url).toBe(
+      '/secretaria/consultorio',
+    );
+  });
+
+  it('el kinesiólogo no entra al consultorio', async () => {
+    expect((await navegar('/secretaria/consultorio', 'kinesiologo')).url).toBe('/kinesiologo');
+  });
+
+  it('el administrador entra a los kinesiólogos', async () => {
+    expect((await navegar('/admin/kinesiologos', 'administrador')).url).toBe('/admin/kinesiologos');
+  });
+
+  it('la secretaría no entra a los kinesiólogos', async () => {
+    expect((await navegar('/admin/kinesiologos', 'secretaria')).url).toBe('/secretaria');
+  });
+
+  it('el kinesiólogo no entra a los kinesiólogos', async () => {
+    expect((await navegar('/admin/kinesiologos', 'kinesiologo')).url).toBe('/kinesiologo');
+  });
+
   it('con sesión, el ingreso lleva directo a la pantalla del rol', async () => {
     expect((await navegar('/ingresar', 'administrador')).url).toBe('/admin');
   });
