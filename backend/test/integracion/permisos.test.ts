@@ -41,6 +41,34 @@ describe('permisos de scalekine_app (despliegue.md §7, RNF-09)', () => {
     });
   });
 
+  describe('la auditoría es de solo agregado (RF-46)', () => {
+    it('puede insertar y leer eventos', async () => {
+      const turno = await crearTurno();
+      const evento = await db.turnoEvento.create({
+        data: { turnoId: turno.id, tipo: 'asignacion', autorId: turno.creadoPorId, ocurridoEn: AHORA },
+      });
+
+      await expect(db.turnoEvento.findUnique({ where: { id: evento.id } })).resolves.not.toBeNull();
+    });
+
+    it('no puede ejecutar UPDATE sobre TurnoEvento, ni con filas existentes', async () => {
+      const turno = await crearTurno();
+      await db.turnoEvento.create({
+        data: { turnoId: turno.id, tipo: 'asignacion', autorId: turno.creadoPorId, ocurridoEn: AHORA },
+      });
+
+      await expect(sqlApp.query(`UPDATE "TurnoEvento" SET tipo = 'correccion'`)).rejects.toMatchObject(
+        PERMISO_DENEGADO,
+      );
+      await expect(
+        db.turnoEvento.updateMany({ where: { turnoId: turno.id }, data: { tipo: 'correccion' } }),
+      ).rejects.toThrow();
+      await expect(db.turnoEvento.findFirst({ where: { turnoId: turno.id } })).resolves.toMatchObject({
+        tipo: 'asignacion',
+      });
+    });
+  });
+
   describe('lo que sí necesita', () => {
     it('lee, inserta y actualiza turnos', async () => {
       const turno = await crearTurno();
