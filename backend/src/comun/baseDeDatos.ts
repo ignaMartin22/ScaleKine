@@ -9,5 +9,8 @@ export type BaseDeDatos = PrismaClient;
  * ampliándolos.
  */
 export function crearBaseDeDatos(url: string): BaseDeDatos {
-  return new PrismaClient({ adapter: new PrismaPg({ connectionString: url }) });
+  // La sesión se fija en UTC para no depender del servidor ni de DATABASE_URL: los instantes se
+  // guardan y se leen en UTC y la zona del consultorio se aplica solo en el código (RF-12).
+  const adapter = new PrismaPg({ connectionString: url, options: '-c timezone=UTC' });
+  return new PrismaClient({ adapter });
 }

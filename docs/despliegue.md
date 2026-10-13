@@ -264,12 +264,17 @@ proveedor.
 | Usuario | Permisos | Lo usa |
 |---|---|---|
 | `scalekine_migraciones` | Dueño del esquema: crea y altera tablas | Solo el pipeline de despliegue, al migrar |
-| `scalekine_app` | `SELECT`, `INSERT` y `UPDATE` sobre las tablas de la aplicación. `DELETE` **solo** sobre `Sesion` y la tabla de límite de intentos | El backend |
+| `scalekine_app` | `SELECT`, `INSERT` y `UPDATE` sobre las tablas de la aplicación, salvo `TurnoEvento`, donde solo tiene `SELECT` e `INSERT`. `DELETE` **solo** sobre `Sesion` y la tabla de límite de intentos | El backend |
 | `scalekine_respaldo` | Solo `SELECT` | La tarea de copia externa |
 
 Sin `DELETE` sobre `Turno`, `TurnoEvento`, `Usuario` ni `Paciente`, la regla "no se borra" (RF-39 y
-RF-09) queda garantizada también por la base, no solo por el código. Los permisos se otorgan en una
-migración y una prueba de integración los verifica.
+RF-09) queda garantizada también por la base, no solo por el código.
+Sin `UPDATE` sobre `TurnoEvento`, la auditoría es de solo agregado (RF-46): ni un error del código puede
+reescribir un evento.
+
+Los permisos se otorgan en una migración y una prueba de integración los verifica. La conexión de la
+aplicación fija `timezone=UTC` en la sesión, sin depender de la configuración del servidor ni de
+`DATABASE_URL` (RF-12).
 
 ---
 
