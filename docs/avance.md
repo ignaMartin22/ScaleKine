@@ -1,6 +1,6 @@
 # Avance de la implementación
 
-Estado al 2026-10-12, con la ola 3 en pausa y casi cerrada. Este documento registra qué está hecho, qué quedó a
+Estado al 2026-10-13, con la ola 3 cerrada y la ola 4 por empezar. Este documento registra qué está hecho, qué quedó a
 medio camino y cómo retomarlo. No reemplaza a las fuentes de verdad: los requisitos están en
 [`spec.md`](./spec.md), las decisiones de diseño en [`plan.md`](./plan.md) y el orden y los
 criterios de "hecho" en [`tasks.md`](./tasks.md). Se actualiza cada vez que se fusiona un PR.
@@ -29,14 +29,15 @@ criterios de "hecho" en [`tasks.md`](./tasks.md). Se actualiza cada vez que se f
 | T-14 · Acceso y cuentas (frontend) | Hecha | #22 y #25 | #22: ingreso, cambio de contraseña, segundo factor, cierre y vencimiento. #25: administración de cuentas. Las dos partes pasaron el recorrido manual del usuario. |
 | T-16 · Consultorio | Hecha | #23 | Incluye la regla de lectura de M2 (`autorizarLectura`) y la guardiana de lecturas. |
 | T-17 · Kinesiólogos | Hecha | #26 | Alta de cuenta y perfil en una transacción, cambio de bloque y listado con filtro. Las cuentas de kinesiólogo se gestionan desde `/api/cuentas`. |
-| T-18 · Pacientes | PR abierto, listo para fusionar | #28 | Revisado por el orquestador, con pruebas de mutación. Falta que el usuario lo fusione. Ver §2b. |
-| T-19 · Pantallas de M2 (frontend) | Parte 1 en revisión | #27 (consultorio y kinesiólogos) | Revisado por el orquestador; falta el recorrido manual del usuario, que se cortó (ver §2b). La parte 2 (sección Pacientes) espera a que se fusionen el #28 y el #27. |
+| T-18 · Pacientes | Hecha | #28 | Búsqueda por query con DNI o nombre; ver §2b. |
+| T-19 · Pantallas de M2 (frontend) | Hecha | #27 y #31 | #27: consultorio y kinesiólogos. #31: sección Pacientes con buscador, alta y ficha editable. Las dos partes pasaron el recorrido manual del usuario. |
+| Ajustes previos a la ola 4 | Hecha | #30 | `TurnoEvento` solo con `SELECT` e `INSERT`, y conexión en UTC; ver §2b. |
 | T-21 a T-40 | Pendientes | — | Olas 4 a 7 de `tasks.md`. |
 
 Otros PRs fusionados:
 - #10 vuelve `@types/node` a la versión 24 y limita los saltos de versión que propone Dependabot.
 - #16 y #19 documentan el avance; #21 precisa la spec y el plan para la ola 3 (DNI, lectura de M2 y alta de kinesiólogo).
-- #24 documenta el avance durante la ola 3.
+- #24 y #29 documentan el avance durante la ola 3.
 - #3, #4 y #20 son de Dependabot.
 - El #5 (TypeScript 7 en el frontend) se cerró: Angular 22 exige TypeScript `~6.0`.
 
@@ -87,13 +88,12 @@ Otros PRs fusionados:
 
 ---
 
-## 2b. Ola 3: estado al pausar
+## 2b. Ola 3: cómo se cerró
 
-**Fusionado:** T-14 (#22 y #25), T-16 (#23) y T-17 (#26), más la documentación (#21 y #24).
+**Fusionado:** T-14 (#22 y #25), T-16 (#23), T-17 (#26), T-18 (#28), T-19 (#27 y #31) y los
+ajustes previos a la ola 4 (#30), más la documentación (#21, #24 y #29).
 
-**PRs abiertos:**
-- **#28 · T-18 pacientes.** Listo para fusionar: CI en verde, 483 pruebas, y 5 mutaciones
-  detectadas (3 del carril y 2 del orquestador). Decisiones del carril:
+- **T-18 (#28).** Decisiones:
   - La búsqueda va por query (`GET /api/pacientes?dni=…` o `?nombre=…`, exactamente uno), porque el
     registro de peticiones descarta la query string y así el DNI no queda en los logs.
   - Un DNI buscado que no existe responde 200 con lista vacía (es el caso "ofrecer el alta"); uno
@@ -104,23 +104,26 @@ Otros PRs fusionados:
     y `\` en `escaparComodines`.
   - Aceptado: `1234567.5` se lee como el DNI `12345675`, porque la spec acepta puntos en cualquier
     lugar. Exigir los puntos en los miles sería un cambio de spec.
-- **#27 · T-19 parte 1 (consultorio y kinesiólogos).** CI en verde, 105 pruebas y 3 mutaciones
-  detectadas. Falta el recorrido manual del usuario, que se cortó: Claude Code detuvo los
-  servidores de prueba porque la máquina se quedó sin memoria. Los pasos están en el cuerpo del PR.
-
-**Decisiones del usuario para antes de T-22:**
-1. Una migración revoca el `UPDATE` de `scalekine_app` sobre `TurnoEvento`, que queda solo con
-   `SELECT` e `INSERT`. Lleva su prueba de permisos y la actualización de `despliegue.md` §7.
-2. Fijar `timezone=UTC` en la conexión (`baseDeDatos.ts`), con una prueba.
-
-Las dos van en un PR de "ajustes previos a la ola 4", en el carril A, después del #28. Es la única
-tarea con migración en ese momento.
+- **T-19 (#27 y #31).** Las pantallas de M2 viven bajo `/secretaria` (secretaría y administrador;
+  el kinesiólogo vuelve a su agenda). En Pacientes:
+  - un solo campo con selector "Buscar por" DNI o nombre;
+  - el DNI se valida en el cliente con la misma regla que el backend (`nucleo/pacientes/dni.ts`), y
+    un formato inválido es error del campo, sin consultar a la API;
+  - un DNI sin resultados ofrece el alta con ese DNI precargado, sin pasarlo por la URL;
+  - alta y edición comparten `paginas/formulario-paciente.ts`; `dni_en_uso` va al campo DNI;
+  - por la ruta solo viaja el id del paciente.
+- **Ajustes previos a la ola 4 (#30),** decididos por el usuario:
+  - la migración `turno_evento_solo_insercion` revoca el `UPDATE` de `scalekine_app` sobre
+    `TurnoEvento` (nunca tuvo `DELETE`); `despliegue.md` §7 está actualizado;
+  - `crearBaseDeDatos` fija `timezone=UTC` con `options` del pool. La prueba fuerza otra zona con
+    `PGOPTIONS` y comprueba que una conexión común la hereda y la de la aplicación no.
+- La migración del #30 ya está aplicada en `scalekine_desarrollo`.
 
 **Datos de la base de desarrollo** (`scalekine_desarrollo`, todos ficticios):
 - El sistema está instalado con un consultorio de prueba.
 - El administrador del usuario tiene el segundo factor activo.
-- Hay cuentas `secretaria`, `kinesio` y `secretaria2` (esta última desactivada en la prueba del #25).
-- Puede haber un kinesiólogo `ana` si el recorrido del #27 llegó a crearlo.
+- Hay cuentas `secretaria`, `kinesio` y `secretaria2` (esta última desactivada en la prueba del #25),
+  más los kinesiólogos y pacientes ficticios que se crearon en los recorridos del #27 y el #31.
 
 ---
 
@@ -147,8 +150,8 @@ Las que cambian requisitos o diseño ya están en la spec o el plan. Esta lista 
 | Regla de lectura de M2 en `comun/autorizacion.ts`: consultorio, kinesiólogos y pacientes los leen `secretaria` y `administrador`, no el `kinesiologo` (decisión del usuario). | `plan.md` §3 M2 y §4.8 |
 | Alta de kinesiólogo como las cuentas de T-13: temporal elegida por el administrador, cuenta gestionada desde `/api/cuentas`, del perfil solo se cambia el bloque (decisión del usuario). | `plan.md` §3 M2 |
 | Contrato de kinesiólogos: `GET /api/kinesiologos?bloque=`, `POST /api/kinesiologos` y `PUT /api/kinesiologos/:id/bloque` (PUT porque el sub-recurso se reemplaza entero). | Comentario de `m2-maestros/rutasKinesiologos.ts` (#26) |
-| Contrato de pacientes: alta, edición, ficha y búsqueda por query con DNI o nombre (ver §2b). | Comentario de `m2-maestros/rutasPacientes.ts` (#28, abierto) |
-| `TurnoEvento` sin `UPDATE` para la aplicación, y conexión a PostgreSQL en UTC (decisión del usuario, pendiente de implementar). | §2b |
+| Contrato de pacientes: alta, edición, ficha y búsqueda por query con DNI o nombre (ver §2b). | Comentario de `m2-maestros/rutasPacientes.ts` (#28) |
+| `TurnoEvento` sin `UPDATE` para la aplicación, y conexión a PostgreSQL en UTC (decisión del usuario). | `despliegue.md` §7 y `comun/baseDeDatos.ts` (#30) |
 
 ---
 
@@ -156,8 +159,8 @@ Las que cambian requisitos o diseño ya están en la spec o el plan. Esta lista 
 
 | Tema | Propuesta | Estado |
 |---|---|---|
-| La sesión de PostgreSQL tiene que estar en UTC: adapter-pg envía las fechas sin desfase. Con otra zona, el bloqueo de T-09 duraría horas de más. | Fijar `timezone=UTC` en la conexión (`DATABASE_URL` o `baseDeDatos.ts`). | Decidido; va en los ajustes previos a la ola 4 (§2b) |
-| `scalekine_app` puede modificar `TurnoEvento` (auditoría, RF-46). | Dejarlo solo con `SELECT` e `INSERT` (`despliegue.md` §7). | Decidido; va en los ajustes previos a la ola 4 (§2b) |
+| La sesión de PostgreSQL tiene que estar en UTC: adapter-pg envía las fechas sin desfase. Con otra zona, el bloqueo de T-09 duraría horas de más. | Fijar `timezone=UTC` en la conexión (`DATABASE_URL` o `baseDeDatos.ts`). | Resuelto en #30 |
+| `scalekine_app` puede modificar `TurnoEvento` (auditoría, RF-46). | Dejarlo solo con `SELECT` e `INSERT` (`despliegue.md` §7). | Resuelto en #30 |
 | `plan.md` §5.2 dice que `FRONTEND_ORIGIN` es "para CORS", pero no hay CORS: se usa para verificar el `Origin` de las escrituras. | Corregir la descripción. | Propuesta sin decidir |
 | El modelo del frontend (`nucleo/sesion/modelo.ts`) no declara `debeCambiarContrasena` ni el estado del segundo factor (`segundoFactor` y `pasoPendiente` de `/api/sesion`). | Hecho en T-14. | Resuelto en #22 |
 | El README indica `docker compose exec api node dist/cli/index.js` para producción. | Confirmarlo cuando exista la imagen. | Pendiente de T-35 |
@@ -239,7 +242,7 @@ Si un PR se fusiona antes de terminar la revisión, las correcciones van en una 
 - Correr `revisor-seguridad` sobre un commit fijo (`git show <sha>:<ruta>`) permitió revisar en
   paralelo mientras el worker corregía.
 
-**Ola 3 (en curso):**
+**Ola 3:**
 - Antes de lanzar los carriles se cerraron en la spec y el plan tres huecos que la ola 3 necesitaba
   (#21): el formato del DNI, quién lee los datos maestros y el contrato del alta de kinesiólogo.
 - Cada carril recibe una sola tarea (o un solo PR) por encargo; el siguiente se lanza cuando el
@@ -261,9 +264,5 @@ Si un PR se fusiona antes de terminar la revisión, las correcciones van en una 
   ola 3, ninguna mutación sobrevivió.
 
 **Para retomar:**
-1. Fusionar el #28 (T-18).
-2. Terminar el recorrido manual del #27 (los pasos están en el PR) y fusionarlo.
-3. Carril A: los ajustes previos a la ola 4 (§2b).
-4. Carril B: T-19 parte 2, la sección Pacientes con buscador y ficha editable.
-5. Ola 4: T-22 → T-23 → T-24 en el carril A, con `revisor-seguridad`; T-21 → T-25 → T-26 en el
-   carril B, después de T-19.
+Sigue la ola 4: T-22 → T-23 → T-24 en el carril A (tareas críticas, con `revisor-seguridad` antes de
+fusionar); T-21 → T-25 → T-26 en el carril B (T-25 necesita T-22).
