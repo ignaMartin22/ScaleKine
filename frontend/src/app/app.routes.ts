@@ -17,6 +17,8 @@ import { InicioKinesiologo } from './paginas/inicio-kinesiologo';
 import { InicioSecretaria } from './paginas/inicio-secretaria';
 import { KinesiologosAdmin } from './paginas/kinesiologos-admin';
 import { NoEncontrada } from './paginas/no-encontrada';
+import { PacienteFicha } from './paginas/paciente-ficha';
+import { PacientesPagina } from './paginas/pacientes';
 import { VerificarSegundoFactor } from './paginas/verificar-segundo-factor';
 
 /**
@@ -78,6 +80,8 @@ export const routes: Routes = [
     children: [
       { path: '', component: InicioSecretaria },
       { path: 'consultorio', title: 'Consultorio · ScaleKine', component: ConsultorioPagina },
+      { path: 'pacientes', title: 'Pacientes · ScaleKine', component: PacientesPagina },
+      { path: 'pacientes/:id', title: 'Ficha del paciente · ScaleKine', component: PacienteFicha },
     ],
   },
   {

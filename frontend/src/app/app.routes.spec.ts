@@ -102,3 +102,35 @@ describe('rutas por rol (RF-01)', () => {
     expect(texto).toContain('usuario.ficticio · Administración');
   });
 });
+
+describe('rutas de pacientes (RF-21, D-16)', () => {
+  it('la secretaría entra al buscador', async () => {
+    expect((await navegar('/secretaria/pacientes', 'secretaria')).url).toBe(
+      '/secretaria/pacientes',
+    );
+  });
+
+  it('la secretaría entra a la ficha', async () => {
+    expect((await navegar('/secretaria/pacientes/7', 'secretaria')).url).toBe(
+      '/secretaria/pacientes/7',
+    );
+  });
+
+  it('el administrador entra al buscador', async () => {
+    expect((await navegar('/secretaria/pacientes', 'administrador')).url).toBe(
+      '/secretaria/pacientes',
+    );
+  });
+
+  it('el kinesiólogo no entra al buscador', async () => {
+    expect((await navegar('/secretaria/pacientes', 'kinesiologo')).url).toBe('/kinesiologo');
+  });
+
+  it('el kinesiólogo no entra a la ficha', async () => {
+    expect((await navegar('/secretaria/pacientes/7', 'kinesiologo')).url).toBe('/kinesiologo');
+  });
+
+  it('sin sesión lleva al ingreso', async () => {
+    expect((await navegar('/secretaria/pacientes', null)).url).toBe('/ingresar');
+  });
+});
