@@ -29,6 +29,59 @@ const LLEGADA_PREVIA = new Date('2026-10-07T09:30:00Z');
 
 const hashClave = hashearContrasena(CLAVE);
 
+/** Envuelve cada transacción de `db` con `envolver(tx)`, para interceptar las operaciones del servicio. */
+const baseConTransaccionEnvuelta = (envolver: (tx: object) => object): typeof db =>
+  new Proxy(db, {
+    get(destino, propiedad, receptor) {
+      if (propiedad === '$transaction') {
+        return (fn: (tx: unknown) => Promise<unknown>) => db.$transaction((tx) => fn(envolver(tx)));
+      }
+      return Reflect.get(destino, propiedad, receptor);
+    },
+  });
+
+/** Base cuyo `TurnoEvento.create` falla: sirve para probar que turno y evento son una sola transacción. */
+const baseConEventoRoto = (): typeof db =>
+  baseConTransaccionEnvuelta(
+    (tx) =>
+      new Proxy(tx, {
+        get: (t, p, r) =>
+          p === 'turnoEvento'
+            ? { ...Reflect.get(t, p, r), create: () => Promise.reject(new Error('fallo simulado del evento')) }
+            : Reflect.get(t, p, r),
+      }),
+  );
+
+/**
+ * Base con una barrera: dos transacciones leen el turno (`findUnique`) y ninguna sigue hasta que las
+ * dos leyeron, de modo que la carrera es determinista y no depende de la suerte del planificador.
+ */
+function baseConLecturaSincronizada(): typeof db {
+  let leyeron = 0;
+  let soltar!: () => void;
+  const ambosLeyeron = new Promise<void>((r) => (soltar = r));
+  return baseConTransaccionEnvuelta(
+    (tx) =>
+      new Proxy(tx, {
+        get(destino, propiedad, receptor) {
+          if (propiedad !== 'turno') return Reflect.get(destino, propiedad, receptor);
+          const turno = Reflect.get(destino, propiedad, receptor) as { findUnique: (a: unknown) => Promise<unknown> };
+          return new Proxy(turno, {
+            get(t, p, r) {
+              if (p !== 'findUnique') return Reflect.get(t, p, r);
+              return async (args: unknown) => {
+                const fila = await t.findUnique(args);
+                if (++leyeron === 2) soltar();
+                await ambosLeyeron;
+                return fila;
+              };
+            },
+          });
+        },
+      }),
+  );
+}
+
 async function crearAppDePrueba() {
   const config = cargarConfiguracion({ ...ENTORNO_PRUEBA, COOKIE_SECURE: 'false' });
   const reloj = new RelojFijo(AHORA);
@@ -245,39 +298,7 @@ describe('transicionar: el flujo normal (RF-30 a RF-33)', () => {
   });
 
   it('carrera determinista: ambos leen "reservado" antes de que cualquiera escriba; uno entra, el otro da 409 y queda un solo evento', async () => {
-    // Barrera: ninguna transacción actualiza hasta que las dos leyeron el estado.
-    let leyeron = 0;
-    let soltar!: () => void;
-    const ambosLeyeron = new Promise<void>((r) => (soltar = r));
-    const conBarrera = (cliente: object): object =>
-      new Proxy(cliente, {
-        get(destino, propiedad, receptor) {
-          if (propiedad === 'turno') {
-            const turno = Reflect.get(destino, propiedad, receptor) as { findUnique: (a: unknown) => Promise<unknown> };
-            return new Proxy(turno, {
-              get(t, p, r) {
-                if (p !== 'findUnique') return Reflect.get(t, p, r);
-                return async (args: unknown) => {
-                  const fila = await t.findUnique(args);
-                  if (++leyeron === 2) soltar();
-                  await ambosLeyeron;
-                  return fila;
-                };
-              },
-            });
-          }
-          return Reflect.get(destino, propiedad, receptor);
-        },
-      });
-    const conLecturaSincronizada = new Proxy(db, {
-      get(destino, propiedad, receptor) {
-        if (propiedad === '$transaction') {
-          return (fn: (tx: unknown) => Promise<unknown>) => db.$transaction((tx) => fn(conBarrera(tx)));
-        }
-        return Reflect.get(destino, propiedad, receptor);
-      },
-    });
-    const servicio = crearServicioTurnos({ db: conLecturaSincronizada, reloj: new RelojFijo(AHORA) });
+    const servicio = crearServicioTurnos({ db: baseConLecturaSincronizada(), reloj: new RelojFijo(AHORA) });
     const autor = await crearUsuario({ rol: 'secretaria' });
     const turno = await turnoEn('reservado');
 
@@ -333,25 +354,7 @@ describe('transicionar: autorización y atomicidad', () => {
   });
 
   it('si el evento no se puede escribir, el cambio de estado tampoco queda', async () => {
-    const rota = new Proxy(db, {
-      get(destino, propiedad, receptor) {
-        if (propiedad === '$transaction') {
-          return (fn: (tx: unknown) => Promise<unknown>) =>
-            db.$transaction((tx) =>
-              fn(
-                new Proxy(tx, {
-                  get: (t, p, r) =>
-                    p === 'turnoEvento'
-                      ? { ...Reflect.get(t, p, r), create: () => Promise.reject(new Error('fallo simulado del evento')) }
-                      : Reflect.get(t, p, r),
-                }),
-              ),
-            );
-        }
-        return Reflect.get(destino, propiedad, receptor);
-      },
-    });
-    const servicio = crearServicioTurnos({ db: rota, reloj: new RelojFijo(AHORA) });
+    const servicio = crearServicioTurnos({ db: baseConEventoRoto(), reloj: new RelojFijo(AHORA) });
     const autor = await crearUsuario({ rol: 'secretaria' });
     const turno = await turnoEn('reservado');
 
@@ -360,6 +363,37 @@ describe('transicionar: autorización y atomicidad', () => {
     const guardado = await db.turno.findUniqueOrThrow({ where: { id: turno.id } });
     expect(guardado.estado).toBe('reservado');
     expect(guardado.llegadaEn).toBeNull();
+  });
+
+  it('corregir: si el evento no se puede escribir, el cambio tampoco queda', async () => {
+    const servicio = crearServicioTurnos({ db: baseConEventoRoto(), reloj: new RelojFijo(AHORA) });
+    const autor = await crearUsuario({ rol: 'secretaria' });
+    const turno = await turnoEn('en_espera', { llegadaEn: LLEGADA_PREVIA });
+
+    await expect(servicio.corregir(turno.id, 'reservado', autor.id)).rejects.toThrow('fallo simulado');
+
+    const guardado = await db.turno.findUniqueOrThrow({ where: { id: turno.id } });
+    expect(guardado.estado).toBe('en_espera');
+    expect(guardado.llegadaEn).toEqual(LLEGADA_PREVIA);
+  });
+
+  it('corregir: carrera determinista; ambos leen el mismo estado, uno entra, el otro da 409 y queda un solo evento', async () => {
+    const servicio = crearServicioTurnos({ db: baseConLecturaSincronizada(), reloj: new RelojFijo(AHORA) });
+    const autor = await crearUsuario({ rol: 'secretaria' });
+    const turno = await turnoEn('reservado');
+
+    const resultados = await Promise.allSettled([
+      servicio.corregir(turno.id, 'no_asistio', autor.id),
+      servicio.corregir(turno.id, 'anulado', autor.id),
+    ]);
+
+    expect(resultados.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    const rechazo = resultados.find((r) => r.status === 'rejected') as PromiseRejectedResult;
+    expect(rechazo.reason).toMatchObject({ codigo: 'turno_modificado', estadoHttp: 409 });
+    const eventos = await eventosDe(turno.id);
+    expect(eventos).toHaveLength(1);
+    expect(eventos[0]).toMatchObject({ tipo: 'correccion', estadoAnterior: 'reservado' });
+    expect((await db.turno.findUniqueOrThrow({ where: { id: turno.id } })).estado).toBe(eventos[0]?.estadoNuevo);
   });
 
   it('no deja DNI ni nombre en el log', async () => {
@@ -631,6 +665,37 @@ describe('modificar coseguros (RF-27, RF-46)', () => {
     expect(await db.turnoEvento.count()).toBe(0);
   });
 
+  it.each(['coseguroObraSocial', 'coseguroAdicional'])('sin la clave %s da 400 y no borra ni cambia nada', async (faltante) => {
+    const { app } = await crearAppDePrueba();
+    const { cookie } = await ingresarComo(app, 'secretaria');
+    const turno = await turnoEn('reservado');
+    await db.turno.update({ where: { id: turno.id }, data: { coseguroObraSocial: '10.00', coseguroAdicional: '20.00' } });
+    const cuerpo: Record<string, unknown> = { coseguroObraSocial: 5, coseguroAdicional: 6 };
+    delete cuerpo[faltante];
+
+    const res = await coseguros(app, cookie, turno.id, cuerpo);
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.codigo).toBe('datos_invalidos');
+    expect(res.body.error.campos).toEqual([`body.${faltante}`]);
+    const guardado = await db.turno.findUniqueOrThrow({ where: { id: turno.id } });
+    expect(guardado.coseguroObraSocial?.toFixed(2)).toBe('10.00');
+    expect(guardado.coseguroAdicional?.toFixed(2)).toBe('20.00');
+    expect(await db.turnoEvento.count()).toBe(0);
+  });
+
+  it('si el evento no se puede escribir, los montos tampoco quedan', async () => {
+    const servicio = crearServicioTurnos({ db: baseConEventoRoto(), reloj: new RelojFijo(AHORA) });
+    const autor = await crearUsuario({ rol: 'secretaria' });
+    const turno = await turnoEn('reservado');
+
+    await expect(
+      servicio.modificarCoseguros(turno.id, { coseguroObraSocial: '5.00', coseguroAdicional: null }, autor.id),
+    ).rejects.toThrow('fallo simulado');
+
+    expect((await db.turno.findUniqueOrThrow({ where: { id: turno.id } })).coseguroObraSocial).toBeNull();
+  });
+
   it('un turno inexistente da 404 y no escribe evento', async () => {
     const { app } = await crearAppDePrueba();
     const { cookie } = await ingresarComo(app, 'secretaria');
@@ -651,6 +716,7 @@ describe('modificar coseguros (RF-27, RF-46)', () => {
     const sinSesion = await coseguros(app, undefined, turno.id, { coseguroObraSocial: 5 });
 
     expect(prohibido.status).toBe(403);
+    expect(prohibido.body).toEqual(ERROR_NO_AUTORIZADO);
     expect(sinSesion.status).toBe(401);
     expect((await db.turno.findUniqueOrThrow({ where: { id: turno.id } })).coseguroObraSocial).toBeNull();
     expect(await db.turnoEvento.count()).toBe(0);

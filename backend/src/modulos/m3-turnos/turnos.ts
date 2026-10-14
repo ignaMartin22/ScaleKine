@@ -248,11 +248,13 @@ export function crearServicioTurnos({ db, reloj }: { db: BaseDeDatos; reloj: Rel
           });
           if (!actual) throw errorTurnoNoEncontrado();
           if (actual.estado === hacia) throw errorMismoEstado();
+          // Solo se escribe `llegadaEn` al limpiarla o al fijarla por primera vez: si se conserva, no
+          // va en `data`, así no se pisa con un valor leído que otro pedido pudo haber cambiado.
           const llegadaEn =
-            hacia === 'reservado' ? null : hacia === 'en_espera' ? (actual.llegadaEn ?? ahora) : actual.llegadaEn;
+            hacia === 'reservado' ? { llegadaEn: null } : hacia === 'en_espera' && !actual.llegadaEn ? { llegadaEn: ahora } : {};
           const { count } = await tx.turno.updateMany({
             where: { id: turnoId, estado: actual.estado },
-            data: { estado: hacia, llegadaEn },
+            data: { estado: hacia, ...llegadaEn },
           });
           if (count !== 1) throw errorTurnoModificado();
           await tx.turnoEvento.create({

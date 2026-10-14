@@ -39,7 +39,8 @@ import type { ServicioTurnos } from './turnos.js';
  *   `turno_modificado`, 409 `franja_ocupada` / `paciente_con_turno_en_franja` (RF-37: hacia un
  *   estado activo sobre una franja ocupada; no modifica el turno ni escribe evento).
  * - `PUT /api/turnos/:id/coseguros` `{ coseguroObraSocial, coseguroAdicional }` reemplaza ambos
- *   montos (RF-27), con el mismo formato que al asignar; ausente, null o texto vacío = sin cargar.
+ *   montos (RF-27), con el mismo formato que al asignar. Las dos claves son obligatorias (una
+ *   ausente da 400, para no borrar un monto sin querer); `null` o texto vacío = sin cargar.
  *   No altera estado ni franja. Registra un evento `modificacion_coseguros` (RF-46). 200 con el
  *   mismo `{ turno }`; 400 `datos_invalidos`; 404 `turno_no_encontrado`.
  * Comunes: 401 sin sesión, 403 `no_autorizado`.
@@ -59,13 +60,16 @@ const fecha = z
 const horaInicio = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
 
 /** Monto en pesos, hasta dos decimales y 10 enteros (Decimal(12,2)); se normaliza a texto. */
-const monto = z.preprocess(
+const montoBase = z
+  .union([z.number().min(0).max(9_999_999_999.99), z.string().trim().max(16).refine(sinNul)])
+  .transform((v) => (typeof v === 'number' ? String(v) : v))
+  .pipe(z.string().regex(/^\d{1,10}(\.\d{1,2})?$/));
+const monto = z.preprocess((v) => (typeof v === 'string' && v.trim() === '' ? null : v), montoBase.nullish());
+
+/** Como `monto`, pero la clave es obligatoria: `null` o texto vacío = sin cargar. */
+const montoExplicito = z.preprocess(
   (v) => (typeof v === 'string' && v.trim() === '' ? null : v),
-  z
-    .union([z.number().min(0).max(9_999_999_999.99), z.string().trim().max(16).refine(sinNul)])
-    .transform((v) => (typeof v === 'number' ? String(v) : v))
-    .pipe(z.string().regex(/^\d{1,10}(\.\d{1,2})?$/))
-    .nullish(),
+  montoBase.nullable(),
 );
 
 const esquemaAsignar = {
@@ -114,7 +118,7 @@ const esquemaCorreccion = { params: z.object({ id: idTurno }), body: z.object({ 
 
 const esquemaCoseguros = {
   params: z.object({ id: idTurno }),
-  body: z.object({ coseguroObraSocial: monto, coseguroAdicional: monto }),
+  body: z.object({ coseguroObraSocial: montoExplicito, coseguroAdicional: montoExplicito }),
 };
 
 export function crearRutasTurnos({
