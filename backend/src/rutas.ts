@@ -11,7 +11,9 @@ import { crearServicioPacientes } from './modulos/m2-maestros/pacientes.js';
 import { crearRutasConsultorio } from './modulos/m2-maestros/rutasConsultorio.js';
 import { crearRutasKinesiologos } from './modulos/m2-maestros/rutasKinesiologos.js';
 import { crearRutasPacientes } from './modulos/m2-maestros/rutasPacientes.js';
+import { crearRutasTicket } from './modulos/m3-turnos/rutasTicket.js';
 import { crearRutasTurnos } from './modulos/m3-turnos/rutasTurnos.js';
+import { crearServicioTicket } from './modulos/m3-turnos/ticket.js';
 import { crearServicioTurnos } from './modulos/m3-turnos/turnos.js';
 import { crearRutasDisponibilidad } from './modulos/m4-agenda/rutasDisponibilidad.js';
 import { crearServicioDisponibilidad } from './modulos/m4-agenda/servicioDisponibilidad.js';
@@ -56,5 +58,9 @@ export async function crearRutas({
     servicio: crearServicioTurnos({ db, reloj }),
     exigirSesion: identidad.exigirSesion,
   });
-  return [identidad.rutas, cuentas, consultorio, kinesiologos, pacientes, disponibilidad, turnos];
+  const ticket = crearRutasTicket({
+    servicio: crearServicioTicket({ db, consultorio: crearServicioConsultorio({ db }) }),
+    exigirSesion: identidad.exigirSesion,
+  });
+  return [identidad.rutas, cuentas, consultorio, kinesiologos, pacientes, disponibilidad, turnos, ticket];
 }
