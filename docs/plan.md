@@ -139,7 +139,8 @@ Si algún día los bloques tuvieran grillas desfasadas, esta regla es la primera
 
 **Por qué `llegada_en` en `Turno`:** RF-40 ordena la espera por hora de llegada en cada push de
 tiempo real. Se escribe en la misma transacción que el evento de auditoría. Una corrección que
-saca al turno de `en_espera` la conserva; una que lo devuelve a `reservado` la limpia.
+saca al turno de `en_espera` la conserva; una que lo devuelve a `reservado` la limpia. Una que lo
+lleva a `en_espera` sin hora de llegada previa registra la hora de la corrección.
 
 ### 2.4 Lo que no está en el modelo
 
@@ -389,8 +390,11 @@ el trabajo diario de las correcciones.
 
 ### 4.7 Sin control de concurrencia entre escrituras
 
-**Elegido:** sin versiones ni bloqueo optimista. Los índices de §2.3 impiden el único daño
-estructural posible (doble ocupación de franja).
+**Elegido:** sin versiones ni bloqueo optimista en general. Los índices de §2.3 impiden el único
+daño estructural posible (doble ocupación de franja). Una excepción acotada: `transicionar` y
+`corregir` actualizan el turno condicionados al estado leído (`updateMany where {id, estado}`), para
+que el evento registre el estado anterior real. Si otro pedido se cruzó, la respuesta es 409
+`turno_modificado` y no se escribe evento.
 
 *Descartado:* bloqueo optimista. Las secretarias no trabajan en simultáneo (D-12); el kinesiólogo
 no escribe. No hay escenario realista de dos escrituras cruzadas sobre el mismo turno.
