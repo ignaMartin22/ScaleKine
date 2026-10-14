@@ -14,7 +14,7 @@ import type { ServicioTurnos } from './turnos.js';
  *   coseguroAdicional? }` asigna un turno en `reservado` (RF-23). `fecha` es 'AAAA-MM-DD' y admite
  *   fechas pasadas; `horaInicio` es 'HH:MM' y debe ser una franja de la grilla del bloque del
  *   kinesiólogo, de lunes a viernes (RF-15). Los coseguros son montos en pesos, como número o texto
- *   decimal con hasta dos decimales, no negativos; ausentes o null quedan sin cargar. El autor del
+ *   decimal con hasta dos decimales, no negativos; ausentes, null o texto vacío quedan sin cargar. El autor del
  *   evento sale de la sesión: un `autorId` o `estado` en el cuerpo se ignora.
  *   201 `{ turno: { id, pacienteId, kinesiologoId, fecha, horaInicio, estado: 'reservado',
  *   coseguroObraSocial, coseguroAdicional } }` (los montos, texto con dos decimales o null). El
@@ -35,16 +35,20 @@ const fecha = z
   .refine((v) => {
     // Zod sigue con los demás controles aunque el formato falle: una fecha ilegible no debe lanzar.
     const d = new Date(`${v}T00:00:00Z`);
-    return !Number.isNaN(d.getTime()) && d.toISOString().startsWith(v);
+    // El año 0000 no existe para Postgres (date): se exige desde 0001-01-01.
+    return !Number.isNaN(d.getTime()) && d.toISOString().startsWith(v) && v >= '0001-01-01';
   });
 const horaInicio = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
 
 /** Monto en pesos, hasta dos decimales y 10 enteros (Decimal(12,2)); se normaliza a texto. */
-const monto = z
-  .union([z.number().min(0).max(9_999_999_999.99), z.string().trim().max(16).refine(sinNul)])
-  .transform((v) => (typeof v === 'number' ? String(v) : v))
-  .pipe(z.string().regex(/^\d{1,10}(\.\d{1,2})?$/))
-  .nullish();
+const monto = z.preprocess(
+  (v) => (typeof v === 'string' && v.trim() === '' ? null : v),
+  z
+    .union([z.number().min(0).max(9_999_999_999.99), z.string().trim().max(16).refine(sinNul)])
+    .transform((v) => (typeof v === 'number' ? String(v) : v))
+    .pipe(z.string().regex(/^\d{1,10}(\.\d{1,2})?$/))
+    .nullish(),
+);
 
 const esquemaAsignar = {
   // Las claves desconocidas (autor, estado) se descartan: el autor sale de la sesión.

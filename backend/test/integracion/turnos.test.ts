@@ -31,11 +31,24 @@ const SABADO = '2026-10-10';
 // Argon2 es lento a propósito: se calcula una vez y se reutiliza en todas las pruebas.
 const hashClave = hashearContrasena(CLAVE);
 
-async function crearAppDePrueba() {
+/** Base cuyo `TurnoEvento.create` falla, tanto dentro de la transacción como fuera de ella. */
+const fallar = () => Promise.reject(new Error('fallo simulado del evento'));
+const conEventoRoto = <T extends object>(cliente: T): T =>
+  new Proxy(cliente, {
+    get(destino, propiedad, receptor) {
+      if (propiedad === 'turnoEvento') return { ...Reflect.get(destino, propiedad, receptor), create: fallar };
+      if (propiedad === '$transaction') {
+        return (fn: (tx: unknown) => Promise<unknown>) => db.$transaction((tx) => fn(conEventoRoto(tx)));
+      }
+      return Reflect.get(destino, propiedad, receptor);
+    },
+  });
+
+async function crearAppDePrueba(baseDeDatos: typeof db = db) {
   const config = cargarConfiguracion({ ...ENTORNO_PRUEBA, COOKIE_SECURE: 'false' });
   const reloj = new RelojFijo(AHORA);
   const capturado = loggerCapturado();
-  const rutas = await crearRutas({ db, reloj, config });
+  const rutas = await crearRutas({ db: baseDeDatos, reloj, config });
   return { app: crearApp({ config, logger: capturado.logger, reloj, rutas }), ...capturado };
 }
 type App = Awaited<ReturnType<typeof crearAppDePrueba>>['app'];
@@ -115,6 +128,20 @@ describe('asignar un turno (RF-23)', () => {
 
     expect(res.status).toBe(201);
     expect(res.body.turno).toMatchObject({ coseguroObraSocial: null, coseguroAdicional: null });
+  });
+
+  it.each(['', '   '])('un coseguro vacío (%j) queda sin cargar', async (vacio) => {
+    const { app } = await crearAppDePrueba();
+    const { cookie } = await ingresarComo(app, 'secretaria');
+    const { cuerpo } = await escenario();
+
+    const res = await asignar(app, cookie, { ...cuerpo, coseguroObraSocial: vacio, coseguroAdicional: vacio });
+
+    expect(res.status).toBe(201);
+    expect(res.body.turno).toMatchObject({ coseguroObraSocial: null, coseguroAdicional: null });
+    const turno = await db.turno.findUniqueOrThrow({ where: { id: res.body.turno.id } });
+    expect(turno.coseguroObraSocial).toBeNull();
+    expect(turno.coseguroAdicional).toBeNull();
   });
 
   it('el administrador también asigna', async () => {
@@ -252,6 +279,7 @@ describe('asignación: datos faltantes o inválidos (RF-26)', () => {
     ['kinesiologoId', '1'],
     ['fecha', '2026-02-30'],
     ['fecha', '12/10/2026'],
+    ['fecha', '0000-01-03'],
     ['fecha', 20261012],
     ['horaInicio', '8:00'],
     ['horaInicio', '25:00'],
@@ -295,6 +323,24 @@ describe('asignación: datos faltantes o inválidos (RF-26)', () => {
     expect(res.status).toBe(404);
     expect(res.body.error.codigo).toBe('kinesiologo_no_encontrado');
     expect(await db.turno.count()).toBe(0);
+  });
+});
+
+describe('asignación: kinesiólogo con la cuenta desactivada (RF-23)', () => {
+  it('es como si no existiera: 404 y no queda ni turno ni evento', async () => {
+    const { app } = await crearAppDePrueba();
+    const { cookie } = await ingresarComo(app, 'secretaria');
+    const { kinesiologo, cuerpo } = await escenario();
+    await db.usuario.update({ where: { id: kinesiologo.usuarioId }, data: { activo: false } });
+
+    const res = await asignar(app, cookie, cuerpo);
+    const inexistente = await asignar(app, cookie, { ...cuerpo, kinesiologoId: 999_999 });
+
+    expect(res.status).toBe(404);
+    expect(res.body).toEqual(inexistente.body);
+    expect(res.body.error.codigo).toBe('kinesiologo_no_encontrado');
+    expect(await db.turno.count()).toBe(0);
+    expect(await db.turnoEvento.count()).toBe(0);
   });
 });
 
@@ -419,42 +465,50 @@ describe('asignación: ocupación de la franja (RF-24, RF-25)', () => {
   );
 });
 
-describe('asignación: carrera entre dos pedidos simultáneos', () => {
-  it('con el mismo kinesiólogo y la misma franja entra uno solo, y el otro recibe "franja ocupada"', async () => {
+describe('asignación: carrera entre pedidos simultáneos', () => {
+  const SIMULTANEOS = 8;
+
+  it('con el mismo kinesiólogo y la misma franja entra uno solo y el resto recibe "franja ocupada"', async () => {
     const { app } = await crearAppDePrueba();
     const { cookie } = await ingresarComo(app, 'secretaria');
     const { kinesiologo, cuerpo } = await escenario();
-    const otro = await crearPaciente();
+    const pacientes = [cuerpo.pacienteId, ...(await Promise.all(Array.from({ length: SIMULTANEOS - 1 }, () => crearPaciente()))).map((p) => p.id)];
 
-    const [a, b] = await Promise.all([
-      asignar(app, cookie, cuerpo),
-      asignar(app, cookie, { ...cuerpo, pacienteId: otro.id, kinesiologoId: kinesiologo.id }),
-    ]);
+    const respuestas = await Promise.all(
+      pacientes.map((pacienteId) => asignar(app, cookie, { ...cuerpo, pacienteId, kinesiologoId: kinesiologo.id })),
+    );
 
-    expect([a.status, b.status].sort()).toEqual([201, 409]);
-    const rechazada = a.status === 409 ? a : b;
-    expect(rechazada.body.error.codigo).toBe('franja_ocupada');
+    expect(respuestas.filter((r) => r.status === 201)).toHaveLength(1);
+    const rechazos = respuestas.filter((r) => r.status !== 201);
+    expect(rechazos).toHaveLength(SIMULTANEOS - 1);
+    for (const r of rechazos) {
+      expect(r.status).toBe(409);
+      expect(r.body.error.codigo).toBe('franja_ocupada');
+    }
     expect(await db.turno.count()).toBe(1);
     expect(await db.turnoEvento.count()).toBe(1);
     const turno = await db.turno.findFirstOrThrow();
-    const evento = await db.turnoEvento.findFirstOrThrow();
-    expect(evento.turnoId).toBe(turno.id);
+    expect((await db.turnoEvento.findFirstOrThrow()).turnoId).toBe(turno.id);
   });
 
-  it('con el mismo paciente y la misma franja entra uno solo, y el otro recibe el rechazo del paciente', async () => {
+  it('con el mismo paciente y la misma franja entra uno solo y el resto recibe el rechazo del paciente', async () => {
     const { app } = await crearAppDePrueba();
     const { cookie } = await ingresarComo(app, 'secretaria');
     const { cuerpo } = await escenario();
-    const otroKinesiologo = await crearKinesiologo({ bloque: 'manana' });
+    const kinesiologos = [
+      cuerpo.kinesiologoId,
+      ...(await Promise.all(Array.from({ length: SIMULTANEOS - 1 }, () => crearKinesiologo({ bloque: 'manana' })))).map((k) => k.id),
+    ];
 
-    const [a, b] = await Promise.all([
-      asignar(app, cookie, cuerpo),
-      asignar(app, cookie, { ...cuerpo, kinesiologoId: otroKinesiologo.id }),
-    ]);
+    const respuestas = await Promise.all(kinesiologos.map((kinesiologoId) => asignar(app, cookie, { ...cuerpo, kinesiologoId })));
 
-    expect([a.status, b.status].sort()).toEqual([201, 409]);
-    const rechazada = a.status === 409 ? a : b;
-    expect(rechazada.body.error.codigo).toBe('paciente_con_turno_en_franja');
+    expect(respuestas.filter((r) => r.status === 201)).toHaveLength(1);
+    const rechazos = respuestas.filter((r) => r.status !== 201);
+    expect(rechazos).toHaveLength(SIMULTANEOS - 1);
+    for (const r of rechazos) {
+      expect(r.status).toBe(409);
+      expect(r.body.error.codigo).toBe('paciente_con_turno_en_franja');
+    }
     expect(await db.turno.count()).toBe(1);
     expect(await db.turnoEvento.count()).toBe(1);
   });
@@ -512,24 +566,26 @@ describe('asignación: no registra datos personales (RNF-08)', () => {
     expect(texto()).not.toContain(paciente.dni);
     expect(texto()).not.toContain(paciente.nombre);
   });
+
+  it('un error inesperado (500) tampoco deja DNI, nombre ni montos en el log', async () => {
+    const { app, texto, registros } = await crearAppDePrueba(conEventoRoto(db));
+    const { cookie } = await ingresarComo(app, 'secretaria');
+    const { paciente, cuerpo } = await escenario();
+
+    const res = await asignar(app, cookie, { ...cuerpo, coseguroObraSocial: '7654.32', coseguroAdicional: 8765.43 });
+
+    expect(res.status).toBe(500);
+    expect(res.body.error.codigo).toBe('error_interno');
+    expect(registros().some((r) => r.msg === 'error no controlado')).toBe(true);
+    for (const prohibido of [paciente.dni, paciente.nombre, '7654.32', '8765.43']) {
+      expect(texto()).not.toContain(prohibido);
+    }
+  });
 });
 
 describe('asignación: turno y evento son una sola transacción (RF-46)', () => {
   it('si el evento no se puede escribir, el turno tampoco queda', async () => {
     const reloj = new RelojFijo(AHORA);
-    // Una base cuyo `TurnoEvento.create` falla, tanto en la transacción como fuera de ella.
-    const fallar = () => Promise.reject(new Error('fallo simulado del evento'));
-    const conEventoRoto = <T extends object>(cliente: T): T =>
-      new Proxy(cliente, {
-        get(destino, propiedad, receptor) {
-          if (propiedad === 'turnoEvento') return { ...Reflect.get(destino, propiedad, receptor), create: fallar };
-          if (propiedad === '$transaction') {
-            return (fn: (tx: unknown) => Promise<unknown>) =>
-              db.$transaction((tx) => fn(conEventoRoto(tx)));
-          }
-          return Reflect.get(destino, propiedad, receptor);
-        },
-      });
     const servicio = crearServicioTurnos({ db: conEventoRoto(db), reloj });
     const autor = await crearUsuario({ rol: 'secretaria' });
     const { cuerpo } = await escenario();

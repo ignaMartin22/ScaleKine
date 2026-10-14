@@ -76,10 +76,11 @@ export function crearServicioTurnos({ db, reloj }: { db: BaseDeDatos; reloj: Rel
     async asignar(datos: DatosAsignacion, autorId: number): Promise<TurnoAsignado> {
       const [paciente, kinesiologo] = await Promise.all([
         db.paciente.findUnique({ where: { id: datos.pacienteId }, select: { id: true } }),
-        db.kinesiologo.findUnique({ where: { id: datos.kinesiologoId }, select: { id: true, bloque: true } }),
+        db.kinesiologo.findUnique({ where: { id: datos.kinesiologoId }, select: { id: true, bloque: true, usuario: { select: { activo: true } } } }),
       ]);
       if (!paciente) throw errorPacienteNoEncontrado();
-      if (!kinesiologo) throw errorKinesiologoNoEncontrado();
+      // Con la cuenta desactivada (RF-09), para asignar es como si no existiera (RF-23).
+      if (!kinesiologo || !kinesiologo.usuario.activo) throw errorKinesiologoNoEncontrado();
       // Solo franjas de la grilla del bloque del kinesiólogo, de lunes a viernes (RF-15).
       if (!franjasDelDia(datos.fecha, kinesiologo.bloque).some((f) => f.inicio === datos.horaInicio)) {
         throw errorFranjaInvalida();
