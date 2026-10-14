@@ -11,6 +11,8 @@ import { crearServicioPacientes } from './modulos/m2-maestros/pacientes.js';
 import { crearRutasConsultorio } from './modulos/m2-maestros/rutasConsultorio.js';
 import { crearRutasKinesiologos } from './modulos/m2-maestros/rutasKinesiologos.js';
 import { crearRutasPacientes } from './modulos/m2-maestros/rutasPacientes.js';
+import { crearRutasDisponibilidad } from './modulos/m4-agenda/rutasDisponibilidad.js';
+import { crearServicioDisponibilidad } from './modulos/m4-agenda/servicioDisponibilidad.js';
 
 /**
  * Lista única de los routers de la API: la usan el servidor y la prueba que exige autorización en
@@ -44,5 +46,9 @@ export async function crearRutas({
     servicio: crearServicioPacientes({ db }),
     exigirSesion: identidad.exigirSesion,
   });
-  return [identidad.rutas, cuentas, consultorio, kinesiologos, pacientes];
+  const disponibilidad = crearRutasDisponibilidad({
+    servicio: crearServicioDisponibilidad({ db }),
+    exigirSesion: identidad.exigirSesion,
+  });
+  return [identidad.rutas, cuentas, consultorio, kinesiologos, pacientes, disponibilidad];
 }
