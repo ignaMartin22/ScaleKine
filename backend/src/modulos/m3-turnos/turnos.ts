@@ -2,6 +2,7 @@ import type { BaseDeDatos } from '../../comun/baseDeDatos.js';
 import { ErrorNegocio } from '../../comun/errores.js';
 import type { Reloj } from '../../comun/reloj.js';
 import { franjasDelDia } from '../m2-maestros/grilla.js';
+import { validarTransicion, type EstadoTurno, type Rol } from './transiciones.js';
 
 /** Datos que la secretaría elige al asignar (RF-23). El autor no viene acá: sale de la sesión. */
 export interface DatosAsignacion {
@@ -24,6 +25,19 @@ export interface TurnoAsignado {
   fecha: string;
   horaInicio: string;
   estado: 'reservado';
+  coseguroObraSocial: string | null;
+  coseguroAdicional: string | null;
+}
+
+/** Turno tras una transición o una corrección. `llegadaEn` es ISO 8601 en UTC, o null (RF-30). */
+export interface TurnoActualizado {
+  id: number;
+  pacienteId: number;
+  kinesiologoId: number;
+  fecha: string;
+  horaInicio: string;
+  estado: EstadoTurno;
+  llegadaEn: string | null;
   coseguroObraSocial: string | null;
   coseguroAdicional: string | null;
 }
@@ -60,6 +74,50 @@ const errorFranjaOcupada = () =>
   new ErrorNegocio('franja_ocupada', 'La franja ya tiene un turno activo de ese kinesiólogo.', 409);
 const errorPacienteOcupado = () =>
   new ErrorNegocio('paciente_con_turno_en_franja', 'El paciente ya tiene un turno activo en esa franja.', 409);
+
+const errorTurnoNoEncontrado = () => new ErrorNegocio('turno_no_encontrado', 'El turno no existe.', 404);
+const errorTurnoModificado = () =>
+  new ErrorNegocio(
+    'turno_modificado',
+    'El turno cambió de estado mientras se procesaba la acción. Actualizá la pantalla y volvé a intentar.',
+    409,
+  );
+const errorMismoEstado = () =>
+  new ErrorNegocio('correccion_sin_cambio', 'El turno ya está en ese estado: no hay nada que corregir.', 409);
+
+/** Traduce la violación de un índice de franja activa al rechazo de negocio (RF-24, RF-25, RF-37). */
+function traducirOcupacion(err: unknown): never {
+  const indice = indiceViolado(err);
+  if (indice === INDICE_FRANJA_DEL_KINESIOLOGO) throw errorFranjaOcupada();
+  if (indice === INDICE_FRANJA_DEL_PACIENTE) throw errorPacienteOcupado();
+  throw err;
+}
+
+interface FilaTurno {
+  id: number;
+  pacienteId: number;
+  kinesiologoId: number;
+  fecha: Date;
+  horaInicio: string;
+  estado: EstadoTurno;
+  llegadaEn: Date | null;
+  coseguroObraSocial: { toFixed(n: number): string } | null;
+  coseguroAdicional: { toFixed(n: number): string } | null;
+}
+
+function aActualizado(t: FilaTurno): TurnoActualizado {
+  return {
+    id: t.id,
+    pacienteId: t.pacienteId,
+    kinesiologoId: t.kinesiologoId,
+    fecha: t.fecha.toISOString().slice(0, 10),
+    horaInicio: t.horaInicio,
+    estado: t.estado,
+    llegadaEn: t.llegadaEn?.toISOString() ?? null,
+    coseguroObraSocial: t.coseguroObraSocial?.toFixed(2) ?? null,
+    coseguroAdicional: t.coseguroAdicional?.toFixed(2) ?? null,
+  };
+}
 
 /**
  * Ciclo de vida del turno (M3). Es el único módulo que escribe turnos, y cada escritura registra su
@@ -118,10 +176,99 @@ export function crearServicioTurnos({ db, reloj }: { db: BaseDeDatos; reloj: Rel
           coseguroAdicional: turno.coseguroAdicional?.toFixed(2) ?? null,
         };
       } catch (err) {
-        const indice = indiceViolado(err);
-        if (indice === INDICE_FRANJA_DEL_KINESIOLOGO) throw errorFranjaOcupada();
-        if (indice === INDICE_FRANJA_DEL_PACIENTE) throw errorPacienteOcupado();
-        throw err;
+        return traducirOcupacion(err);
+      }
+    },
+
+    /**
+     * Flujo normal (RF-30 a RF-33): solo acepta las filas de `TRANSICIONES`. Al pasar a `en_espera`
+     * registra `llegadaEn` con el reloj inyectable. La actualización está condicionada al estado
+     * leído: si otro pedido lo cambió en el medio no afecta filas y se rechaza (409) sin evento, de
+     * modo que `estadoAnterior` es siempre el verdadero. `autorId` y `rol` son los de la sesión.
+     */
+    async transicionar(turnoId: number, hacia: EstadoTurno, autorId: number, rol: Rol): Promise<TurnoActualizado> {
+      const ahora = reloj.ahora();
+      return db.$transaction(async (tx) => {
+        const actual = await tx.turno.findUnique({ where: { id: turnoId }, select: { estado: true } });
+        if (!actual) throw errorTurnoNoEncontrado();
+        validarTransicion(rol, actual.estado, hacia);
+        const { count } = await tx.turno.updateMany({
+          where: { id: turnoId, estado: actual.estado },
+          data: { estado: hacia, ...(hacia === 'en_espera' ? { llegadaEn: ahora } : {}) },
+        });
+        if (count !== 1) throw errorTurnoModificado();
+        await tx.turnoEvento.create({
+          data: {
+            turnoId,
+            tipo: 'cambio_estado',
+            estadoAnterior: actual.estado,
+            estadoNuevo: hacia,
+            autorId,
+            ocurridoEn: ahora,
+          },
+        });
+        return aActualizado(await tx.turno.findUniqueOrThrow({ where: { id: turnoId } }));
+      });
+    },
+
+    /**
+     * Cambia los coseguros (RF-27) sin tocar estado ni franja. `null` deja el monto sin cargar. Registra
+     * un evento `modificacion_coseguros` en la misma transacción (RF-46), sin estados ni montos
+     * anteriores.
+     */
+    async modificarCoseguros(
+      turnoId: number,
+      coseguros: { coseguroObraSocial: string | null; coseguroAdicional: string | null },
+      autorId: number,
+    ): Promise<TurnoActualizado> {
+      const ahora = reloj.ahora();
+      return db.$transaction(async (tx) => {
+        const { count } = await tx.turno.updateMany({ where: { id: turnoId }, data: coseguros });
+        if (count !== 1) throw errorTurnoNoEncontrado();
+        await tx.turnoEvento.create({
+          data: { turnoId, tipo: 'modificacion_coseguros', autorId, ocurridoEn: ahora },
+        });
+        return aActualizado(await tx.turno.findUniqueOrThrow({ where: { id: turnoId } }));
+      });
+    },
+
+    /**
+     * Corrección (RF-35): lleva el turno a cualquier otro de los cinco estados, con evento
+     * `correccion`. `llegadaEn` se limpia al volver a `reservado`; hacia `en_espera` se conserva la
+     * que tenía o, si no tenía, se registra la hora de la corrección; en los demás casos se conserva.
+     * Hacia un estado activo sobre una franja ocupada la base rechaza (RF-37) y no queda nada.
+     */
+    async corregir(turnoId: number, hacia: EstadoTurno, autorId: number): Promise<TurnoActualizado> {
+      const ahora = reloj.ahora();
+      try {
+        return await db.$transaction(async (tx) => {
+          const actual = await tx.turno.findUnique({
+            where: { id: turnoId },
+            select: { estado: true, llegadaEn: true },
+          });
+          if (!actual) throw errorTurnoNoEncontrado();
+          if (actual.estado === hacia) throw errorMismoEstado();
+          const llegadaEn =
+            hacia === 'reservado' ? null : hacia === 'en_espera' ? (actual.llegadaEn ?? ahora) : actual.llegadaEn;
+          const { count } = await tx.turno.updateMany({
+            where: { id: turnoId, estado: actual.estado },
+            data: { estado: hacia, llegadaEn },
+          });
+          if (count !== 1) throw errorTurnoModificado();
+          await tx.turnoEvento.create({
+            data: {
+              turnoId,
+              tipo: 'correccion',
+              estadoAnterior: actual.estado,
+              estadoNuevo: hacia,
+              autorId,
+              ocurridoEn: ahora,
+            },
+          });
+          return aActualizado(await tx.turno.findUniqueOrThrow({ where: { id: turnoId } }));
+        });
+      } catch (err) {
+        return traducirOcupacion(err);
       }
     },
   };

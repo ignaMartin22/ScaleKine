@@ -42,6 +42,7 @@ enum TipoEvento {
   cambio_estado
   correccion
   reprogramacion
+  modificacion_coseguros
 }
 
 /// Cuenta de una persona del consultorio (M1). No se borra: se desactiva (RF-09).

@@ -4,6 +4,7 @@ import { autorizarEscritura } from '../../comun/autorizarEscritura.js';
 import { ErrorNegocio } from '../../comun/errores.js';
 import { datosValidados, validar } from '../../comun/validacion.js';
 import { sesionActual } from '../m1-identidad/index.js';
+import { ESTADOS, type EstadoTurno } from './transiciones.js';
 import type { ServicioTurnos } from './turnos.js';
 
 /**
@@ -24,6 +25,23 @@ import type { ServicioTurnos } from './turnos.js';
  *   `paciente_no_encontrado`, 404 `kinesiologo_no_encontrado`, 409 `franja_ocupada` (RF-24: el
  *   kinesiólogo ya tiene un turno activo ahí), 409 `paciente_con_turno_en_franja` (RF-25: el
  *   paciente ya tiene un turno activo en esa franja, con cualquier kinesiólogo).
+ * - `POST /api/turnos/:id/transicion` `{ hacia }` aplica una acción del flujo normal (RF-30 a
+ *   RF-33): `hacia` es uno de los cinco estados y el cambio debe ser una fila de la tabla de
+ *   `transiciones.ts`. Al pasar a `en_espera` registra `llegadaEn`. 200 `{ turno: { id, pacienteId,
+ *   kinesiologoId, fecha, horaInicio, estado, llegadaEn (ISO o null), coseguroObraSocial,
+ *   coseguroAdicional } }`. 404 `turno_no_encontrado`, 409 `transicion_no_permitida` (la acción no
+ *   sale del estado actual, o ya está en ese estado), 409 `turno_modificado` (otro pedido cambió el
+ *   estado en el medio; sin evento).
+ * - `POST /api/turnos/:id/correccion` `{ estado }` lleva el turno a cualquier otro estado (RF-35),
+ *   con evento `correccion`. `llegadaEn`: se limpia al volver a `reservado`; hacia `en_espera` se
+ *   conserva la que tenía o, si no tenía, se registra la hora de la corrección; en los demás casos
+ *   se conserva. Misma respuesta 200. 404, 409 `correccion_sin_cambio` (mismo estado), 409
+ *   `turno_modificado`, 409 `franja_ocupada` / `paciente_con_turno_en_franja` (RF-37: hacia un
+ *   estado activo sobre una franja ocupada; no modifica el turno ni escribe evento).
+ * - `PUT /api/turnos/:id/coseguros` `{ coseguroObraSocial, coseguroAdicional }` reemplaza ambos
+ *   montos (RF-27), con el mismo formato que al asignar; ausente, null o texto vacío = sin cargar.
+ *   No altera estado ni franja. Registra un evento `modificacion_coseguros` (RF-46). 200 con el
+ *   mismo `{ turno }`; 400 `datos_invalidos`; 404 `turno_no_encontrado`.
  * Comunes: 401 sin sesión, 403 `no_autorizado`.
  */
 const sinNul = (valor: string) => !valor.includes('\u0000');
@@ -85,6 +103,20 @@ const exigirDatosCompletos: RequestHandler = (req, _res, next) => {
   next();
 };
 
+const idTurno = z
+  .string()
+  .regex(/^\d{1,10}$/)
+  .transform(Number)
+  .pipe(z.number().int().positive().max(2_147_483_647));
+const estado = z.enum(ESTADOS as [EstadoTurno, ...EstadoTurno[]]);
+const esquemaTransicion = { params: z.object({ id: idTurno }), body: z.object({ hacia: estado }) };
+const esquemaCorreccion = { params: z.object({ id: idTurno }), body: z.object({ estado }) };
+
+const esquemaCoseguros = {
+  params: z.object({ id: idTurno }),
+  body: z.object({ coseguroObraSocial: monto, coseguroAdicional: monto }),
+};
+
 export function crearRutasTurnos({
   servicio,
   exigirSesion,
@@ -105,6 +137,56 @@ export function crearRutasTurnos({
         const { body } = datosValidados(res.locals, esquemaAsignar);
         const turno = await servicio.asignar(body, sesionActual(res).usuario.id);
         res.status(201).json({ turno });
+      } catch (err) {
+        next(err);
+      }
+    },
+  );
+
+  router.post(
+    '/turnos/:id/transicion',
+    exigirSesion,
+    autorizarEscritura('turnos'),
+    validar(esquemaTransicion),
+    async (_req, res, next) => {
+      try {
+        const { params, body } = datosValidados(res.locals, esquemaTransicion);
+        const { usuario } = sesionActual(res);
+        res.json({ turno: await servicio.transicionar(params.id, body.hacia, usuario.id, usuario.rol) });
+      } catch (err) {
+        next(err);
+      }
+    },
+  );
+
+  router.post(
+    '/turnos/:id/correccion',
+    exigirSesion,
+    autorizarEscritura('turnos'),
+    validar(esquemaCorreccion),
+    async (_req, res, next) => {
+      try {
+        const { params, body } = datosValidados(res.locals, esquemaCorreccion);
+        res.json({ turno: await servicio.corregir(params.id, body.estado, sesionActual(res).usuario.id) });
+      } catch (err) {
+        next(err);
+      }
+    },
+  );
+
+  router.put(
+    '/turnos/:id/coseguros',
+    exigirSesion,
+    autorizarEscritura('turnos'),
+    validar(esquemaCoseguros),
+    async (_req, res, next) => {
+      try {
+        const { params, body } = datosValidados(res.locals, esquemaCoseguros);
+        const montos = {
+          coseguroObraSocial: body.coseguroObraSocial ?? null,
+          coseguroAdicional: body.coseguroAdicional ?? null,
+        };
+        res.json({ turno: await servicio.modificarCoseguros(params.id, montos, sesionActual(res).usuario.id) });
       } catch (err) {
         next(err);
       }
