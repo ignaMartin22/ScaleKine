@@ -244,6 +244,57 @@ describe('transicionar: el flujo normal (RF-30 a RF-33)', () => {
     expect((await db.turno.findUniqueOrThrow({ where: { id: turno.id } })).estado).toBe(ganadora?.body.turno.estado);
   });
 
+  it('carrera determinista: ambos leen "reservado" antes de que cualquiera escriba; uno entra, el otro da 409 y queda un solo evento', async () => {
+    // Barrera: ninguna transacción actualiza hasta que las dos leyeron el estado.
+    let leyeron = 0;
+    let soltar!: () => void;
+    const ambosLeyeron = new Promise<void>((r) => (soltar = r));
+    const conBarrera = (cliente: object): object =>
+      new Proxy(cliente, {
+        get(destino, propiedad, receptor) {
+          if (propiedad === 'turno') {
+            const turno = Reflect.get(destino, propiedad, receptor) as { findUnique: (a: unknown) => Promise<unknown> };
+            return new Proxy(turno, {
+              get(t, p, r) {
+                if (p !== 'findUnique') return Reflect.get(t, p, r);
+                return async (args: unknown) => {
+                  const fila = await t.findUnique(args);
+                  if (++leyeron === 2) soltar();
+                  await ambosLeyeron;
+                  return fila;
+                };
+              },
+            });
+          }
+          return Reflect.get(destino, propiedad, receptor);
+        },
+      });
+    const conLecturaSincronizada = new Proxy(db, {
+      get(destino, propiedad, receptor) {
+        if (propiedad === '$transaction') {
+          return (fn: (tx: unknown) => Promise<unknown>) => db.$transaction((tx) => fn(conBarrera(tx)));
+        }
+        return Reflect.get(destino, propiedad, receptor);
+      },
+    });
+    const servicio = crearServicioTurnos({ db: conLecturaSincronizada, reloj: new RelojFijo(AHORA) });
+    const autor = await crearUsuario({ rol: 'secretaria' });
+    const turno = await turnoEn('reservado');
+
+    const resultados = await Promise.allSettled([
+      servicio.transicionar(turno.id, 'no_asistio', autor.id, 'secretaria'),
+      servicio.transicionar(turno.id, 'anulado', autor.id, 'secretaria'),
+    ]);
+
+    expect(resultados.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    const rechazo = resultados.find((r) => r.status === 'rejected') as PromiseRejectedResult;
+    expect(rechazo.reason).toMatchObject({ codigo: 'turno_modificado', estadoHttp: 409 });
+    const eventos = await eventosDe(turno.id);
+    expect(eventos).toHaveLength(1);
+    expect(eventos[0]).toMatchObject({ estadoAnterior: 'reservado' });
+    expect((await db.turno.findUniqueOrThrow({ where: { id: turno.id } })).estado).toBe(eventos[0]?.estadoNuevo);
+  });
+
   it('dos pedidos iguales simultáneos: entra uno solo y la llegada se escribe una vez', async () => {
     const { app } = await crearAppDePrueba();
     const { cookie } = await ingresarComo(app, 'secretaria');
@@ -505,7 +556,7 @@ describe('corregir (RF-35, RF-37)', () => {
 
     await corregir(app, cookie, turno.id, { estado: 'anulado', autorId: otra.id });
 
-    expect((await eventosDe(turno.id))[0].autorId).toBe(usuarioId);
+    expect((await eventosDe(turno.id))[0]?.autorId).toBe(usuarioId);
   });
 
   it('el kinesiólogo recibe 403 y sin sesión 401', async () => {

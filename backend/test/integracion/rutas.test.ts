@@ -322,7 +322,7 @@ describe('cada variante de exigirSesion aparece solo donde corresponde (RF-06, R
       ],
       [VARIANTE_VERIFICACION]: ['POST /sesion/segundo-factor/verificar'],
       // Gestión de cuentas (T-13, RF-04, RF-08, RF-09) datos del consultorio (T-16, RF-13) y kinesiólogos (T-17, RF-14, RF-16)
-      // pacientes (T-18, RF-17 a RF-21), turnos (T-22, RF-23 a RF-26) y ticket (T-25, RF-28).
+      // pacientes (T-18, RF-17 a RF-21), turnos (T-22, RF-23 a RF-26; T-23, RF-27, RF-30 a RF-35) y ticket (T-25, RF-28).
       [VARIANTE_NEGOCIO]: [
         'GET /consultorio',
         'GET /cuentas',
@@ -337,9 +337,12 @@ describe('cada variante de exigirSesion aparece solo donde corresponde (RF-06, R
         'POST /kinesiologos',
         'POST /pacientes',
         'POST /turnos',
+        'POST /turnos/:id/correccion',
+        'POST /turnos/:id/transicion',
         'PUT /consultorio',
         'PUT /kinesiologos/:id/bloque',
         'PUT /pacientes/:id',
+        'PUT /turnos/:id/coseguros',
       ],
     });
   });
