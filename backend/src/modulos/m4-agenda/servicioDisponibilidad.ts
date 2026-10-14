@@ -4,7 +4,7 @@ import type { Bloque } from '../../generado/prisma/client.js';
 import { calcularDisponibilidad, ESTADOS_ACTIVOS, type DisponibilidadDeKinesiologo } from './disponibilidad.js';
 
 /**
- * Lectura de disponibilidad (RF-22). No escribe nada: una consulta de los kinesiólogos del bloque y
+ * Lectura de disponibilidad (RF-22). No escribe nada: una consulta de los kinesiólogos del bloque con la cuenta activa y
  * una de los turnos activos de la fecha, y el resto se resuelve en memoria (plan.md §3 M4). Quién
  * puede llamarla lo decide la ruta.
  */
@@ -21,7 +21,7 @@ export function crearServicioDisponibilidad({ db }: { db: BaseDeDatos }) {
       }
       const [kinesiologos, turnos] = await Promise.all([
         db.kinesiologo.findMany({
-          where: { bloque },
+          where: { bloque, usuario: { activo: true } },
           select: { id: true, nombre: true },
           orderBy: [{ nombre: 'asc' }, { id: 'asc' }],
         }),

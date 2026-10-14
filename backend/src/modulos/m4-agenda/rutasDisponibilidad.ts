@@ -13,7 +13,8 @@ import type { ServicioDisponibilidad } from './servicioDisponibilidad.js';
  * - `GET /api/disponibilidad?fecha=AAAA-MM-DD&bloque=manana|tarde[&pacienteId=N]`. `fecha` es un
  *   día civil del consultorio y debe existir en el calendario; `pacienteId` es opcional. 200
  *   `{ fecha, bloque, kinesiologos: [{ kinesiologoId, nombre, franjas: [{ inicio, fin }] }] }`, con
- *   los kinesiólogos de ese bloque ordenados por nombre y, de cada uno, las franjas de la grilla
+ *   los kinesiólogos de ese bloque con la cuenta activa (uno desactivado ya no atiende y no aparece),
+ *   ordenados por nombre y, de cada uno, las franjas de la grilla
  *   (horas 'HH:MM') sin turno activo (`reservado` o `en_espera`) suyo ni, si viene paciente, de ese
  *   paciente con cualquier kinesiólogo. Un sábado o domingo devuelve `franjas: []` (RF-15).
  *   404 `paciente_no_encontrado` si el paciente no existe.

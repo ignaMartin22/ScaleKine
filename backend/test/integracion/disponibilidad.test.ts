@@ -128,6 +128,20 @@ describe('GET /api/disponibilidad (RF-22, RF-15)', () => {
     expect(franjasDe(tarde.body, deTarde.id)).toEqual(['16:00', '16:45', '17:30', '18:15']);
   });
 
+  it('un kinesiólogo con la cuenta desactivada no aparece y uno activo del mismo bloque sí (RF-22)', async () => {
+    const { app } = await crearAppDePrueba();
+    const cookie = await ingresarComo(app, 'secretaria');
+    const activo = await crearKinesiologo({ bloque: 'manana' });
+    const desactivado = await crearKinesiologo({ bloque: 'manana' });
+    await db.usuario.update({ where: { id: desactivado.usuarioId }, data: { activo: false } });
+
+    const res = await consultar(app, cookie, { fecha: LUNES, bloque: 'manana' });
+
+    expect(res.status).toBe(200);
+    expect((res.body as Cuerpo).kinesiologos.map((k) => k.kinesiologoId)).toEqual([activo.id]);
+    expect(franjasDe(res.body, desactivado.id)).toBeUndefined();
+  });
+
   it('un turno de otro kinesiólogo no ocupa la franja de este si no se pide paciente', async () => {
     const { app } = await crearAppDePrueba();
     const cookie = await ingresarComo(app, 'secretaria');
