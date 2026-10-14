@@ -265,7 +265,7 @@ de lectura (el ticket):
 
 | Operación | Efecto | RF |
 |---|---|---|
-| `asignar` | Crea el turno en `reservado` con sus coseguros | RF-23 … RF-26 |
+| `asignar` | Crea el turno en `reservado` con sus coseguros; rechaza un kinesiólogo con la cuenta desactivada como si no existiera | RF-23 … RF-26 |
 | `modificarCoseguros` | Cambia los montos; no toca estado ni franja | RF-27 |
 | `transicionar` | Aplica una acción del flujo normal | RF-30 … RF-33 |
 | `corregir` | Lleva el turno a cualquier estado | RF-35 |
@@ -302,9 +302,10 @@ commit, emite un evento de dominio que M5 difunde.
   sesión; los de búsqueda de pacientes e historial lo rechazan (D-16).
 - **RF-41 (secretaría)**: todos los turnos, filtrables por fecha y kinesiólogo, con la proyección
   completa y la lista de acciones disponibles de M3.
-- **RF-22 (disponibilidad)**: dada una fecha y un bloque, devuelve los kinesiólogos de ese bloque y,
-  para cada uno, las horas de inicio de la grilla menos las que tienen un turno activo suyo o del
-  paciente. Es una única consulta de los turnos activos de la fecha, resuelta en memoria.
+- **RF-22 (disponibilidad)**: dada una fecha y un bloque, devuelve los kinesiólogos de ese bloque con
+  la cuenta activa (`Usuario.activo`) y, para cada uno, las horas de inicio de la grilla menos las
+  que tienen un turno activo suyo o del paciente. Es una única consulta de los turnos activos de la
+  fecha, resuelta en memoria.
 - **RF-42 (aviso)**: consulta de turnos activos cuya franja terminó (`fecha + hora de inicio + 45 min
   < ahora`). Se calcula al leer: no hay proceso en segundo plano, porque el sistema nunca cambia un
   estado por su cuenta (§4.5).

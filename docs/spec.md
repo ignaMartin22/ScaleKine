@@ -198,13 +198,17 @@ administrador (D-18). Las acciones sobre cuentas y kinesiólogos son exclusivas 
 ### 3.4 Asignación de turnos
 
 - **RF-22** — *Evento:* Cuando la secretaría elige una fecha y un bloque (mañana o tarde) para
-  asignar un turno, entonces el sistema muestra los kinesiólogos de ese bloque y, para cada uno,
-  las franjas que no tienen turno activo de ese kinesiólogo ni del paciente elegido.
+  asignar un turno, entonces el sistema muestra los kinesiólogos de ese bloque con la cuenta activa
+  y, para cada uno, las franjas que no tienen turno activo de ese kinesiólogo ni del paciente
+  elegido.
   *Por qué:* El turno se asigna a un kinesiólogo concreto, y a la mañana hay más de uno. Ver de un
-  vistazo quién tiene lugar evita ofrecer una franja que la asignación vaya a rechazar.
+  vistazo quién tiene lugar evita ofrecer una franja que la asignación vaya a rechazar. Un
+  kinesiólogo con la cuenta desactivada (RF-09) ya no atiende: para asignar, es como si no
+  existiera (decisión del consultorio).
 
 - **RF-23** — *Evento:* Cuando la secretaría asigna un turno con paciente, kinesiólogo, fecha y
-  franja válidos —la franja dentro del bloque de ese kinesiólogo—, y la franja está libre para el kinesiólogo y para el paciente, entonces el sistema
+  franja válidos —la franja dentro del bloque de ese kinesiólogo, y el kinesiólogo con la cuenta
+  activa—, y la franja está libre para el kinesiólogo y para el paciente, entonces el sistema
   registra el turno en estado `reservado` junto con el coseguro según obra social y el coseguro
   adicional.
   *Por qué:* La reserva es el punto de partida del ciclo de vida. Los coseguros son del turno, no
@@ -598,6 +602,8 @@ El MVP se considera terminado cuando **todos** los puntos siguientes son verific
 
 - [ ] Al elegir fecha y bloque se ven los kinesiólogos de ese bloque con sus franjas libres, que
       excluyen las ocupadas por cada kinesiólogo y por el paciente (RF-22).
+- [ ] Un kinesiólogo con la cuenta desactivada no aparece en la disponibilidad y no se le asignan
+      turnos (RF-22, RF-23).
 - [ ] Un turno se asigna en `reservado` con sus coseguros, y admite fecha vencida (RF-23).
 - [ ] No se asigna un turno en una franja ocupada por el mismo kinesiólogo; sí con otro
       kinesiólogo (RF-24).
