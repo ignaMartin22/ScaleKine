@@ -1,6 +1,6 @@
 # Avance de la implementación
 
-Estado al 2026-10-13, con la ola 3 cerrada y la ola 4 por empezar. Este documento registra qué está hecho, qué quedó a
+Estado al 2026-10-14, con la ola 4 casi cerrada: falta T-24. Este documento registra qué está hecho, qué quedó a
 medio camino y cómo retomarlo. No reemplaza a las fuentes de verdad: los requisitos están en
 [`spec.md`](./spec.md), las decisiones de diseño en [`plan.md`](./plan.md) y el orden y los
 criterios de "hecho" en [`tasks.md`](./tasks.md). Se actualiza cada vez que se fusiona un PR.
@@ -32,12 +32,19 @@ criterios de "hecho" en [`tasks.md`](./tasks.md). Se actualiza cada vez que se f
 | T-18 · Pacientes | Hecha | #28 | Búsqueda por query con DNI o nombre; ver §2b. |
 | T-19 · Pantallas de M2 (frontend) | Hecha | #27 y #31 | #27: consultorio y kinesiólogos. #31: sección Pacientes con buscador, alta y ficha editable. Las dos partes pasaron el recorrido manual del usuario. |
 | Ajustes previos a la ola 4 | Hecha | #30 | `TurnoEvento` solo con `SELECT` e `INSERT`, y conexión en UTC; ver §2b. |
-| T-21 a T-40 | Pendientes | — | Olas 4 a 7 de `tasks.md`. |
+| T-21 · Disponibilidad | Hecha | #33 y #36 | #36: sin kinesiólogos con la cuenta desactivada. Ver §2c. |
+| T-22 · Asignar | Hecha | #34 | Crítica: pasó `revisor-seguridad` y una ronda de correcciones. |
+| T-23 · Transiciones, corrección y coseguros | Hecha | #39 | Crítica: pasó `revisor-seguridad` y una ronda de correcciones. Migración `agregar_evento_modificacion_coseguros`. |
+| T-24 · Reprogramar | Pendiente | — | Sigue en el carril A (crítica). |
+| T-25 · Ticket | Hecha | #38 | PDF con `pdfkit`; la prueba decodifica el QR con `jsqr`. |
+| T-26 · Sin borrado | Hecha | #40 | |
+| T-27 a T-40 | Pendientes | — | Olas 5 a 7 de `tasks.md`. |
 
 Otros PRs fusionados:
 - #10 vuelve `@types/node` a la versión 24 y limita los saltos de versión que propone Dependabot.
 - #16 y #19 documentan el avance; #21 precisa la spec y el plan para la ola 3 (DNI, lectura de M2 y alta de kinesiólogo).
-- #24 y #29 documentan el avance durante la ola 3.
+- #24, #29 y #32 documentan el avance durante la ola 3.
+- #35 y #37 cambian la spec con decisiones del usuario (ver §2c).
 - #3, #4 y #20 son de Dependabot.
 - El #5 (TypeScript 7 en el frontend) se cerró: Angular 22 exige TypeScript `~6.0`.
 
@@ -127,6 +134,58 @@ ajustes previos a la ola 4 (#30), más la documentación (#21, #24 y #29).
 
 ---
 
+## 2c. Ola 4: estado al pausar (2026-10-14)
+
+**Fusionado:** T-21 (#33 y #36), T-22 (#34), T-23 (#39), T-25 (#38) y T-26 (#40), más los cambios
+de spec #35 y #37. Falta **T-24 (reprogramar)**, en el carril A. El usuario probó el sistema a mano
+con todo fusionado: la ola 4 no tiene pantallas todavía (llegan en T-30), así que los turnos se
+probaron por la API desde la consola del navegador.
+
+**Decisiones del usuario (cambios de spec):**
+- **#35.** Un kinesiólogo con la cuenta desactivada ya no atiende: para asignar es como si no
+  existiera. No aparece en la disponibilidad (RF-22, #36) y asignarle un turno da 404
+  `kinesiologo_no_encontrado` (RF-23, #34).
+- **#37.** Modificar los coseguros registra un `TurnoEvento` de tipo `modificacion_coseguros`, sin
+  los montos anteriores (RF-46). Así se mantiene el invariante de que toda escritura de turnos deja
+  su evento.
+
+**Contratos** (documentados en el comentario de cada ruta):
+- `GET /api/disponibilidad?fecha=&bloque=&pacienteId=` (`m4-agenda/rutasDisponibilidad.ts`).
+- `POST /api/turnos`, `POST /api/turnos/:id/transicion` `{ hacia }`,
+  `POST /api/turnos/:id/correccion` `{ estado }` y `PUT /api/turnos/:id/coseguros`
+  (`m3-turnos/rutasTurnos.ts`).
+- `GET /api/turnos/:id/ticket` (`m3-turnos/rutasTicket.ts`).
+- Disponibilidad y ticket se autorizan con `autorizarEscritura('turnos')`, como `GET /api/cuentas`:
+  existen para asignar, así que los usan quienes escriben turnos. El kinesiólogo recibe 403.
+
+**Decisiones de implementación:**
+- La ocupación de franja la decide la base: se atrapa el P2002 y se traduce según el nombre del
+  índice (`meta.driverAdapterError.cause.constraint.index`). Cualquier otro P2002 termina en 500 sin
+  datos. Prisma está fijado en 7.10.0; si cambia esa forma, las pruebas de 409 lo detectan.
+- `transicionar` y `corregir` actualizan condicionados al estado leído; un pedido cruzado recibe 409
+  `turno_modificado` sin evento (`plan.md` §4.7).
+- `llegadaEn`: se escribe al pasar a `en_espera`, se limpia al corregir a `reservado`, se conserva
+  en lo demás y, al corregir a `en_espera` sin hora previa, se registra la hora de la corrección
+  (`plan.md` §2.3).
+- Coseguros: al asignar son opcionales; al modificarlos hay que mandar las dos claves (`null` o `""`
+  = sin cargar), para no borrar un monto sin querer.
+- Una fecha con año `0000` se rechaza con 400 (antes llegaba a la base y daba 500).
+- El ticket se genera en cada pedido con los datos vigentes, sin DNI ni coseguros, con
+  `Cache-Control: no-store` y un nombre de archivo sin datos personales. La prueba de "después de
+  reprogramar" mueve el turno con Prisma directo: **T-24 tiene que agregar ese caso por la API.**
+- T-26 recorre todas las rutas (la única `DELETE` permitida es la de cerrar sesión) y busca en `src/`
+  borrados de Prisma o SQL sobre las tablas de negocio, leídas del esquema.
+
+**Base de desarrollo:** tiene aplicadas todas las migraciones, incluida
+`agregar_evento_modificacion_coseguros`. Puede tener turnos, pacientes y eventos ficticios del
+recorrido manual.
+
+**Pendiente para T-24** (de las revisiones de T-22 y T-23): reutilizar `indiceViolado`, la
+actualización condicionada al estado (`reservado`) y los ayudantes de carrera y de evento roto de
+`turnos-estados.test.ts`; agregar el caso del ticket tras reprogramar por la API.
+
+---
+
 ## 3. Decisiones tomadas durante la implementación
 
 Las que cambian requisitos o diseño ya están en la spec o el plan. Esta lista sirve para encontrarlas.
@@ -152,6 +211,11 @@ Las que cambian requisitos o diseño ya están en la spec o el plan. Esta lista 
 | Contrato de kinesiólogos: `GET /api/kinesiologos?bloque=`, `POST /api/kinesiologos` y `PUT /api/kinesiologos/:id/bloque` (PUT porque el sub-recurso se reemplaza entero). | Comentario de `m2-maestros/rutasKinesiologos.ts` (#26) |
 | Contrato de pacientes: alta, edición, ficha y búsqueda por query con DNI o nombre (ver §2b). | Comentario de `m2-maestros/rutasPacientes.ts` (#28) |
 | `TurnoEvento` sin `UPDATE` para la aplicación, y conexión a PostgreSQL en UTC (decisión del usuario). | `despliegue.md` §7 y `comun/baseDeDatos.ts` (#30) |
+| Kinesiólogo con la cuenta desactivada: sin disponibilidad ni asignación (decisión del usuario). | `spec.md` RF-22, RF-23 y §7, `plan.md` §3 M3 y M4 (#35) |
+| El cambio de coseguros se audita como `modificacion_coseguros` (decisión del usuario). | `spec.md` RF-46 y §7.7, `plan.md` §2.1 y §3 M3 (#37) |
+| Transiciones y correcciones condicionadas al estado leído; regla de `llegadaEn` al corregir. | `plan.md` §2.3 y §4.7 (#39) |
+| Disponibilidad y ticket autorizados con `autorizarEscritura('turnos')`. | Comentarios de `rutasDisponibilidad.ts` (#33) y `rutasTicket.ts` (#38) |
+| Dependencias nuevas: `pdfkit` (MIT); `@types/pdfkit` y `jsqr` (Apache-2.0) solo en desarrollo. | `backend/package.json` (#38) |
 
 ---
 
@@ -172,6 +236,11 @@ Las que cambian requisitos o diseño ya están en la spec o el plan. Esta lista 
 | La base `scalekine_desarrollo` no recibe sola las migraciones nuevas: al probar el #22 le faltaba la del segundo factor (error P2022). | Correr `npm run db:migrar` en `backend/` después de traer migraciones nuevas. | Anotado |
 | PostgreSQL se cortó a ratos durante T-18 (conexiones rechazadas y timeouts). Al repetir, todo pasó. | Si se repite, revisar el contenedor (`docker inspect scalekine-postgres-1`) y la memoria de la máquina. | En observación |
 | Con poca memoria libre, Claude Code detiene los procesos en segundo plano, incluidos los servidores de un recorrido manual. | Cerrar lo que no se use antes de un recorrido manual; no relanzarlos sin que el usuario lo pida. | En observación |
+| `npm run db:migrar` falló con P1001 contra `localhost:5432` aunque el contenedor respondía: el puerto está publicado solo en `127.0.0.1` y el motor de Prisma probablemente resolvió `::1`. | Usar `127.0.0.1` en lugar de `localhost` en `DATABASE_URL_MIGRACIONES` (y en `.env.example`). | Sin tarea asignada |
+| La suite completa tarda 10 a 15 minutos en local, y con los dos carriles corriendo a la vez aparecen timeouts de 15 s en pruebas ajenas (distintas en cada corrida). Solas pasan, y en el CI nunca fallaron. | Evitar correr las dos suites completas a la vez; confiar en el CI para la corrida completa. | En observación |
+| `prettier --check` marca casi todos los archivos (CRLF de Windows y sin configuración de Prettier en el backend). | Decidir si se agrega una configuración de Prettier o se deja de mencionar en los encargos. | Sin decidir |
+| Las pruebas de la ola 4 copian en cada archivo el ayudante `ingresarComo`. | Centralizarlo en `test/integracion/fabricas.ts`. | Sin tarea asignada |
+| Un PUT de coseguros exige las dos claves: el frontend de T-30 tiene que mandarlas siempre. | Tenerlo en cuenta en T-30. | Anotado |
 
 ---
 
@@ -263,6 +332,16 @@ Si un PR se fusiona antes de terminar la revisión, las correcciones van en una 
   encargo, y el orquestador agrega las suyas antes de declarar el PR listo para fusionar. En la
   ola 3, ninguna mutación sobrevivió.
 
+- En las tareas críticas, el revisor corre la suite sobre una copia exportada de la rama y una base
+  propia, sin tocar los worktrees, y verifica cosas fuera de la suite (el SQL real que emite Prisma,
+  carreras repetidas). Encontró en T-22 un 500 por una fecha del año 0000 y en T-23 dos reglas que
+  faltaban en el plan.
+
 **Para retomar:**
-Sigue la ola 4: T-22 → T-23 → T-24 en el carril A (tareas críticas, con `revisor-seguridad` antes de
-fusionar); T-21 → T-25 → T-26 en el carril B (T-25 necesita T-22).
+1. Levantar Docker Desktop (el contenedor `scalekine-postgres-1` arranca solo; si no, `docker start
+   scalekine-postgres-1`).
+2. Carril A: **T-24 · Reprogramar** (crítica, con `revisor-seguridad`). Ver "Pendiente para T-24"
+   en §2c.
+3. Ola 5 (`tasks.md`: depende de la fase 3 completa, o sea de T-24): T-27 → T-29 en el carril A y
+   T-28 → T-30 en el carril B (T-30 es el frontend de agenda, asignación y ficha). Mientras corre
+   T-24, el carril B queda libre salvo que el usuario decida adelantar T-28, que solo lee turnos.
