@@ -358,11 +358,13 @@ cualquier otro (RF-35), como acción explícita y registrada.
 
 ### 3.8 Auditoría e historial
 
-- **RF-46** — *Evento:* Cuando un turno se asigna, cambia de estado, se corrige o se reprograma,
-  entonces el sistema registra qué tipo de cambio fue, quién lo hizo y cuándo; en los cambios de
-  estado registra además el estado anterior y el nuevo.
+- **RF-46** — *Evento:* Cuando un turno se asigna, cambia de estado, se corrige, se reprograma o
+  cambian sus coseguros, entonces el sistema registra qué tipo de cambio fue, quién lo hizo y
+  cuándo; en los cambios de estado registra además el estado anterior y el nuevo.
   *Por qué:* Ante un reclamo, el consultorio tiene que poder reconstruir quién hizo qué. En la
-  reprogramación no se guarda la ubicación anterior (D-9), pero sí el hecho.
+  reprogramación no se guarda la ubicación anterior (D-9), pero sí el hecho. En el cambio de
+  coseguros tampoco se guardan los montos anteriores: el registro dice quién los cambió y cuándo
+  (decisión del usuario).
 
 - **RF-47** — *Evento:* Cuando la secretaría abre la ficha de un paciente, entonces el sistema
   muestra todos sus turnos, con fecha, franja, kinesiólogo, estado y coseguros, en dos listas:
@@ -643,8 +645,8 @@ El MVP se considera terminado cuando **todos** los puntos siguientes son verific
 
 ### 7.7 Auditoría e historial
 
-- [ ] Cada asignación, cambio de estado, corrección y reprogramación registra tipo, autor y
-      momento, y los cambios de estado registran estado anterior y nuevo (RF-46).
+- [ ] Cada asignación, cambio de estado, corrección, reprogramación y cambio de coseguros registra
+      tipo, autor y momento, y los cambios de estado registran estado anterior y nuevo (RF-46).
 - [ ] La ficha del paciente muestra sus próximos turnos (del más cercano al más lejano) y su
       historial (del más reciente al más antiguo); el kinesiólogo no puede consultarla (RF-47).
 

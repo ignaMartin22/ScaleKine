@@ -101,12 +101,13 @@ Va en la base y no en variables de entorno porque la secretaría la edita (RF-13
 
 **`TurnoEvento`** — auditoría (M6)
 - Turno
-- Tipo: `asignacion` | `cambio_estado` | `correccion` | `reprogramacion`
+- Tipo: `asignacion` | `cambio_estado` | `correccion` | `reprogramacion` | `modificacion_coseguros`
 - Estado anterior y estado nuevo (solo en `cambio_estado` y `correccion`)
 - Autor
 - Ocurrido en
 
-En `reprogramacion` no se guarda la fecha ni la franja anteriores (D-9).
+En `reprogramacion` no se guarda la fecha ni la franja anteriores (D-9), y en
+`modificacion_coseguros`, los montos anteriores.
 
 ### 2.2 La grilla no se persiste
 
@@ -266,7 +267,7 @@ de lectura (el ticket):
 | Operación | Efecto | RF |
 |---|---|---|
 | `asignar` | Crea el turno en `reservado` con sus coseguros; rechaza un kinesiólogo con la cuenta desactivada como si no existiera | RF-23 … RF-26 |
-| `modificarCoseguros` | Cambia los montos; no toca estado ni franja | RF-27 |
+| `modificarCoseguros` | Cambia los montos; no toca estado ni franja. Registra un evento `modificacion_coseguros` | RF-27, RF-46 |
 | `transicionar` | Aplica una acción del flujo normal | RF-30 … RF-33 |
 | `corregir` | Lleva el turno a cualquier estado | RF-35 |
 | `reprogramar` | Cambia fecha, franja y/o kinesiólogo de un turno `reservado` | RF-36 |
