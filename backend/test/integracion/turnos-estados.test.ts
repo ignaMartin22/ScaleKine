@@ -700,7 +700,7 @@ describe('modificar coseguros (RF-27, RF-46)', () => {
     const { app } = await crearAppDePrueba();
     const { cookie } = await ingresarComo(app, 'secretaria');
 
-    const res = await coseguros(app, cookie, 999_999, { coseguroObraSocial: 5 });
+    const res = await coseguros(app, cookie, 999_999, { coseguroObraSocial: 5, coseguroAdicional: null });
 
     expect(res.status).toBe(404);
     expect(res.body.error.codigo).toBe('turno_no_encontrado');
@@ -712,7 +712,7 @@ describe('modificar coseguros (RF-27, RF-46)', () => {
     const { cookie } = await ingresarComo(app, 'kinesiologo');
     const turno = await turnoEn('reservado');
 
-    const prohibido = await coseguros(app, cookie, turno.id, { coseguroObraSocial: 5 });
+    const prohibido = await coseguros(app, cookie, turno.id, { coseguroObraSocial: 5, coseguroAdicional: null });
     const sinSesion = await coseguros(app, undefined, turno.id, { coseguroObraSocial: 5 });
 
     expect(prohibido.status).toBe(403);
