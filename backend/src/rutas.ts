@@ -16,7 +16,9 @@ import { crearRutasTurnos } from './modulos/m3-turnos/rutasTurnos.js';
 import { crearServicioTicket } from './modulos/m3-turnos/ticket.js';
 import { crearServicioTurnos } from './modulos/m3-turnos/turnos.js';
 import { crearRutasDisponibilidad } from './modulos/m4-agenda/rutasDisponibilidad.js';
+import { crearRutasPendientes } from './modulos/m4-agenda/rutasPendientes.js';
 import { crearServicioDisponibilidad } from './modulos/m4-agenda/servicioDisponibilidad.js';
+import { crearServicioPendientes } from './modulos/m4-agenda/servicioPendientes.js';
 
 /**
  * Lista única de los routers de la API: la usan el servidor y la prueba que exige autorización en
@@ -54,6 +56,10 @@ export async function crearRutas({
     servicio: crearServicioDisponibilidad({ db }),
     exigirSesion: identidad.exigirSesion,
   });
+  const pendientes = crearRutasPendientes({
+    servicio: crearServicioPendientes({ db, reloj }),
+    exigirSesion: identidad.exigirSesion,
+  });
   const turnos = crearRutasTurnos({
     servicio: crearServicioTurnos({ db, reloj }),
     exigirSesion: identidad.exigirSesion,
@@ -62,5 +68,5 @@ export async function crearRutas({
     servicio: crearServicioTicket({ db, consultorio: crearServicioConsultorio({ db }) }),
     exigirSesion: identidad.exigirSesion,
   });
-  return [identidad.rutas, cuentas, consultorio, kinesiologos, pacientes, disponibilidad, turnos, ticket];
+  return [identidad.rutas, cuentas, consultorio, kinesiologos, pacientes, disponibilidad, pendientes, turnos, ticket];
 }

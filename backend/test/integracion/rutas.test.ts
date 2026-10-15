@@ -97,11 +97,11 @@ function lecturasDeM2SinAutorizacion(capas: CapaExpress[]): string[] {
 }
 
 /**
- * Lecturas de agenda ajena (D-16): hoy la disponibilidad (RF-22), que se autoriza con
+ * Lecturas de agenda ajena (D-16): hoy la disponibilidad (RF-22) y el aviso de pendientes (RF-42), que se autorizan con
  * `autorizarEscritura('turnos')` porque existe para asignar. Cada lectura nueva de este tipo agrega
  * su prefijo acá. Las lecturas propias del kinesiólogo (M4, RF-40) no van en esta lista.
  */
-const PREFIJOS_DE_AGENDA_AJENA = ['/disponibilidad'];
+const PREFIJOS_DE_AGENDA_AJENA = ['/disponibilidad', '/agenda'];
 const esRutaDeAgendaAjena = (path: string) =>
   PREFIJOS_DE_AGENDA_AJENA.some((p) => path === p || path.startsWith(`${p}/`));
 
@@ -324,6 +324,7 @@ describe('cada variante de exigirSesion aparece solo donde corresponde (RF-06, R
       // Gestión de cuentas (T-13, RF-04, RF-08, RF-09) datos del consultorio (T-16, RF-13) y kinesiólogos (T-17, RF-14, RF-16)
       // pacientes (T-18, RF-17 a RF-21), turnos (T-22, RF-23 a RF-26; T-23, RF-27, RF-30 a RF-35) y ticket (T-25, RF-28).
       [VARIANTE_NEGOCIO]: [
+        'GET /agenda/pendientes',
         'GET /consultorio',
         'GET /cuentas',
         'GET /disponibilidad',
