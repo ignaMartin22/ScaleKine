@@ -37,7 +37,7 @@
   "devDependencies": {
     "@eslint/js": "10.0.1",
     "@types/express": "5.0.6",
-    "@types/node": "24.19.1",
+    "@types/node": "24.19.2",
     "@types/pdfkit": "0.17.6",
     "@types/pg": "8.23.1",
     "@types/qrcode": "1.5.6",
