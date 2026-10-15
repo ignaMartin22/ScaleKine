@@ -174,3 +174,19 @@ export async function crearTurno(datos: DatosTurno = {}) {
     },
   });
 }
+
+/**
+ * Sesión de un kinesiólogo con su perfil de `Kinesiologo`, como la cuenta real que crea el
+ * administrador (RF-14). Devuelve además el `kinesiologo` (su perfil).
+ */
+export async function ingresarComoKinesiologo(app: Parameters<typeof request>[0], datos: { bloque?: Bloque } = {}) {
+  const sesion = await ingresarComo(app, 'kinesiologo');
+  const kinesiologo = await db.kinesiologo.create({
+    data: {
+      usuarioId: sesion.usuarioId,
+      nombre: `Kinesiólogo Propio ${sesion.usuarioId}`,
+      bloque: datos.bloque ?? 'manana',
+    },
+  });
+  return { ...sesion, kinesiologo };
+}

@@ -22,7 +22,7 @@ import type { ServicioDisponibilidad } from './servicioDisponibilidad.js';
  * Comunes: 400 `datos_invalidos`, 401 sin sesión, 403 `no_autorizado`. La fecha y el paciente viajan
  * por query, que el registro de peticiones descarta (CLAUDE.md).
  */
-const fechaCivil = z
+export const fechaCivil = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/)
   .refine((valor) => {

@@ -50,3 +50,13 @@ export const LECTURA_POR_ROL: Readonly<Record<Rol, readonly ModuloLectura[]>> = 
 export function puedeLeer(rol: Rol, modulo: ModuloLectura): boolean {
   return LECTURA_POR_ROL[rol].includes(modulo);
 }
+
+/**
+ * Quién usa la agenda propia (RF-40, D-15, D-16): el monitor del kinesiólogo, que lee únicamente
+ * sus turnos. Es una regla aparte de `LECTURA_POR_ROL` porque no es un dato maestro: la ruta
+ * filtra por el kinesiólogo de la sesión. Secretaría y administrador tienen la agenda de todos
+ * (`autorizarEscritura('turnos')`), no esta.
+ */
+export function puedeLeerAgendaPropia(rol: Rol): boolean {
+  return rol === 'kinesiologo';
+}

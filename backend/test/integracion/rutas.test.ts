@@ -1,5 +1,6 @@
 import express, { Router, type RequestHandler } from 'express';
 import { describe, expect, it } from 'vitest';
+import { autorizarAgendaPropia, esAutorizacionDeAgendaPropia } from '../../src/comun/autorizarAgendaPropia.js';
 import { autorizarEscritura, esAutorizacionDeEscritura } from '../../src/comun/autorizarEscritura.js';
 import { autorizarLectura, esAutorizacionDeLectura } from '../../src/comun/autorizarLectura.js';
 import { cargarConfiguracion } from '../../src/comun/configuracion.js';
@@ -97,9 +98,10 @@ function lecturasDeM2SinAutorizacion(capas: CapaExpress[]): string[] {
 }
 
 /**
- * Lecturas de agenda ajena (D-16): hoy la disponibilidad (RF-22) y el aviso de pendientes (RF-42), que se autorizan con
- * `autorizarEscritura('turnos')` porque existe para asignar. Cada lectura nueva de este tipo agrega
- * su prefijo acá. Las lecturas propias del kinesiólogo (M4, RF-40) no van en esta lista.
+ * Lecturas de agenda ajena (D-16): la disponibilidad (RF-22), el aviso de pendientes (RF-42) y la
+ * agenda de la secretaría (RF-41), que se autorizan con `autorizarEscritura('turnos')` porque
+ * existen para asignar y coordinar. Cada lectura nueva de este tipo agrega su prefijo acá. Las
+ * lecturas propias del kinesiólogo (M4, RF-40) van en `PREFIJOS_DE_AGENDA_PROPIA`, no en esta lista.
  */
 const PREFIJOS_DE_AGENDA_AJENA = ['/disponibilidad', '/agenda'];
 const esRutaDeAgendaAjena = (path: string) =>
@@ -119,6 +121,31 @@ function lecturasDeAgendaAjenaSinAutorizacion(capas: CapaExpress[]): string[] {
     }
     const hijas = capasDeSubRouter(capa);
     if (hijas) sinAutorizar.push(...lecturasDeAgendaAjenaSinAutorizacion(hijas));
+  }
+  return sinAutorizar;
+}
+
+/**
+ * Lecturas propias del kinesiólogo (RF-40, D-15): exigen `autorizarAgendaPropia`, que solo admite el
+ * rol kinesiólogo. Una ruta de agenda ajena no puede cumplir con ésta (ni al revés): el kinesiólogo
+ * nunca llega a una agenda ajena y la secretaría no usa la propia.
+ */
+const PREFIJOS_DE_AGENDA_PROPIA = ['/mi-agenda'];
+const esRutaDeAgendaPropia = (path: string) =>
+  PREFIJOS_DE_AGENDA_PROPIA.some((p) => path === p || path.startsWith(`${p}/`));
+
+/** GET de agenda propia que ningún handler de su stack autoriza como agenda propia. */
+function lecturasDeAgendaPropiaSinAutorizacion(capas: CapaExpress[]): string[] {
+  const sinAutorizar: string[] = [];
+  for (const capa of capas) {
+    if (capa.route) {
+      const { path, methods, stack } = capa.route;
+      if (!esRutaDeAgendaPropia(path) || !(methods.get || methods._all)) continue;
+      if (!stack.some((c) => esAutorizacionDeAgendaPropia(c.handle))) sinAutorizar.push(`GET ${path}`);
+      continue;
+    }
+    const hijas = capasDeSubRouter(capa);
+    if (hijas) sinAutorizar.push(...lecturasDeAgendaPropiaSinAutorizacion(hijas));
   }
   return sinAutorizar;
 }
@@ -297,6 +324,45 @@ describe('toda lectura de agenda ajena exige autorización (D-16, RF-22)', () =>
   });
 });
 
+describe('toda lectura de agenda propia exige autorización de agenda propia (RF-40, D-15, D-16)', () => {
+  it('GET /mi-agenda está autorizada y GET /agenda exige autorización de secretaría', async () => {
+    const rutas = await crearRutas({
+      db,
+      reloj: new RelojFijo('2026-10-07T12:00:00Z'),
+      config: cargarConfiguracion(ENTORNO_PRUEBA),
+    });
+    const pila = pilaDeLaApi(rutas);
+
+    expect(lecturasDeAgendaPropiaSinAutorizacion(pila)).toEqual([]);
+    expect(lecturasDeAgendaAjenaSinAutorizacion(pila)).toEqual([]);
+    // Que no pasen en vacío: las dos rutas existen y se inspeccionan.
+    expect(rutasPorVariante(pila)[VARIANTE_NEGOCIO]).toEqual(expect.arrayContaining(['GET /mi-agenda', 'GET /agenda']));
+  });
+
+  it('la guardiana detecta un GET de agenda propia sin autorización o con la de otro tipo, también anidado', () => {
+    const olvidada = Router();
+    olvidada.get('/mi-agenda', manejadorCualquiera);
+    const deSecretaria = Router();
+    deSecretaria.get('/mi-agenda', autorizarEscritura('turnos'), manejadorCualquiera);
+    const autorizada = Router();
+    autorizada.get('/mi-agenda', autorizarAgendaPropia(), manejadorCualquiera);
+    const anidada = Router();
+    anidada.use('/api', olvidada);
+
+    expect(lecturasDeAgendaPropiaSinAutorizacion(comoInspeccionable(olvidada).stack)).toEqual(['GET /mi-agenda']);
+    expect(lecturasDeAgendaPropiaSinAutorizacion(comoInspeccionable(deSecretaria).stack)).toEqual(['GET /mi-agenda']);
+    expect(lecturasDeAgendaPropiaSinAutorizacion(comoInspeccionable(autorizada).stack)).toEqual([]);
+    expect(lecturasDeAgendaPropiaSinAutorizacion(comoInspeccionable(anidada).stack)).toEqual(['GET /mi-agenda']);
+  });
+
+  it('la agenda propia no sirve como autorización de una agenda ajena', () => {
+    const mal = Router();
+    mal.get('/agenda', autorizarAgendaPropia(), manejadorCualquiera);
+
+    expect(lecturasDeAgendaAjenaSinAutorizacion(comoInspeccionable(mal).stack)).toEqual(['GET /agenda']);
+  });
+});
+
 const sesionFicticia = { sesionVigente: () => Promise.resolve(null) };
 const configCookie = { cookieSegura: false };
 
@@ -322,13 +388,15 @@ describe('cada variante de exigirSesion aparece solo donde corresponde (RF-06, R
       ],
       [VARIANTE_VERIFICACION]: ['POST /sesion/segundo-factor/verificar'],
       // Gestión de cuentas (T-13, RF-04, RF-08, RF-09) datos del consultorio (T-16, RF-13) y kinesiólogos (T-17, RF-14, RF-16)
-      // pacientes (T-18, RF-17 a RF-21), turnos (T-22, RF-23 a RF-26; T-23, RF-27, RF-30 a RF-35) y ticket (T-25, RF-28).
+      // pacientes (T-18, RF-17 a RF-21), turnos (T-22, RF-23 a RF-26; T-23, RF-27, RF-30 a RF-35) y ticket (T-25, RF-28) y agendas (T-27, RF-40, RF-41).
       [VARIANTE_NEGOCIO]: [
+        'GET /agenda',
         'GET /agenda/pendientes',
         'GET /consultorio',
         'GET /cuentas',
         'GET /disponibilidad',
         'GET /kinesiologos',
+        'GET /mi-agenda',
         'GET /pacientes',
         'GET /pacientes/:id',
         'GET /turnos/:id/ticket',
