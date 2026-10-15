@@ -3,7 +3,7 @@ import { ErrorNegocio } from '../../comun/errores.js';
 import type { Reloj } from '../../comun/reloj.js';
 import { finDeFranja } from '../m2-maestros/grilla.js';
 import { accionesDisponibles, type EstadoTurno, type Rol } from '../m3-turnos/transiciones.js';
-import { fechaYHoraLocal } from './pendientes.js';
+import { fechaYHoraLocal, franjaTranscurrida } from './pendientes.js';
 
 /** Lo que se lee de la base por turno; la agenda propia y la de secretaría parten de lo mismo. */
 const SELECCION = {
@@ -80,6 +80,30 @@ export function crearServicioAgendas({ db, reloj }: { db: BaseDeDatos; reloj: Re
           },
         };
       });
+    },
+
+    /**
+     * Ficha del paciente (RF-47): todos sus turnos, en cualquier estado y con cualquier
+     * kinesiólogo, partidos según `franjaTranscurrida` con el "ahora" del reloj inyectable. Los
+     * `proximos` (franja no transcurrida, también la que está en curso) van del más cercano al más
+     * lejano; el `historial`, del más reciente al más antiguo. 404 si el paciente no existe.
+     */
+    async delPaciente(pacienteId: number) {
+      const paciente = await db.paciente.findUnique({ where: { id: pacienteId }, select: { id: true } });
+      if (!paciente) throw new ErrorNegocio('paciente_no_encontrado', 'El paciente no existe.', 404);
+      const filas = await db.turno.findMany({
+        where: { pacienteId },
+        select: { ...SELECCION, paciente: false },
+        orderBy: [{ fecha: 'asc' }, { horaInicio: 'asc' }, { id: 'asc' }],
+      });
+      const ahora = reloj.ahora();
+      const turnos = filas.map((t) => ({ ...proyectar(t), kinesiologo: t.kinesiologo }));
+      const proximos: typeof turnos = [];
+      const historial: typeof turnos = [];
+      for (const turno of turnos) {
+        (franjaTranscurrida(turno.fecha, turno.horaInicio, ahora, reloj.zonaHoraria) ? historial : proximos).push(turno);
+      }
+      return { proximos, historial: historial.reverse() };
     },
 
     /**

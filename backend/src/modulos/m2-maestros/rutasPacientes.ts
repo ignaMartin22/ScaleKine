@@ -13,7 +13,8 @@ import { MINIMO_BUSQUEDA_NOMBRE, type ServicioPacientes } from './pacientes.js';
  * D-16) y la escritura, `autorizarEscritura('pacientes')` (secretaría y administrador).
  *
  * Un paciente es `{ id, dni, nombre, telefono, obraSocial }`. `dni` se devuelve normalizado (solo
- * dígitos). Los turnos y el historial de la ficha llegan en T-29.
+ * dígitos). Los turnos de la ficha (próximos e historial, RF-47) los sirve M4 en `GET /api/pacientes/:id/turnos`
+ * (`rutasAgendas.ts`).
  *
  * - `POST /api/pacientes` `{ dni, nombre, telefono, obraSocial }`, todos obligatorios (RF-17).
  *   "Particular" es un valor de obra social más: lo manda el cliente, el backend no lo completa. El

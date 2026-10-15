@@ -332,6 +332,8 @@ describe('todo GET de M2 exige autorización de lectura (D-16, plan.md §4.8)', 
     expect(lecturasDeM2SinAutorizacion(pila)).toEqual([]);
     // Que la prueba no pase en vacío: el GET del consultorio existe y se inspecciona.
     expect(rutasPorVariante(pila)[VARIANTE_NEGOCIO]).toContain('GET /consultorio');
+    // La ficha con turnos (T-29) vive en M4 pero cuelga de /pacientes: la guardiana de M2 la alcanza.
+    expect(rutasPorVariante(pila)[VARIANTE_NEGOCIO]).toContain('GET /pacientes/:id/turnos');
   });
 
   it('la guardiana detecta un GET de M2 sin autorización, también anidado, y acepta uno autorizado', () => {
@@ -497,7 +499,7 @@ describe('cada variante de exigirSesion aparece solo donde corresponde (RF-06, R
       ],
       [VARIANTE_VERIFICACION]: ['POST /sesion/segundo-factor/verificar'],
       // Gestión de cuentas (T-13, RF-04, RF-08, RF-09) datos del consultorio (T-16, RF-13) y kinesiólogos (T-17, RF-14, RF-16)
-      // pacientes (T-18, RF-17 a RF-21), turnos (T-22, RF-23 a RF-26; T-23, RF-27, RF-30 a RF-35) y ticket (T-25, RF-28) y agendas (T-27, RF-40, RF-41).
+      // pacientes (T-18, RF-17 a RF-21), turnos (T-22, RF-23 a RF-26; T-23, RF-27, RF-30 a RF-35) y ticket (T-25, RF-28) agendas (T-27, RF-40, RF-41) y ficha del paciente (T-29, RF-47).
       [VARIANTE_NEGOCIO]: [
         'GET /agenda',
         'GET /agenda/pendientes',
@@ -508,6 +510,7 @@ describe('cada variante de exigirSesion aparece solo donde corresponde (RF-06, R
         'GET /mi-agenda',
         'GET /pacientes',
         'GET /pacientes/:id',
+        'GET /pacientes/:id/turnos',
         'GET /turnos/:id/ticket',
         'POST /cuentas',
         'POST /cuentas/:id/desactivacion',

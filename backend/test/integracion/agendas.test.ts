@@ -470,14 +470,11 @@ describe('el kinesiólogo no consulta pacientes (RF-40, D-16)', () => {
       '/api/pacientes?nombre=Propio',
       `/api/pacientes/${paciente.id}`,
       `/api/pacientes/${paciente.id}/turnos`,
-      `/api/pacientes/${paciente.id}/historial`,
     ]) {
       const res = await pedir(app, ruta, cookie);
-      // Las rutas de la ficha con turnos e historial llegan en T-29 y ahora no existen (404); las
-      // existentes deben responder 403. Ninguna devuelve datos del paciente.
-      expect([403, 404], ruta).toContain(res.status);
+      // La ficha con turnos llegó en T-29: toda ruta de pacientes responde 403 al kinesiólogo.
+      expect(res.status, ruta).toBe(403);
       expect(JSON.stringify(res.body), ruta).not.toContain('Paciente Propio Ficticio');
-      if (ruta.split('/').length <= 4) expect(res.status, ruta).toBe(403);
     }
   });
 });
