@@ -1,0 +1,17 @@
+{
+  "name": "scalekine-e2e",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "scripts": {
+    "test": "playwright test",
+    "typecheck": "node ../backend/node_modules/typescript/bin/tsc -p tsconfig.json",
+    "instalar-navegador": "playwright install chromium"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.64.1",
+    "otplib": "13.5.0"
+  }
+}
