@@ -1,6 +1,6 @@
 # Avance de la implementación
 
-Estado al 2026-10-14, con la ola 4 casi cerrada: falta T-24. Este documento registra qué está hecho, qué quedó a
+Estado al 2026-10-15, con la ola 4 cerrada y la ola 5 en curso. Este documento registra qué está hecho, qué quedó a
 medio camino y cómo retomarlo. No reemplaza a las fuentes de verdad: los requisitos están en
 [`spec.md`](./spec.md), las decisiones de diseño en [`plan.md`](./plan.md) y el orden y los
 criterios de "hecho" en [`tasks.md`](./tasks.md). Se actualiza cada vez que se fusiona un PR.
@@ -35,16 +35,21 @@ criterios de "hecho" en [`tasks.md`](./tasks.md). Se actualiza cada vez que se f
 | T-21 · Disponibilidad | Hecha | #33 y #36 | #36: sin kinesiólogos con la cuenta desactivada. Ver §2c. |
 | T-22 · Asignar | Hecha | #34 | Crítica: pasó `revisor-seguridad` y una ronda de correcciones. |
 | T-23 · Transiciones, corrección y coseguros | Hecha | #39 | Crítica: pasó `revisor-seguridad` y una ronda de correcciones. Migración `agregar_evento_modificacion_coseguros`. |
-| T-24 · Reprogramar | Pendiente | — | Sigue en el carril A (crítica). |
+| T-24 · Reprogramar | Hecha | #45 | Crítica: pasó `revisor-seguridad` y una ronda de correcciones (una carrera no determinista reemplazada por una intercalación forzada). |
 | T-25 · Ticket | Hecha | #38 | PDF con `pdfkit`; la prueba decodifica el QR con `jsqr`. |
 | T-26 · Sin borrado | Hecha | #40 | |
-| T-27 a T-40 | Pendientes | — | Olas 5 a 7 de `tasks.md`. |
+| T-27 · Agendas | En curso | — | Carril A. Pasa por `revisor-seguridad` (lecturas del kinesiólogo). |
+| T-28 · Aviso de pendientes | Hecha | #44 | Adelantada a la ola 4 con el carril B libre. |
+| T-29 · Ficha del paciente | Pendiente | — | Carril A, después de T-27. |
+| T-30 · Pantallas de agenda, asignación y ficha | En curso | — | Carril B, en tres PRs: asignación (en curso), agenda de secretaría (tras T-27), ficha y agenda del kinesiólogo (tras T-27 y T-29). |
+| T-31 a T-40 | Pendientes | — | Olas 6 y 7 de `tasks.md`. |
 
 Otros PRs fusionados:
 - #10 vuelve `@types/node` a la versión 24 y limita los saltos de versión que propone Dependabot.
 - #16 y #19 documentan el avance; #21 precisa la spec y el plan para la ola 3 (DNI, lectura de M2 y alta de kinesiólogo).
 - #24, #29 y #32 documentan el avance durante la ola 3.
 - #35 y #37 cambian la spec con decisiones del usuario (ver §2c).
+- #42 resuelve deuda de documentación y configuración; #43 centraliza `ingresarComo` en las fábricas de prueba.
 - #3, #4 y #20 son de Dependabot.
 - El #5 (TypeScript 7 en el frontend) se cerró: Angular 22 exige TypeScript `~6.0`.
 
@@ -134,10 +139,10 @@ ajustes previos a la ola 4 (#30), más la documentación (#21, #24 y #29).
 
 ---
 
-## 2c. Ola 4: estado al pausar (2026-10-14)
+## 2c. Ola 4: cómo se cerró
 
-**Fusionado:** T-21 (#33 y #36), T-22 (#34), T-23 (#39), T-25 (#38) y T-26 (#40), más los cambios
-de spec #35 y #37. Falta **T-24 (reprogramar)**, en el carril A. El usuario probó el sistema a mano
+**Fusionado:** T-21 (#33 y #36), T-22 (#34), T-23 (#39), T-24 (#45), T-25 (#38) y T-26 (#40), más
+los cambios de spec #35 y #37 y, adelantada, T-28 (#44). El usuario probó el sistema a mano
 con todo fusionado: la ola 4 no tiene pantallas todavía (llegan en T-30), así que los turnos se
 probaron por la API desde la consola del navegador.
 
@@ -180,9 +185,17 @@ probaron por la API desde la consola del navegador.
 `agregar_evento_modificacion_coseguros`. Puede tener turnos, pacientes y eventos ficticios del
 recorrido manual.
 
-**Pendiente para T-24** (de las revisiones de T-22 y T-23): reutilizar `indiceViolado`, la
-actualización condicionada al estado (`reservado`) y los ayudantes de carrera y de evento roto de
-`turnos-estados.test.ts`; agregar el caso del ticket tras reprogramar por la API.
+**T-24 (#45):** `PUT /api/turnos/:id/ubicacion` con `{ kinesiologoId, fecha, horaInicio }`.
+Actualiza condicionado al estado y a la ubicación leídos (`plan.md` §4.7); reprogramar a la misma
+ubicación es 409 `reprogramacion_sin_cambio`; RF-36 se amplió: tampoco se reprograma hacia un
+kinesiólogo con la cuenta desactivada, aunque sea el mismo del turno, y el 404 dice "no existe o
+tiene la cuenta desactivada". Los dobles de prueba de transacciones viven en
+`test/integracion/ayudantesTurnos.ts` (`baseConEventoRoto`, `baseConLecturaSincronizada`,
+`baseConPausaTrasLeer`). Lección: una barrera que solo sincroniza las lecturas no fija quién escribe
+primero; para probar un orden concreto hay que forzar la intercalación.
+
+**T-28 (#44):** `GET /api/agenda/pendientes`; compara en hora de pared de la zona del consultorio
+(`Intl.DateTimeFormat`), sin desfases fijos.
 
 ---
 
@@ -338,10 +351,5 @@ Si un PR se fusiona antes de terminar la revisión, las correcciones van en una 
   faltaban en el plan.
 
 **Para retomar:**
-1. Levantar Docker Desktop (el contenedor `scalekine-postgres-1` arranca solo; si no, `docker start
-   scalekine-postgres-1`).
-2. Carril A: **T-24 · Reprogramar** (crítica, con `revisor-seguridad`). Ver "Pendiente para T-24"
-   en §2c.
-3. Ola 5 (`tasks.md`: depende de la fase 3 completa, o sea de T-24): T-27 → T-29 en el carril A y
-   T-28 → T-30 en el carril B (T-30 es el frontend de agenda, asignación y ficha). Mientras corre
-   T-24, el carril B queda libre salvo que el usuario decida adelantar T-28, que solo lee turnos.
+Ola 5 en curso: T-27 → T-29 en el carril A (T-27 con `revisor-seguridad`); T-30 en el carril B en
+tres PRs (asignación, agenda de secretaría tras T-27, ficha y agenda del kinesiólogo tras T-29).
