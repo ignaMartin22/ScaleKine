@@ -4,6 +4,7 @@ import {
   LECTURA_POR_ROL,
   puedeEscribir,
   puedeLeer,
+  puedeLeerAgendaPropia,
   type ModuloEscritura,
   type ModuloLectura,
 } from '../../src/comun/autorizacion.js';
@@ -70,5 +71,18 @@ describe('puedeLeer (D-16)', () => {
 
   it.each(casos)('%s en %s: %s', (rol, modulo, esperado) => {
     expect(puedeLeer(rol, modulo)).toBe(esperado);
+  });
+});
+
+describe('puedeLeerAgendaPropia (RF-40, D-15, D-16)', () => {
+  // El resultado esperado de cada rol está escrito a mano.
+  const casos: [Rol, boolean][] = [
+    ['administrador', false],
+    ['secretaria', false],
+    ['kinesiologo', true],
+  ];
+
+  it.each(casos)('%s: %s', (rol, esperado) => {
+    expect(puedeLeerAgendaPropia(rol)).toBe(esperado);
   });
 });

@@ -2,6 +2,7 @@ import { Router, type RequestHandler } from 'express';
 import { z } from 'zod';
 import { autorizarEscritura } from '../../comun/autorizarEscritura.js';
 import { autorizarLectura } from '../../comun/autorizarLectura.js';
+import { idDeTexto } from '../../comun/esquemas.js';
 import { datosValidados, validar } from '../../comun/validacion.js';
 import { normalizarDni } from './dni.js';
 import { MINIMO_BUSQUEDA_NOMBRE, type ServicioPacientes } from './pacientes.js';
@@ -56,12 +57,6 @@ const dni = z
     return normalizado;
   });
 
-const idPaciente = z
-  .string()
-  .regex(/^\d{1,10}$/)
-  .transform(Number)
-  .pipe(z.number().int().positive().max(2_147_483_647));
-
 const datosPaciente = z.object({
   dni,
   nombre: z.string().trim().min(1).max(120).refine(sinNul),
@@ -71,10 +66,10 @@ const datosPaciente = z.object({
 
 const esquemaCrear = { body: datosPaciente };
 const esquemaEditar = {
-  params: z.object({ id: idPaciente }),
+  params: z.object({ id: idDeTexto }),
   body: datosPaciente,
 };
-const esquemaFicha = { params: z.object({ id: idPaciente }) };
+const esquemaFicha = { params: z.object({ id: idDeTexto }) };
 const esquemaBuscar = {
   query: z
     .object({

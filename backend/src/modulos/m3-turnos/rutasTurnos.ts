@@ -2,6 +2,7 @@ import { Router, type RequestHandler } from 'express';
 import { z } from 'zod';
 import { autorizarEscritura } from '../../comun/autorizarEscritura.js';
 import { ErrorNegocio } from '../../comun/errores.js';
+import { fechaCivil as fecha } from '../../comun/esquemas.js';
 import { datosValidados, validar } from '../../comun/validacion.js';
 import { sesionActual } from '../m1-identidad/index.js';
 import { ESTADOS, type EstadoTurno } from './transiciones.js';
@@ -59,15 +60,6 @@ import type { ServicioTurnos } from './turnos.js';
 const sinNul = (valor: string) => !valor.includes('\u0000');
 const id = z.number().int().positive().max(2_147_483_647);
 
-const fecha = z
-  .string()
-  .regex(/^\d{4}-\d{2}-\d{2}$/)
-  .refine((v) => {
-    // Zod sigue con los demás controles aunque el formato falle: una fecha ilegible no debe lanzar.
-    const d = new Date(`${v}T00:00:00Z`);
-    // El año 0000 no existe para Postgres (date): se exige desde 0001-01-01.
-    return !Number.isNaN(d.getTime()) && d.toISOString().startsWith(v) && v >= '0001-01-01';
-  });
 const horaInicio = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
 
 /** Monto en pesos, hasta dos decimales y 10 enteros (Decimal(12,2)); se normaliza a texto. */
