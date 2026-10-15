@@ -67,7 +67,7 @@ export DIR_ENV=$ENV PUERTO_HTTP=18080 PUERTO_HTTPS=18443
 infra/prueba/preparar-entorno.sh economico "$ENV"
 F="-f docker-compose.prod.yml -f infra/prueba/docker-compose.prueba.yml"
 COMPOSE_PROFILES=base-local docker compose -p scalekine-prod-b $F up -d --wait
-PROYECTO=scalekine-prod-b PERFIL=economico COMPOSE_FILES="$F" PRUEBA_RESPALDO=1 infra/verificar-stack.sh
+PROYECTO=scalekine-prod-b PERFIL=economico COMPOSE_FILES="docker-compose.prod.yml infra/prueba/docker-compose.prueba.yml" PRUEBA_RESPALDO=1 infra/verificar-stack.sh
 COMPOSE_PROFILES=base-local docker compose -p scalekine-prod-b $F down -v
 
 # Perfil administrado (base externa temporal, sin puertos publicados)
@@ -75,7 +75,7 @@ infra/prueba/preparar-entorno.sh administrado "$ENV"
 docker compose -p scalekine-prod-b-ext -f infra/prueba/docker-compose.base-externa.yml up -d --wait
 F="$F -f infra/prueba/docker-compose.externa.yml"
 docker compose -p scalekine-prod-b $F up -d --wait
-PROYECTO=scalekine-prod-b PERFIL=administrado COMPOSE_FILES="$F" PRUEBA_RESPALDO=1 infra/verificar-stack.sh
+PROYECTO=scalekine-prod-b PERFIL=administrado COMPOSE_FILES="docker-compose.prod.yml infra/prueba/docker-compose.prueba.yml infra/prueba/docker-compose.externa.yml" PRUEBA_RESPALDO=1 infra/verificar-stack.sh
 docker compose -p scalekine-prod-b $F down -v
 docker compose -p scalekine-prod-b-ext -f infra/prueba/docker-compose.base-externa.yml down -v
 ```

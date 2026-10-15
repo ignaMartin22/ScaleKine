@@ -114,7 +114,7 @@ if [ "${PRUEBA_RESPALDO:-0}" = 1 ]; then
   : "${DIR_ENV:?Falta DIR_ENV}"
   vol="${PROYECTO}_respaldos_prueba"
   if dc run --rm migraciones >/dev/null 2>&1; then ok "migraciones aplicadas"; else falla "no se pudieron aplicar las migraciones"; fi
-  img=$(dc config --images | grep respaldo | head -n1)
+  img="${REGISTRO:-}scalekine-respaldo:${VERSION:-local}"
   docker run --rm -u 0 -v "$vol:/respaldos" --entrypoint chown "$img" 10002 /respaldos 2>/dev/null
   if dc run --rm respaldo >/dev/null 2>&1; then ok "respaldo terminó con éxito"; else falla "respaldo falló"; fi
   archivo=$(docker run --rm -v "$vol:/respaldos" --entrypoint sh "$img" -c 'ls /respaldos | head -n1')

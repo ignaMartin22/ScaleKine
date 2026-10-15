@@ -17,9 +17,11 @@ services:
     volumes: [caddy_data:/data, caddy_config:/config]
     env_file: [{ path: "${DIR_ENV:-.}/.env.web" }]
     networks: [frontal]
-    # Sin root: permite a Caddy abrir 80 y 443 sin la capacidad de root.
+    # Sin root: el sysctl y NET_BIND_SERVICE (el binario de Caddy lleva esa capacidad de archivo) le
+    # permiten abrir 80 y 443.
     sysctls: { net.ipv4.ip_unprivileged_port_start: 0 }
     cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
     security_opt: ["no-new-privileges:true"]
     depends_on: [api]
     restart: unless-stopped
