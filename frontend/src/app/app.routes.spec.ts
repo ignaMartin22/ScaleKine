@@ -134,3 +134,21 @@ describe('rutas de pacientes (RF-21, D-16)', () => {
     expect((await navegar('/secretaria/pacientes', null)).url).toBe('/ingresar');
   });
 });
+
+describe('ruta de asignación de turnos (RF-22, RF-03)', () => {
+  it('la secretaría entra', async () => {
+    expect((await navegar('/secretaria/asignar', 'secretaria')).url).toBe('/secretaria/asignar');
+  });
+
+  it('el administrador entra', async () => {
+    expect((await navegar('/secretaria/asignar', 'administrador')).url).toBe('/secretaria/asignar');
+  });
+
+  it('el kinesiólogo no entra', async () => {
+    expect((await navegar('/secretaria/asignar', 'kinesiologo')).url).toBe('/kinesiologo');
+  });
+
+  it('sin sesión lleva al ingreso', async () => {
+    expect((await navegar('/secretaria/asignar', null)).url).toBe('/ingresar');
+  });
+});
