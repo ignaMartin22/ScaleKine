@@ -1,6 +1,6 @@
 # Avance de la implementación
 
-Estado al 2026-10-15, con la ola 6 en curso: T-31 fusionada, T-32 y T-41 en revisión. Este documento registra qué está hecho, qué quedó a
+Estado al 2026-10-15, con la ola 6 avanzada: T-31, T-32 y T-41 fusionadas; sigue la infraestructura (T-35 → T-37).
 medio camino y cómo retomarlo. No reemplaza a las fuentes de verdad: los requisitos están en
 [`spec.md`](./spec.md), las decisiones de diseño en [`plan.md`](./plan.md) y el orden y los
 criterios de "hecho" en [`tasks.md`](./tasks.md). Se actualiza cada vez que se fusiona un PR.
@@ -43,8 +43,8 @@ criterios de "hecho" en [`tasks.md`](./tasks.md). Se actualiza cada vez que se f
 | T-29 · Ficha del paciente | Hecha | #50 | Incluye `horaLlegada` en las proyecciones de turno. |
 | T-30 · Pantallas de agenda, asignación y ficha | Hecha | #47, #51 y #53 | Las tres partes pasaron el recorrido manual del usuario. #53: agenda del kinesiólogo y próximos/historial en la ficha. |
 | T-31 · Difusión | Hecha | #54 | Crítica: `revisor-seguridad` encontró un bloqueante (ver §2e) y pasó dos rondas de correcciones. |
-| T-32 · Agenda viva | PR abierto | #56 | CI en verde; falta el recorrido manual del usuario con dos navegadores. |
-| T-41 · Diseño visual | En curso | — | Carril B. Implementa `DESIGN.md` (RNF-15, #55). Va antes de T-35 por decisión del usuario. |
+| T-32 · Agenda viva | Hecha | #56 | Pasó el recorrido manual del usuario. El recorrido encontró que el polling no manda `Origin` en el navegador: el tiempo real quedó solo por websocket (ver §2e). |
+| T-41 · Diseño visual | Hecha | #58 | Implementa `DESIGN.md` (RNF-15). Pasó el recorrido manual del usuario; a pedido suyo, secretaría y administrador entran directo a la agenda. |
 | T-33 a T-40 | Pendientes | — | Ola 6 (T-35, T-37) y ola 7 de `tasks.md`. |
 
 Otros PRs fusionados:
@@ -258,10 +258,22 @@ API desde la consola (la asignación por pantalla solo deja fechas desde hoy).
   contraseña (ganchos en `m1-identidad/revocaciones.ts`), y revalidación cada 60 s para las
   revocaciones desde la CLI.
 
-**T-32 (#56, abierto), agenda viva:** servicio `nucleo/tiempo-real/`, indicador
+**T-32 (#56), agenda viva:** servicio `nucleo/tiempo-real/`, indicador
 `app-indicador-conexion` y suscripción en las dos agendas. Al reconectar se vuelve a pedir la
 agenda completa. Ante `sesion:cerrada`, el cierre por el servidor o un `no_autorizado` en el
 handshake, se vuelve al ingreso. Dependencia nueva: `socket.io-client` 4.8.4.
+- **Hallazgo del recorrido manual:** los navegadores no mandan `Origin` en un GET al mismo origen,
+  así que el handshake por polling se rechazaba siempre (las pruebas usaban un cliente de Node, que
+  sí lo manda). Se resolvió con `transports: ['websocket']` en servidor y cliente: el upgrade a
+  websocket siempre trae `Origin`, y se elimina el polling. Lección: las pruebas de contrato de
+  tiempo real no reemplazan el recorrido con un navegador real.
+
+**T-41 (#58), diseño visual:** tokens en `styles.css` (claro y oscuro), `app-icono` con los SVG
+oficiales de Lucide, `app-estado-turno`, barra lateral por rol y vistas de 900 y 600 px. Una prueba
+lee el `styles.css` real y verifica el contraste AA; `verificar-estilos` (dentro de `npm test`)
+falla si aparece un hexadecimal fuera de `styles.css` o el CSS global pasa de 25 kB. El foco claro
+pasó a `#0C928D` para llegar a 3:1 sobre todas las superficies. Las pantallas de inicio de
+secretaría y administrador se eliminaron: entran a `/secretaria/agenda` (RF-01).
 
 **Sistema visual (#55):** `DESIGN.md` en la raíz, aprobado por el usuario con una página de
 muestra. RNF-15 en la spec y T-41 en `tasks.md`, en el carril B antes de T-35.
@@ -422,7 +434,7 @@ Si un PR se fusiona antes de terminar la revisión, las correcciones van en una 
 
 **Para retomar:**
 1. Encender Docker Desktop y verificar `scalekine-postgres-1`.
-2. Recorrido manual del #56 (T-32) con dos navegadores y fusionarlo.
-3. T-41 (diseño visual) en el carril B: revisión y recorrido manual en claro, oscuro y ventana
-   angosta. El que se fusione segundo entre T-32 y T-41 hace rebase.
-4. Después: T-35 → T-37 (infraestructura, necesitan permiso para usar Docker) y la ola 7.
+2. Carril B: **T-35 (imágenes y configuración de producción)** → T-37. Necesita permiso explícito del
+   usuario para construir imágenes y levantar contenedores (proyecto de compose propio, otros
+   puertos, sin tocar `scalekine-postgres-1` ni Nextcloud, y bajar todo al terminar).
+3. Carril A: ola 7, T-33 (E2E) → T-34 (verificación de seguridad), ahora que la interfaz es la final.
