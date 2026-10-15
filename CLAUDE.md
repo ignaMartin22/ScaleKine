@@ -8,11 +8,14 @@ Development). Este archivo guía el trabajo de implementación.
 En orden de precedencia:
 
 1. `docs/constitucion.md`: principios y no negociables.
-2. `docs/spec.md`: qué se construye (RF-01 … RF-47 y RNF-01 … RNF-13), fuera de alcance (§4) y
+2. `docs/spec.md`: qué se construye (RF-01 … RF-47 y RNF-01 … RNF-15), fuera de alcance (§4) y
    criterios (§7).
 3. `docs/plan.md`: cómo se construye (módulos, modelo, decisiones, estructura del repo).
 4. `docs/despliegue.md`: dónde corre, cómo se protege y cómo se opera en producción.
 5. `docs/tasks.md`: qué tarea sigue y cuándo está hecha.
+
+El sistema visual del frontend está en `DESIGN.md` (RNF-15): toda pantalla usa sus tokens,
+íconos y componentes.
 
 Antes de retomar trabajo, leer `docs/avance.md`: estado de cada tarea, trabajo a medio hacer y
 correcciones pendientes. No es fuente de verdad; se actualiza al fusionar cada PR.

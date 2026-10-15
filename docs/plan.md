@@ -425,6 +425,13 @@ aunque hoy sean informativos.
 *Descartado:* i18n desde el inicio. El producto es single-tenant y no hay un segundo idioma en el
 horizonte.
 
+**Sistema visual (RNF-15):** `DESIGN.md` en la raíz del repositorio define colores, tipografía,
+íconos, componentes y movimiento. Se implementa con CSS propio (variables en `styles.css`), la
+fuente del sistema e íconos SVG en línea copiados de Lucide (ISC).
+
+*Descartado:* una librería de componentes (Angular Material, PrimeNG) o de íconos. Suman peso y
+dependencias para una interfaz chica, y fijan una estética que no es la elegida.
+
 ### 4.11 Ticket en PDF generado en el backend, con QR de texto plano
 
 **Elegido:** el backend arma el PDF (librería `qrcode` para el código y `pdfkit` para el documento) a
@@ -697,6 +704,7 @@ reloj inyectable, no el del sistema.
 | RNF-12 | infraestructura | simulacro de caída y de backup fallido |
 | RNF-13 | infraestructura | verificación de despliegue |
 | RNF-14 | transversal | integración (cabecera en datos, errores y 404) |
+| RNF-15 | frontend | unidad (contraste de los tokens) + recorrido manual en claro, oscuro y pantalla chica |
 
 ---
 

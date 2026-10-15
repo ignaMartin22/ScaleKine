@@ -459,6 +459,14 @@ exigido; el cómo está en `plan.md` y `despliegue.md`.
   instrucción el navegador puede dejar agendas y fichas en su caché de disco aun después de cerrar
   la sesión.
 
+- **RNF-15** — *Restricción:* La interfaz sigue el sistema visual de `DESIGN.md`: modo claro y
+  oscuro según el sistema operativo, contraste WCAG 2.1 AA, estados y acciones críticas
+  distinguibles por color, ícono y texto, y ninguna descarga además de la aplicación (sin fuentes,
+  librerías de íconos ni de componentes externas) ni animaciones más allá de transiciones de color.
+  *Por qué:* El sistema corre en las PCs que el consultorio ya tiene, a veces viejas, y se usa todo
+  el día. Una acción como "Anular" no puede confundirse con "Asignar", y la interfaz tiene que ser
+  legible con cualquier luz y para cualquier persona (decisión del usuario).
+
 - **RNF-11** — *Restricción:* No se despliega una versión cuyas dependencias tengan vulnerabilidades
   conocidas de severidad alta o crítica.
   *Por qué:* La mayoría de los ataques a aplicaciones chicas explotan dependencias desactualizadas.
@@ -684,6 +692,8 @@ El MVP se considera terminado cuando **todos** los puntos siguientes son verific
       seguridad impiden incrustar la aplicación (RNF-10).
 - [ ] Toda respuesta de la API (datos, 400, 401, 404 y salud) lleva `Cache-Control: no-store`
       (RNF-14).
+- [ ] La interfaz cumple `DESIGN.md` en modo claro y oscuro, con contraste AA verificado, y no
+      descarga fuentes, íconos ni librerías externas (RNF-15).
 - [ ] La auditoría de dependencias no informa vulnerabilidades altas ni críticas (RNF-11).
 - [ ] Detener la aplicación, o hacer fallar un backup, genera una alerta al administrador
       (RNF-12).
