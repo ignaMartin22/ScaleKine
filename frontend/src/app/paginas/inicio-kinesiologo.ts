@@ -10,6 +10,8 @@ import { IndicadorConexion } from '../nucleo/tiempo-real/indicador-conexion';
 import { TiempoReal } from '../nucleo/tiempo-real/tiempo-real';
 import { enfocar, mensajeDe } from '../nucleo/ui/enfocar';
 import { fechaLegible } from './asignar-turno';
+import { EstadoDelTurno } from '../nucleo/ui/estado-turno';
+import { Icono } from '../nucleo/ui/icono';
 
 /** Ordena la espera por hora de llegada (RF-40); a igual llegada, por franja. 'HH:MM' ordena como texto. */
 export function ordenarEspera(turnos: readonly TurnoPropio[]): TurnoPropio[] {
@@ -36,13 +38,14 @@ export function ordenarProximos(turnos: readonly TurnoPropio[]): TurnoPropio[] {
  * al almacenamiento del navegador.
  */
 @Component({
+  imports: [EstadoDelTurno, Icono],
   selector: 'app-inicio-kinesiologo',
   imports: [IndicadorConexion],
   template: `
     <h1>Mi agenda</h1>
     <app-indicador-conexion />
 
-    <form class="formulario" novalidate (submit)="$event.preventDefault()">
+    <form class="formulario en-linea" novalidate (submit)="$event.preventDefault()">
       <div class="campo">
         <label for="mi-agenda-fecha">Fecha</label>
         <input
@@ -61,13 +64,15 @@ export function ordenarProximos(turnos: readonly TurnoPropio[]): TurnoPropio[] {
           [disabled]="cargando()"
           (click)="cargar()"
         >
-          {{ cargando() ? 'Actualizando…' : 'Actualizar' }}
+          <app-icono nombre="actualizar" />{{ cargando() ? 'Actualizando…' : 'Actualizar' }}
         </button>
       </div>
     </form>
 
     @if (error(); as mensaje) {
-      <p class="error" id="error-carga" role="alert" tabindex="-1">{{ mensaje }}</p>
+      <p class="error" id="error-carga" role="alert" tabindex="-1">
+        <app-icono nombre="alerta" />{{ mensaje }}
+      </p>
     }
 
     @if (agenda(); as a) {
@@ -77,7 +82,7 @@ export function ordenarProximos(turnos: readonly TurnoPropio[]): TurnoPropio[] {
           <p id="sin-espera">No hay pacientes en espera el {{ legible(a.fecha) }}.</p>
         } @else {
           <div class="tabla-contenedor">
-            <table class="tabla" id="tabla-espera">
+            <table class="tabla apilable" id="tabla-espera">
               <caption class="solo-lectores">
                 Pacientes en espera, por hora de llegada
               </caption>
@@ -93,17 +98,17 @@ export function ordenarProximos(turnos: readonly TurnoPropio[]): TurnoPropio[] {
               <tbody>
                 @for (t of a.enEspera; track t.id) {
                   <tr>
-                    <td>{{ t.horaLlegada ?? 'sin dato' }}</td>
-                    <td>{{ t.horaInicio }} a {{ t.horaFin }}</td>
-                    <td>
+                    <td data-label="Llegó">{{ t.horaLlegada ?? 'sin dato' }}</td>
+                    <td data-label="Franja">{{ t.horaInicio }} a {{ t.horaFin }}</td>
+                    <td data-label="Paciente">
                       <strong>{{ t.paciente.nombre }}</strong
                       ><br />
                       DNI {{ t.paciente.dni }}<br />
                       Tel. {{ t.paciente.telefono }}<br />
                       {{ t.paciente.obraSocial }}
                     </td>
-                    <td>{{ estado(t.estado) }}</td>
-                    <td>
+                    <td data-label="Estado"><app-estado-turno [estado]="t.estado" /></td>
+                    <td data-label="Coseguros">
                       Obra social: {{ monto(t.coseguroObraSocial) }}<br />
                       Adicional: {{ monto(t.coseguroAdicional) }}
                     </td>
@@ -121,7 +126,7 @@ export function ordenarProximos(turnos: readonly TurnoPropio[]): TurnoPropio[] {
           <p id="sin-proximos">No hay turnos próximos el {{ legible(a.fecha) }}.</p>
         } @else {
           <div class="tabla-contenedor">
-            <table class="tabla" id="tabla-proximos">
+            <table class="tabla apilable" id="tabla-proximos">
               <caption class="solo-lectores">
                 Próximos turnos, por franja
               </caption>
@@ -136,16 +141,16 @@ export function ordenarProximos(turnos: readonly TurnoPropio[]): TurnoPropio[] {
               <tbody>
                 @for (t of a.proximos; track t.id) {
                   <tr>
-                    <td>{{ t.horaInicio }} a {{ t.horaFin }}</td>
-                    <td>
+                    <td data-label="Franja">{{ t.horaInicio }} a {{ t.horaFin }}</td>
+                    <td data-label="Paciente">
                       <strong>{{ t.paciente.nombre }}</strong
                       ><br />
                       DNI {{ t.paciente.dni }}<br />
                       Tel. {{ t.paciente.telefono }}<br />
                       {{ t.paciente.obraSocial }}
                     </td>
-                    <td>{{ estado(t.estado) }}</td>
-                    <td>
+                    <td data-label="Estado"><app-estado-turno [estado]="t.estado" /></td>
+                    <td data-label="Coseguros">
                       Obra social: {{ monto(t.coseguroObraSocial) }}<br />
                       Adicional: {{ monto(t.coseguroAdicional) }}
                     </td>

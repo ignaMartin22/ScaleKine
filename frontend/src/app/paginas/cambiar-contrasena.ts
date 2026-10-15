@@ -4,6 +4,7 @@ import { ErrorApi } from '../nucleo/http/error-api';
 import { destinoDeSesion } from '../nucleo/sesion/modelo';
 import { Sesion } from '../nucleo/sesion/sesion';
 import { enfocar, mensajeDe } from '../nucleo/ui/enfocar';
+import { Icono } from '../nucleo/ui/icono';
 
 /** Mismo mínimo que la política del backend (RNF-03). */
 const LARGO_MINIMO = 12;
@@ -23,6 +24,7 @@ type Errores = Partial<Record<Campo, string>>;
  * voluntario desde el menú (RF-07).
  */
 @Component({
+  imports: [Icono],
   selector: 'app-cambiar-contrasena',
   template: `
     <section class="tarjeta">
@@ -38,10 +40,14 @@ type Errores = Partial<Record<Campo, string>>;
       </p>
 
       @if (listo()) {
-        <p class="aviso" role="status">Tu contraseña se cambió. Las demás sesiones se cerraron.</p>
+        <p class="info" role="status">
+          <app-icono nombre="info" />Tu contraseña se cambió. Las demás sesiones se cerraron.
+        </p>
       }
       @if (errorGeneral(); as mensaje) {
-        <p class="error" id="error-formulario" role="alert" tabindex="-1">{{ mensaje }}</p>
+        <p class="error" id="error-formulario" role="alert" tabindex="-1">
+          <app-icono nombre="alerta" />{{ mensaje }}
+        </p>
       }
 
       <form
@@ -61,7 +67,7 @@ type Errores = Partial<Record<Campo, string>>;
             [attr.aria-describedby]="errores().actual ? 'error-actual' : null"
           />
           @if (errores().actual; as mensaje) {
-            <p class="error" id="error-actual">{{ mensaje }}</p>
+            <p class="error" id="error-actual"><app-icono nombre="alerta" />{{ mensaje }}</p>
           }
         </div>
         <div class="campo">
@@ -76,7 +82,7 @@ type Errores = Partial<Record<Campo, string>>;
             [attr.aria-describedby]="errores().nueva ? 'ayuda-nueva error-nueva' : 'ayuda-nueva'"
           />
           @if (errores().nueva; as mensaje) {
-            <p class="error" id="error-nueva">{{ mensaje }}</p>
+            <p class="error" id="error-nueva"><app-icono nombre="alerta" />{{ mensaje }}</p>
           }
         </div>
         <div class="campo">
@@ -91,7 +97,7 @@ type Errores = Partial<Record<Campo, string>>;
             [attr.aria-describedby]="errores().repetida ? 'error-repetida' : null"
           />
           @if (errores().repetida; as mensaje) {
-            <p class="error" id="error-repetida">{{ mensaje }}</p>
+            <p class="error" id="error-repetida"><app-icono nombre="alerta" />{{ mensaje }}</p>
           }
         </div>
         <button type="submit" class="boton" [disabled]="enviando()">

@@ -1,18 +1,77 @@
-<header class="encabezado">
-  <span class="marca">ScaleKine</span>
-  <span class="seccion">{{ seccion() }}</span>
-  @if (usuario(); as u) {
-    <span class="usuario">{{ u.nombreUsuario }} · {{ nombreDelRol() }}</span>
-  }
-  <nav class="menu" aria-label="Cuenta">
-    @if (puedeCambiarContrasena()) {
-      <a routerLink="/cambiar-contrasena">Cambiar contraseña</a>
-    }
-    <button type="button" class="enlace" [disabled]="cerrando()" (click)="cerrarSesion()">
-      Cerrar sesión
+@if (soloTarjeta()) {
+  <header class="marca-tarjeta no-imprimir">ScaleKine</header>
+} @else {
+  <div class="barra-superior no-imprimir">
+    <span class="consultorio">{{ nombreDelConsultorio() }}</span>
+    <button
+      type="button"
+      class="boton solo-icono secundario"
+      aria-controls="barra-lateral"
+      [attr.aria-expanded]="menuAbierto()"
+      aria-label="Menú"
+      (click)="alternarMenu()"
+    >
+      <app-icono [nombre]="menuAbierto() ? 'cerrar' : 'menu'" />
     </button>
-  </nav>
-</header>
+  </div>
+  <aside
+    id="barra-lateral"
+    class="lateral no-imprimir"
+    [class.abierta]="menuAbierto()"
+    aria-label="Barra lateral"
+  >
+    <p class="consultorio">{{ nombreDelConsultorio() }}</p>
+    @if (menu().length > 0) {
+      <nav aria-label="Menú principal">
+        <ul>
+          @for (opcion of menu(); track opcion.ruta) {
+            <li>
+              <a [routerLink]="opcion.ruta" routerLinkActive="activo" ariaCurrentWhenActive="page">
+                <app-icono [nombre]="opcion.icono" />{{ opcion.texto }}
+              </a>
+            </li>
+          }
+        </ul>
+      </nav>
+    }
+    <div class="pie">
+      @if (usuario(); as u) {
+        <p class="quien">{{ u.nombreUsuario }} · {{ nombreDelRol() }}</p>
+      }
+      <nav aria-label="Cuenta">
+        <ul>
+          @if (puedeCambiarContrasena()) {
+            <li>
+              <a
+                routerLink="/cambiar-contrasena"
+                routerLinkActive="activo"
+                ariaCurrentWhenActive="page"
+              >
+                <app-icono nombre="contrasena" />Cambiar contraseña
+              </a>
+            </li>
+          }
+          <li>
+            <button type="button" [disabled]="cerrando()" (click)="cerrarSesion()">
+              <app-icono nombre="salir" />Cerrar sesión
+            </button>
+          </li>
+        </ul>
+      </nav>
+      <p class="marca">ScaleKine</p>
+    </div>
+  </aside>
+}
 <main class="contenido">
   <router-outlet />
 </main>
+@if (soloTarjeta()) {
+  <footer class="pie-tarjeta no-imprimir">
+    @if (usuario(); as u) {
+      <p class="quien">{{ u.nombreUsuario }} · {{ nombreDelRol() }}</p>
+    }
+    <button type="button" class="boton secundario" [disabled]="cerrando()" (click)="cerrarSesion()">
+      <app-icono nombre="salir" />Cerrar sesión
+    </button>
+  </footer>
+}

@@ -1,19 +1,127 @@
+/*
+ * Sistema visual de ScaleKine (DESIGN.md, RNF-15).
+ * Único lugar con valores de color: los CSS de cada componente usan solo estos tokens.
+ * Modo claro en :root; el oscuro sigue al sistema operativo (prefers-color-scheme).
+ */
+
 :root {
-  --texto: #1d2329;
-  --texto-tenue: #5b6670;
-  --fondo: #f6f7f8;
+  /* Paleta base (DESIGN.md §2.1) */
+  --fondo: #f5f8f9;
   --superficie: #ffffff;
-  --borde: #dde1e5;
-  color-scheme: light;
-  font-family:
-    system-ui,
-    -apple-system,
-    'Segoe UI',
-    Roboto,
+  --superficie-2: #eef3f4;
+  --borde: #d5dfe1;
+  --borde-control: #7a8b8f;
+  --texto: #0b0f10;
+  --texto-2: #4a5a5e;
+  --lateral: #0b0f10;
+  --lateral-texto: #e8f0f2;
+  --lateral-texto-2: #9fb0b5;
+  --lateral-activo: #2cc5be;
+  --lateral-sobre-activo: #04201f;
+  --lateral-borde: rgb(255 255 255 / 0.12);
+  --lateral-hover: rgb(255 255 255 / 0.08);
+
+  /* Acento (§2.2) */
+  --primario: #0a7672;
+  --sobre-primario: #ffffff;
+  --primario-hover: #085f5c;
+  --acento: #0e9f9a;
+  --acento-suave: #e3f6f5;
+  --celeste: #5bc0eb;
+  --info: #1170a0;
+
+  /* Colores de acción (§2.3) y mensajes (§2.5) */
+  --advertencia: #b45309;
+  --sobre-advertencia: #ffffff;
+  --advertencia-hover: #92400e;
+  --peligro: #c62828;
+  --sobre-peligro: #ffffff;
+  --peligro-hover: #a32020;
+  --exito: #15803d;
+  --fondo-dialogo: rgb(0 0 0 / 0.45);
+
+  /* Estados del turno (§2.4) */
+  --estado-reservado-texto: #0b5f86;
+  --estado-reservado-fondo: #e3f3fb;
+  --estado-en_espera-texto: #8a4b00;
+  --estado-en_espera-fondo: #fff1d6;
+  --estado-asistio-texto: #13652f;
+  --estado-asistio-fondo: #e2f5e8;
+  --estado-no_asistio-texto: #a11f1f;
+  --estado-no_asistio-fondo: #fde6e6;
+  --estado-anulado-texto: #4a5a5e;
+  --estado-anulado-fondo: #ecefef;
+
+  /* Tipografía (§3) */
+  --fuente:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, Roboto, 'Helvetica Neue', Arial,
     sans-serif;
-  color: var(--texto);
-  background: var(--fondo);
+  --texto-titulo: 1.5rem;
+  --texto-subtitulo: 1.125rem;
+  --texto-base: 1rem;
+  --texto-tabla: 0.9375rem;
+  --texto-chico: 0.8125rem;
+
+  /* Espaciado, forma y elevación (§4) */
+  --e-1: 0.25rem;
+  --e-2: 0.5rem;
+  --e-3: 0.75rem;
+  --e-4: 1rem;
+  --e-5: 1.5rem;
+  --e-6: 2rem;
+  --e-7: 3rem;
+  --radio-chico: 6px;
+  --radio: 10px;
+  --radio-grande: 14px;
+  --sombra-1: 0 1px 2px rgb(0 0 0 / 0.06), 0 1px 1px rgb(0 0 0 / 0.04);
+  --sombra-2: 0 8px 24px rgb(0 0 0 / 0.12);
+  --alto-control: 2.5rem;
+
+  color-scheme: light;
 }
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --fondo: #0b0f10;
+    --superficie: #141a1c;
+    --superficie-2: #1c2427;
+    --borde: #2a3438;
+    --borde-control: #5c6b70;
+    --texto: #e8f0f2;
+    --texto-2: #9fb0b5;
+
+    --primario: #2cc5be;
+    --sobre-primario: #04201f;
+    --primario-hover: #3dd3cc;
+    --acento: #2cc5be;
+    --acento-suave: #0f2a29;
+    --info: #8fd3f5;
+
+    --advertencia: #f2a93b;
+    --sobre-advertencia: #1f1300;
+    --advertencia-hover: #f7bc66;
+    --peligro: #ff6b6b;
+    --sobre-peligro: #1f0000;
+    --peligro-hover: #ff8585;
+    --exito: #7edb9c;
+
+    --estado-reservado-texto: #8fd3f5;
+    --estado-reservado-fondo: #0f2a38;
+    --estado-en_espera-texto: #f7c46c;
+    --estado-en_espera-fondo: #33240a;
+    --estado-asistio-texto: #7edb9c;
+    --estado-asistio-fondo: #0f2e1b;
+    --estado-no_asistio-texto: #ff9c9c;
+    --estado-no_asistio-fondo: #3a1414;
+    --estado-anulado-texto: #a9b6ba;
+    --estado-anulado-fondo: #1f2629;
+
+    --sombra-1: none;
+    color-scheme: dark;
+  }
+}
+
+/* Base */
 
 * {
   box-sizing: border-box;
@@ -21,172 +129,546 @@
 
 body {
   margin: 0;
+  font: 400 var(--texto-base) / 1.5 var(--fuente);
+  color: var(--texto);
+  background: var(--fondo);
 }
 
 h1 {
-  font-size: 1.5rem;
-  margin: 0 0 0.5rem;
+  margin: 0 0 var(--e-4);
+  font-size: var(--texto-titulo);
+  font-weight: 600;
+  line-height: 1.25;
 }
 
 h2 {
-  font-size: 1.125rem;
+  margin: var(--e-5) 0 var(--e-3);
+  font-size: var(--texto-subtitulo);
+  font-weight: 600;
+  line-height: 1.35;
 }
 
-:focus-visible {
-  outline: 3px solid #1a5fb4;
-  outline-offset: 2px;
+h3 {
+  margin: var(--e-4) 0 var(--e-2);
+  font-size: var(--texto-base);
+  font-weight: 600;
+}
+
+p {
+  margin: 0 0 var(--e-3);
 }
 
 a {
-  color: #1a5fb4;
+  color: var(--primario);
 }
 
+:focus-visible {
+  outline: 2px solid var(--acento);
+  outline-offset: 2px;
+}
+
+[tabindex='-1']:focus {
+  outline: none;
+}
+
+ul {
+  padding-left: var(--e-5);
+}
+
+dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--e-1) var(--e-4);
+  margin: 0 0 var(--e-4);
+}
+
+dt {
+  color: var(--texto-2);
+}
+
+dd {
+  margin: 0;
+}
+
+details summary {
+  cursor: pointer;
+}
+
+app-icono {
+  display: inline-flex;
+  flex: none;
+  line-height: 0;
+}
+
+/* Tarjeta */
+
 .tarjeta {
-  max-width: 28rem;
-  margin: 2rem auto;
-  padding: 1.5rem;
+  max-width: 25rem;
+  margin: var(--e-5) auto;
+  padding: var(--e-5);
   background: var(--superficie);
   border: 1px solid var(--borde);
-  border-radius: 0.5rem;
+  border-radius: var(--radio);
+  box-shadow: var(--sombra-1);
 }
+
+.tarjeta.ancha {
+  max-width: 44rem;
+  margin: 0 0 var(--e-4);
+}
+
+.marca-tarjeta {
+  margin: 0 0 var(--e-4);
+  font-size: var(--texto-titulo);
+  font-weight: 600;
+  text-align: center;
+}
+
+.tarjeta h2:first-child {
+  margin-top: 0;
+}
+
+/* Formularios y campos */
 
 .formulario {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
-  margin-top: 1rem;
+  gap: var(--e-4);
+  margin-top: var(--e-4);
 }
 
 .campo {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  gap: var(--e-1);
 }
 
 .campo label {
   font-weight: 600;
 }
 
-.campo input:not([type='checkbox']) {
-  padding: 0.5rem 0.625rem;
+.campo > p:not(.error) {
+  margin: 0;
+  font-size: var(--texto-chico);
+  color: var(--texto-2);
+}
+
+.campo input:not([type='checkbox'], [type='radio']),
+.campo select,
+select {
+  height: var(--alto-control);
+  padding: 0 var(--e-3);
   font: inherit;
-  border: 1px solid #6b7680;
-  border-radius: 0.25rem;
+  color: var(--texto);
+  background: var(--superficie);
+  border: 1px solid var(--borde-control);
+  border-radius: var(--radio-chico);
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease,
+    color 150ms ease;
 }
 
 .campo input[aria-invalid='true'] {
-  border-color: #b3261e;
+  border-color: var(--peligro);
+}
+
+.campo input:disabled,
+select:disabled {
+  background: var(--superficie-2);
+  cursor: not-allowed;
 }
 
 .campo.casilla {
   flex-direction: row;
   align-items: center;
-  gap: 0.5rem;
-  margin: 1rem 0;
+  gap: var(--e-2);
 }
 
-.error {
+input[type='checkbox'],
+input[type='radio'] {
+  width: 1.125rem;
+  height: 1.125rem;
   margin: 0;
-  color: #b3261e;
-  font-size: 0.9375rem;
+  accent-color: var(--primario);
 }
 
-.aviso {
-  margin: 0.75rem 0;
-  padding: 0.5rem 0.75rem;
-  background: #eaf2fb;
-  border-left: 4px solid #1a5fb4;
+fieldset {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--e-2) var(--e-4);
+  margin: 0;
+  padding: var(--e-3) var(--e-4);
+  border: 1px solid var(--borde);
+  border-radius: var(--radio);
 }
+
+legend {
+  padding: 0 var(--e-1);
+  font-weight: 600;
+}
+
+fieldset label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--e-2);
+  min-height: var(--alto-control);
+}
+
+.formulario.en-linea {
+  flex-flow: row wrap;
+  align-items: flex-end;
+}
+
+.formulario.en-linea .campo {
+  min-width: 14rem;
+}
+
+.enlace-icono {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--e-2);
+}
+
+/* Botones: principal, secundario, advertencia, peligro y solo ícono */
 
 .boton {
-  padding: 0.625rem 1rem;
-  font: inherit;
-  font-weight: 600;
-  color: #ffffff;
-  background: #1a5fb4;
-  border: 1px solid #1a5fb4;
-  border-radius: 0.25rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--e-2);
+  min-height: var(--alto-control);
+  padding: 0 var(--e-4);
+  font: 600 var(--texto-tabla) / 1.2 var(--fuente);
+  color: var(--sobre-primario);
+  background: var(--primario);
+  border: 1px solid transparent;
+  border-radius: var(--radio);
   cursor: pointer;
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease,
+    color 150ms ease;
+}
+
+.boton:hover:not(:disabled) {
+  background: var(--primario-hover);
 }
 
 .boton.secundario {
-  color: #1a5fb4;
-  background: var(--superficie);
+  color: var(--texto);
+  background: transparent;
+  border-color: var(--borde-control);
+}
+
+.boton.secundario:hover:not(:disabled) {
+  background: var(--superficie-2);
+}
+
+.boton.advertencia {
+  color: var(--sobre-advertencia);
+  background: var(--advertencia);
+}
+
+.boton.advertencia:hover:not(:disabled) {
+  background: var(--advertencia-hover);
+}
+
+.boton.peligro {
+  color: var(--sobre-peligro);
+  background: var(--peligro);
+}
+
+.boton.peligro:hover:not(:disabled) {
+  background: var(--peligro-hover);
+}
+
+.boton.solo-icono {
+  width: var(--alto-control);
+  padding: 0;
 }
 
 .boton:disabled {
-  opacity: 0.6;
+  opacity: 0.5;
   cursor: not-allowed;
 }
 
 .enlace {
   padding: 0;
   font: inherit;
-  color: #1a5fb4;
+  color: var(--primario);
   background: none;
   border: 0;
   text-decoration: underline;
   cursor: pointer;
 }
 
+.enlace:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .acciones {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.75rem;
+  gap: var(--e-2);
 }
 
-.codigos {
-  columns: 2;
-  padding-left: 1.25rem;
-  font-size: 1.0625rem;
+/* Mensajes: error, aviso, información y éxito (el ícono es un app-icono dentro del mensaje) */
+
+.error,
+.aviso,
+.info,
+.exito {
+  position: relative;
+  margin: var(--e-3) 0;
+  padding: var(--e-2) var(--e-3) var(--e-2) 2.5rem;
+  font-size: var(--texto-tabla);
+  background: var(--superficie);
+  border-left: 4px solid;
+  border-radius: var(--radio-chico);
 }
 
-.qr {
-  display: block;
-  margin: 1rem auto;
+.error > app-icono,
+.aviso > app-icono,
+.info > app-icono,
+.exito > app-icono {
+  position: absolute;
+  top: 0.625rem;
+  left: var(--e-3);
 }
 
-.solo-imprimir {
-  display: none;
+.error {
+  color: var(--peligro);
+  border-color: var(--peligro);
 }
 
-@media print {
-  .encabezado,
-  .no-imprimir {
-    display: none !important;
-  }
-
-  .solo-imprimir {
-    display: block;
-  }
+.aviso {
+  border-color: var(--advertencia);
 }
 
-.tarjeta.ancha {
-  max-width: 44rem;
-  margin-left: 0;
-  margin-right: 0;
+.aviso > app-icono {
+  color: var(--advertencia);
 }
 
-.boton.peligro {
-  background: #b3261e;
-  border-color: #b3261e;
+.info {
+  border-color: var(--info);
 }
+
+.info > app-icono {
+  color: var(--info);
+}
+
+.exito {
+  border-color: var(--exito);
+}
+
+.exito > app-icono {
+  color: var(--exito);
+}
+
+.aviso h2 {
+  margin: 0 0 var(--e-1);
+  font-size: var(--texto-base);
+}
+
+/* Error de un campo: sin caja, con el ícono a la izquierda del texto */
+.campo .error {
+  margin: 0;
+  padding: 0 0 0 1.375rem;
+  font-size: var(--texto-chico);
+  background: none;
+  border-left: 0;
+}
+
+.campo .error > app-icono {
+  top: 0.125rem;
+  left: 0;
+}
+
+.campo .error > app-icono svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+/* Tablas: compactas, con encabezado fijo cuando la tabla desplaza */
 
 .tabla-contenedor {
-  overflow-x: auto;
+  max-height: 75vh;
+  overflow: auto;
+  background: var(--superficie);
+  border: 1px solid var(--borde);
+  border-radius: var(--radio);
+  box-shadow: var(--sombra-1);
 }
 
 .tabla {
   width: 100%;
+  font-size: var(--texto-tabla);
+  line-height: 1.4;
   border-collapse: collapse;
 }
 
 .tabla th,
 .tabla td {
-  padding: 0.5rem 0.625rem;
+  min-height: 2.75rem;
+  padding: var(--e-2) var(--e-3);
   text-align: left;
-  vertical-align: top;
+  vertical-align: middle;
   border-bottom: 1px solid var(--borde);
+}
+
+.tabla th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  font-size: var(--texto-chico);
+  font-weight: 600;
+  color: var(--texto-2);
+  background: var(--superficie-2);
+}
+
+.tabla tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.tabla tbody tr:hover {
+  background: var(--acento-suave);
+}
+
+.tabla tr.pendiente td:first-child {
+  box-shadow: inset 4px 0 0 var(--advertencia);
+}
+
+.tabla td strong {
+  font-weight: 600;
+}
+
+.tabla td:first-child,
+.hora {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.tabla td .acciones {
+  min-width: 11rem;
+}
+
+.tabla td > p {
+  margin: var(--e-2) 0 0;
+}
+
+/* Pastillas de estado del turno (§2.4): color, ícono y texto */
+
+.estado {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 10px 2px 8px;
+  font-size: var(--texto-chico);
+  font-weight: 500;
+  line-height: 1.4;
+  white-space: nowrap;
+  border-radius: 999px;
+}
+
+.estado-reservado {
+  color: var(--estado-reservado-texto);
+  background: var(--estado-reservado-fondo);
+}
+
+.estado-en_espera {
+  color: var(--estado-en_espera-texto);
+  background: var(--estado-en_espera-fondo);
+}
+
+.estado-asistio {
+  color: var(--estado-asistio-texto);
+  background: var(--estado-asistio-fondo);
+}
+
+.estado-no_asistio {
+  color: var(--estado-no_asistio-texto);
+  background: var(--estado-no_asistio-fondo);
+}
+
+.estado-anulado {
+  color: var(--estado-anulado-texto);
+  background: var(--estado-anulado-fondo);
+  text-decoration: line-through;
+}
+
+/* Diálogo */
+
+.dialogo-fondo {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--e-4);
+  background: var(--fondo-dialogo);
+}
+
+.dialogo {
+  width: 100%;
+  max-width: 36rem;
+  max-height: 100%;
+  overflow-y: auto;
+  padding: var(--e-5);
+  background: var(--superficie);
+  border: 1px solid var(--borde);
+  border-radius: var(--radio-grande);
+  box-shadow: var(--sombra-2);
+}
+
+.dialogo h2:first-child {
+  margin-top: 0;
+}
+
+.dialogo[data-nivel='advertencia'] {
+  border-top: 4px solid var(--advertencia);
+}
+
+.dialogo[data-nivel='peligro'] {
+  border-top: 4px solid var(--peligro);
+}
+
+/* Indicador de conexión (RF-45, T-32) */
+
+.conexion {
+  display: flex;
+  align-items: center;
+  gap: var(--e-2);
+  margin: 0 0 var(--e-4);
+  padding: var(--e-2) var(--e-3);
+  font-size: var(--texto-tabla);
+  background: var(--superficie);
+  border-left: 4px solid var(--advertencia);
+  border-radius: var(--radio-chico);
+}
+
+.conexion app-icono {
+  color: var(--advertencia);
+}
+
+/* Utilidades */
+
+.codigos {
+  columns: 2;
+  padding-left: var(--e-5);
+  font-size: var(--texto-subtitulo);
+  font-variant-numeric: tabular-nums;
+}
+
+.qr {
+  display: block;
+  margin: var(--e-4) auto;
+}
+
+.solo-imprimir {
+  display: none;
 }
 
 .solo-lectores {
@@ -198,33 +680,85 @@ a {
   white-space: nowrap;
 }
 
-.dialogo-fondo {
-  position: fixed;
-  inset: 0;
-  z-index: 10;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 1rem;
-  background: rgb(0 0 0 / 50%);
+/* Tablas de agenda como tarjetas apiladas por debajo de 600 px (§6) */
+
+@media (max-width: 599px) {
+  .tabla.apilable thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+
+  .tabla.apilable,
+  .tabla.apilable tbody,
+  .tabla.apilable tr {
+    display: block;
+  }
+
+  .tabla.apilable tr {
+    padding: var(--e-2) var(--e-3);
+    border-bottom: 1px solid var(--borde);
+  }
+
+  .tabla.apilable td {
+    display: block;
+    padding: var(--e-1) 0;
+    border: 0;
+  }
+
+  .tabla.apilable td::before {
+    display: block;
+    content: attr(data-label);
+    font-size: var(--texto-chico);
+    font-weight: 500;
+    color: var(--texto-2);
+  }
+
+  .tabla.apilable td .acciones {
+    min-width: 0;
+  }
+
+  .tabla.apilable tr.pendiente td:first-child {
+    box-shadow: none;
+  }
+
+  .tabla.apilable tr.pendiente {
+    box-shadow: inset 4px 0 0 var(--advertencia);
+  }
+
+  .tarjeta {
+    margin: var(--e-4) auto;
+    padding: var(--e-4);
+  }
+
+  .codigos {
+    columns: 1;
+  }
 }
 
-.dialogo {
-  box-sizing: border-box;
-  width: 100%;
-  max-width: 36rem;
-  max-height: 100%;
-  overflow-y: auto;
-  padding: 1.5rem;
-  background: var(--superficie);
-  border: 1px solid var(--borde);
-  border-radius: 0.5rem;
+/* Sin movimiento si el sistema lo pide (§8) */
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+  }
 }
 
-.tabla .estado-cerrado {
-  color: #5c5c5c;
-}
+/* Impresión en blanco y negro: sin barra ni botones */
 
-.tabla tr.pendiente {
-  background: #fff7e0;
+@media print {
+  .no-imprimir {
+    display: none !important;
+  }
+
+  .solo-imprimir {
+    display: block;
+  }
+
+  body {
+    color: #000;
+    background: #fff;
+  }
 }

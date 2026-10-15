@@ -3,6 +3,7 @@ import { Consultorio, type DatosConsultorio } from '../nucleo/consultorio/consul
 import { ErrorApi } from '../nucleo/http/error-api';
 import { enfocar, mensajeDe } from '../nucleo/ui/enfocar';
 import { VolverAlInicio } from './volver-al-inicio';
+import { Icono } from '../nucleo/ui/icono';
 
 type Campo = 'nombre' | 'direccion' | 'telefono';
 type Errores = Partial<Record<Campo, string>>;
@@ -21,16 +22,18 @@ const MAXIMO: Readonly<Record<Campo, number>> = { nombre: 120, direccion: 200, t
  */
 @Component({
   selector: 'app-consultorio',
-  imports: [VolverAlInicio],
+  imports: [VolverAlInicio, Icono],
   template: `
     <app-volver-al-inicio />
     <h1>Datos del consultorio</h1>
 
     @if (aviso(); as mensaje) {
-      <p class="aviso" role="status">{{ mensaje }}</p>
+      <p class="info" role="status"><app-icono nombre="info" />{{ mensaje }}</p>
     }
     @if (errorGeneral(); as mensaje) {
-      <p class="error" id="error-consultorio" role="alert" tabindex="-1">{{ mensaje }}</p>
+      <p class="error" id="error-consultorio" role="alert" tabindex="-1">
+        <app-icono nombre="alerta" />{{ mensaje }}
+      </p>
     }
 
     @if (cargando()) {
@@ -64,7 +67,7 @@ const MAXIMO: Readonly<Record<Campo, number>> = { nombre: 120, direccion: 200, t
               [attr.aria-describedby]="errores().nombre ? 'error-nombre' : null"
             />
             @if (errores().nombre; as mensaje) {
-              <p class="error" id="error-nombre">{{ mensaje }}</p>
+              <p class="error" id="error-nombre"><app-icono nombre="alerta" />{{ mensaje }}</p>
             }
           </div>
           <div class="campo">
@@ -80,7 +83,7 @@ const MAXIMO: Readonly<Record<Campo, number>> = { nombre: 120, direccion: 200, t
               [attr.aria-describedby]="errores().direccion ? 'error-direccion' : null"
             />
             @if (errores().direccion; as mensaje) {
-              <p class="error" id="error-direccion">{{ mensaje }}</p>
+              <p class="error" id="error-direccion"><app-icono nombre="alerta" />{{ mensaje }}</p>
             }
           </div>
           <div class="campo">
@@ -96,7 +99,7 @@ const MAXIMO: Readonly<Record<Campo, number>> = { nombre: 120, direccion: 200, t
               [attr.aria-describedby]="errores().telefono ? 'error-telefono' : null"
             />
             @if (errores().telefono; as mensaje) {
-              <p class="error" id="error-telefono">{{ mensaje }}</p>
+              <p class="error" id="error-telefono"><app-icono nombre="alerta" />{{ mensaje }}</p>
             }
           </div>
           <button type="submit" class="boton" [disabled]="guardando()">

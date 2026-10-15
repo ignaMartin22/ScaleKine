@@ -6,8 +6,9 @@
     "start": "ng serve",
     "build": "ng build",
     "watch": "ng build --watch --configuration development",
-    "test": "ng test --watch=false",
+    "test": "node scripts/verificar-estilos.mjs && ng test --watch=false",
     "verificar-csp": "node scripts/verificar-csp.mjs",
+    "verificar-estilos": "node scripts/verificar-estilos.mjs",
     "lint": "ng lint"
   },
   "private": true,

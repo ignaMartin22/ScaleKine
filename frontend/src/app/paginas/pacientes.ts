@@ -16,6 +16,7 @@ import {
   type ErroresPaciente,
 } from './formulario-paciente';
 import { VolverAlInicio } from './volver-al-inicio';
+import { Icono } from '../nucleo/ui/icono';
 
 type Modo = 'dni' | 'nombre';
 
@@ -26,13 +27,15 @@ type Modo = 'dni' | 'nombre';
  */
 @Component({
   selector: 'app-pacientes',
-  imports: [RouterLink, VolverAlInicio, FormularioPaciente],
+  imports: [RouterLink, VolverAlInicio, FormularioPaciente, Icono],
   template: `
     <app-volver-al-inicio />
     <h1>Pacientes</h1>
 
     @if (errorGeneral(); as mensaje) {
-      <p class="error" id="error-pacientes" role="alert" tabindex="-1">{{ mensaje }}</p>
+      <p class="error" id="error-pacientes" role="alert" tabindex="-1">
+        <app-icono nombre="alerta" />{{ mensaje }}
+      </p>
     }
 
     <section class="tarjeta ancha" aria-labelledby="titulo-buscar">
@@ -74,11 +77,11 @@ type Modo = 'dni' | 'nombre';
             [attr.aria-describedby]="errorBusqueda() ? 'error-buscar-texto' : null"
           />
           @if (errorBusqueda(); as mensaje) {
-            <p class="error" id="error-buscar-texto">{{ mensaje }}</p>
+            <p class="error" id="error-buscar-texto"><app-icono nombre="alerta" />{{ mensaje }}</p>
           }
         </div>
         <button type="submit" class="boton" [disabled]="buscando()">
-          {{ buscando() ? 'Buscando…' : 'Buscar' }}
+          <app-icono nombre="buscar" />{{ buscando() ? 'Buscando…' : 'Buscar' }}
         </button>
       </form>
 

@@ -17,6 +17,7 @@ import {
   type ErroresPaciente,
 } from './formulario-paciente';
 import { VolverAlInicio } from './volver-al-inicio';
+import { Icono } from '../nucleo/ui/icono';
 
 interface Consulta {
   fecha: string;
@@ -57,7 +58,7 @@ export function esFinDeSemana(fecha: string): boolean {
  */
 @Component({
   selector: 'app-asignar-turno',
-  imports: [VolverAlInicio, FormularioPaciente],
+  imports: [VolverAlInicio, FormularioPaciente, Icono],
   template: `
     <app-volver-al-inicio />
     <h1>Asignar turno</h1>
@@ -70,7 +71,9 @@ export function esFinDeSemana(fecha: string): boolean {
           {{ legible(a.turno.fecha) }} a las {{ a.turno.horaInicio }}.
         </p>
         @if (errorTicket(); as mensaje) {
-          <p class="error" id="error-ticket" role="alert" tabindex="-1">{{ mensaje }}</p>
+          <p class="error" id="error-ticket" role="alert" tabindex="-1">
+            <app-icono nombre="alerta" />{{ mensaje }}
+          </p>
         }
         <div class="acciones">
           <button
@@ -80,10 +83,12 @@ export function esFinDeSemana(fecha: string): boolean {
             [disabled]="descargando()"
             (click)="descargarTicket(a.turno.id)"
           >
-            {{ descargando() ? 'Descargando…' : 'Descargar ticket (PDF)' }}
+            <app-icono nombre="ticket" />{{
+              descargando() ? 'Descargando…' : 'Descargar ticket (PDF)'
+            }}
           </button>
           <button type="button" class="boton secundario" id="asignar-otro" (click)="reiniciar()">
-            Asignar otro turno
+            <app-icono nombre="asignar" />Asignar otro turno
           </button>
         </div>
       </section>
@@ -102,7 +107,7 @@ export function esFinDeSemana(fecha: string): boolean {
               [attr.aria-describedby]="errorFecha() ? 'error-fecha-turno' : null"
             />
             @if (errorFecha(); as mensaje) {
-              <p class="error" id="error-fecha-turno">{{ mensaje }}</p>
+              <p class="error" id="error-fecha-turno"><app-icono nombre="alerta" />{{ mensaje }}</p>
             }
           </div>
           <fieldset>
@@ -130,7 +135,7 @@ export function esFinDeSemana(fecha: string): boolean {
           </fieldset>
           <div class="acciones">
             <button type="submit" class="boton" [disabled]="cargando()">
-              {{ cargando() ? 'Buscando…' : 'Ver disponibilidad' }}
+              <app-icono nombre="agenda" />{{ cargando() ? 'Buscando…' : 'Ver disponibilidad' }}
             </button>
           </div>
         </form>
@@ -140,7 +145,9 @@ export function esFinDeSemana(fecha: string): boolean {
         <section class="tarjeta ancha" aria-labelledby="titulo-paciente">
           <h2 id="titulo-paciente">2. Paciente</h2>
           @if (errorPaciente(); as mensaje) {
-            <p class="error" id="error-paciente" role="alert" tabindex="-1">{{ mensaje }}</p>
+            <p class="error" id="error-paciente" role="alert" tabindex="-1">
+              <app-icono nombre="alerta" />{{ mensaje }}
+            </p>
           }
           @if (paciente(); as p) {
             <p id="paciente-elegido" role="status">Paciente: {{ p.nombre }}, DNI {{ p.dni }}.</p>
@@ -167,12 +174,14 @@ export function esFinDeSemana(fecha: string): boolean {
                   [attr.aria-describedby]="errorDni() ? 'error-dni-turno' : null"
                 />
                 @if (errorDni(); as mensaje) {
-                  <p class="error" id="error-dni-turno">{{ mensaje }}</p>
+                  <p class="error" id="error-dni-turno">
+                    <app-icono nombre="alerta" />{{ mensaje }}
+                  </p>
                 }
               </div>
               <div class="acciones">
                 <button type="submit" class="boton" [disabled]="buscando()">
-                  {{ buscando() ? 'Buscando…' : 'Buscar paciente' }}
+                  <app-icono nombre="buscar" />{{ buscando() ? 'Buscando…' : 'Buscar paciente' }}
                 </button>
               </div>
             </form>
@@ -221,13 +230,18 @@ export function esFinDeSemana(fecha: string): boolean {
             }
           </p>
           @if (errorFranja(); as mensaje) {
-            <p class="error" id="error-franja" role="alert" tabindex="-1">{{ mensaje }}</p>
+            <p class="error" id="error-franja" role="alert" tabindex="-1">
+              <app-icono nombre="alerta" />{{ mensaje }}
+            </p>
           }
           @if (avisoFranja(); as mensaje) {
-            <p class="aviso" id="aviso-franja" role="status">{{ mensaje }}</p>
+            <p class="aviso" id="aviso-franja" role="status">
+              <app-icono nombre="alerta" />{{ mensaje }}
+            </p>
           }
           @if (errorDisponibilidad(); as mensaje) {
             <p class="error" id="error-disponibilidad" role="alert" tabindex="-1">
+              <app-icono nombre="alerta" />
               {{ mensaje }}
             </p>
           }
@@ -303,15 +317,19 @@ export function esFinDeSemana(fecha: string): boolean {
                 Monto en pesos, con hasta dos decimales. Se pueden cargar después.
               </p>
               @if (errorCoseguros(); as mensaje) {
-                <p class="error" id="error-coseguros" role="alert" tabindex="-1">{{ mensaje }}</p>
+                <p class="error" id="error-coseguros" role="alert" tabindex="-1">
+                  <app-icono nombre="alerta" />{{ mensaje }}
+                </p>
               }
             </div>
             @if (errorConfirmar(); as mensaje) {
-              <p class="error" id="error-confirmar" role="alert" tabindex="-1">{{ mensaje }}</p>
+              <p class="error" id="error-confirmar" role="alert" tabindex="-1">
+                <app-icono nombre="alerta" />{{ mensaje }}
+              </p>
             }
             <div class="acciones">
               <button type="submit" class="boton" id="confirmar-turno" [disabled]="confirmando()">
-                {{ confirmando() ? 'Asignando…' : 'Confirmar turno' }}
+                <app-icono nombre="asignar" />{{ confirmando() ? 'Asignando…' : 'Confirmar turno' }}
               </button>
             </div>
           </form>

@@ -4,9 +4,11 @@ import { ErrorApi } from '../nucleo/http/error-api';
 import { destinoDeSesion } from '../nucleo/sesion/modelo';
 import { Sesion } from '../nucleo/sesion/sesion';
 import { enfocar, mensajeDe } from '../nucleo/ui/enfocar';
+import { Icono } from '../nucleo/ui/icono';
 
 /** Verificación del segundo factor con un código de la aplicación o uno de recuperación (RNF-04). */
 @Component({
+  imports: [Icono],
   selector: 'app-verificar-segundo-factor',
   template: `
     <section class="tarjeta">
@@ -17,7 +19,9 @@ import { enfocar, mensajeDe } from '../nucleo/ui/enfocar';
       </p>
 
       @if (errorGeneral(); as mensaje) {
-        <p class="error" id="error-formulario" role="alert" tabindex="-1">{{ mensaje }}</p>
+        <p class="error" id="error-formulario" role="alert" tabindex="-1">
+          <app-icono nombre="alerta" />{{ mensaje }}
+        </p>
       }
 
       <form class="formulario" novalidate (submit)="enviar($event, codigo.value)">
@@ -35,7 +39,7 @@ import { enfocar, mensajeDe } from '../nucleo/ui/enfocar';
             [attr.aria-describedby]="errorCodigo() ? 'ayuda-codigo error-codigo' : 'ayuda-codigo'"
           />
           @if (errorCodigo(); as mensaje) {
-            <p class="error" id="error-codigo">{{ mensaje }}</p>
+            <p class="error" id="error-codigo"><app-icono nombre="alerta" />{{ mensaje }}</p>
           }
         </div>
         <button type="submit" class="boton" [disabled]="enviando()">

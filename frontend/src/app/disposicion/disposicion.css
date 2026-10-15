@@ -1,39 +1,180 @@
 :host {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: 15rem minmax(0, 1fr);
   min-height: 100dvh;
 }
 
-.encabezado {
+.lateral {
+  position: sticky;
+  top: 0;
   display: flex;
-  align-items: baseline;
-  gap: 1rem;
-  padding: 0.75rem 1rem;
-  border-bottom: 1px solid var(--borde);
-  background: var(--superficie);
+  flex-direction: column;
+  gap: var(--e-1);
+  height: 100dvh;
+  padding: var(--e-4) var(--e-3);
+  overflow-y: auto;
+  color: var(--lateral-texto);
+  background: var(--lateral);
 }
 
-.marca {
+.consultorio {
+  margin: 0;
+  padding: 0 var(--e-2) var(--e-3);
+  font-size: var(--texto-subtitulo);
   font-weight: 600;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
-.seccion {
-  color: var(--texto-tenue);
+ul {
+  display: grid;
+  gap: var(--e-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
-.usuario {
-  margin-left: auto;
-  color: var(--texto-tenue);
-  font-size: 0.875rem;
+.lateral a,
+.lateral button {
+  display: flex;
+  align-items: center;
+  gap: var(--e-3);
+  width: 100%;
+  min-height: var(--alto-control);
+  padding: var(--e-2) var(--e-3);
+  font: inherit;
+  font-size: var(--texto-tabla);
+  color: var(--lateral-texto);
+  text-align: left;
+  text-decoration: none;
+  background: none;
+  border: 0;
+  border-radius: var(--radio-chico);
+  cursor: pointer;
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease,
+    color 150ms ease;
+}
+
+.lateral a:hover,
+.lateral button:hover:not(:disabled) {
+  background: var(--lateral-hover);
+}
+
+.lateral a.activo {
+  font-weight: 600;
+  color: var(--lateral-sobre-activo);
+  background: var(--lateral-activo);
+}
+
+.lateral button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.pie {
+  display: grid;
+  gap: var(--e-1);
+  margin-top: auto;
+  padding-top: var(--e-3);
+  border-top: 1px solid var(--lateral-borde);
+}
+
+.quien,
+.marca {
+  margin: 0;
+  padding: 0 var(--e-3);
+  font-size: var(--texto-chico);
+  font-weight: 500;
+  color: var(--lateral-texto-2);
 }
 
 .contenido {
-  flex: 1;
-  padding: 1rem;
+  min-width: 0;
+  max-width: 75rem;
+  padding: var(--e-6);
 }
 
-.menu {
+.barra-superior {
+  display: none;
+}
+
+@media (max-width: 899px) {
+  :host {
+    display: block;
+  }
+
+  .barra-superior {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--e-3);
+    padding: var(--e-2) var(--e-4);
+    color: var(--lateral-texto);
+    background: var(--lateral);
+  }
+
+  .barra-superior .consultorio {
+    padding: 0;
+    font-size: var(--texto-base);
+  }
+
+  .barra-superior .boton.secundario {
+    color: var(--lateral-texto);
+    border-color: var(--lateral-texto-2);
+  }
+
+  .barra-superior .boton.secundario:hover:not(:disabled) {
+    background: var(--lateral-hover);
+  }
+
+  .lateral {
+    position: fixed;
+    inset: 3.5rem 0 0;
+    z-index: 6;
+    display: none;
+    width: 100%;
+    max-width: 20rem;
+    height: auto;
+  }
+
+  .lateral.abierta {
+    display: flex;
+  }
+
+  .lateral > .consultorio {
+    display: none;
+  }
+
+  .contenido {
+    padding: var(--e-4);
+  }
+}
+
+:host(.solo-tarjeta) {
   display: flex;
-  align-items: baseline;
-  gap: 1rem;
+  flex-direction: column;
+  align-items: center;
+  padding: var(--e-5) var(--e-4);
+}
+
+:host(.solo-tarjeta) .contenido {
+  width: 100%;
+  max-width: 25rem;
+  padding: 0;
+}
+
+.pie-tarjeta {
+  display: grid;
+  justify-items: center;
+  gap: var(--e-2);
+}
+
+.pie-tarjeta .quien {
+  padding: 0;
+  color: var(--texto-2);
 }
