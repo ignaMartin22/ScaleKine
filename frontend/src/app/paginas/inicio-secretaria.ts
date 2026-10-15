@@ -9,6 +9,7 @@ import { RouterLink } from '@angular/router';
     <p>Turnos de todos los kinesiólogos.</p>
     <nav aria-label="Secretaría">
       <ul>
+        <li><a routerLink="/secretaria/agenda">Agenda de turnos</a></li>
         <li><a routerLink="/secretaria/asignar">Asignar turno</a></li>
         <li><a routerLink="/secretaria/pacientes">Pacientes</a></li>
         <li><a routerLink="/secretaria/consultorio">Datos del consultorio</a></li>

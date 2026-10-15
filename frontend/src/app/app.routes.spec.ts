@@ -64,6 +64,18 @@ describe('rutas por rol (RF-01)', () => {
     expect((await navegar('/secretaria', 'kinesiologo')).url).toBe('/kinesiologo');
   });
 
+  it('la secretaría entra a la agenda de turnos (RF-41)', async () => {
+    expect((await navegar('/secretaria/agenda', 'secretaria')).url).toBe('/secretaria/agenda');
+  });
+
+  it('el administrador entra a la agenda de turnos (RF-41)', async () => {
+    expect((await navegar('/secretaria/agenda', 'administrador')).url).toBe('/secretaria/agenda');
+  });
+
+  it('el kinesiólogo no entra a la agenda de turnos (RF-41)', async () => {
+    expect((await navegar('/secretaria/agenda', 'kinesiologo')).url).toBe('/kinesiologo');
+  });
+
   it('la secretaría entra al consultorio', async () => {
     expect((await navegar('/secretaria/consultorio', 'secretaria')).url).toBe(
       '/secretaria/consultorio',

@@ -10,6 +10,7 @@ import {
 import { ActivarSegundoFactor } from './paginas/activar-segundo-factor';
 import { CambiarContrasena } from './paginas/cambiar-contrasena';
 import { ConsultorioPagina } from './paginas/consultorio';
+import { AgendaSecretaria } from './paginas/agenda-secretaria';
 import { AsignarTurno } from './paginas/asignar-turno';
 import { CuentasAdmin } from './paginas/cuentas-admin';
 import { Ingresar } from './paginas/ingresar';
@@ -80,6 +81,7 @@ export const routes: Routes = [
     data: { seccion: 'Agenda' },
     children: [
       { path: '', component: InicioSecretaria },
+      { path: 'agenda', title: 'Agenda de turnos · ScaleKine', component: AgendaSecretaria },
       { path: 'asignar', title: 'Asignar turno · ScaleKine', component: AsignarTurno },
       { path: 'consultorio', title: 'Consultorio · ScaleKine', component: ConsultorioPagina },
       { path: 'pacientes', title: 'Pacientes · ScaleKine', component: PacientesPagina },
