@@ -1,0 +1,102 @@
+# Stack de producción (docs/despliegue.md §6.1). Dos perfiles de despliegue (§3.1):
+#   - administrado (por defecto): sin `db`; DATABASE_URL* apuntan al PostgreSQL administrado.
+#   - económico: COMPOSE_PROFILES=base-local en el .env del host levanta también `db`.
+# Los servicios `respaldo` (perfil `tareas`) y `migraciones` (perfil `migraciones`) no se levantan con
+# `docker compose up`: son tareas de una sola ejecución (`docker compose run --rm <servicio>`).
+# Guía de uso: infra/README.md.
+name: scalekine
+
+services:
+  web: # Caddy + Angular compilado
+    image: ${REGISTRO:-}scalekine-web:${VERSION:-local}
+    build: { context: ., dockerfile: infra/web/Dockerfile }
+    ports:
+      - "${PUERTO_HTTP:-80}:80"
+      - "${PUERTO_HTTPS:-443}:443"
+      - "${PUERTO_HTTPS:-443}:443/udp"
+    volumes: [caddy_data:/data, caddy_config:/config]
+    env_file: [{ path: "${DIR_ENV:-.}/.env.web" }]
+    networks: [frontal]
+    # Sin root: permite a Caddy abrir 80 y 443 sin la capacidad de root.
+    sysctls: { net.ipv4.ip_unprivileged_port_start: 0 }
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    depends_on: [api]
+    restart: unless-stopped
+
+  api: # Node + Express + Socket.io. No publica puertos: solo `web` la alcanza (red `frontal`).
+    image: ${REGISTRO:-}scalekine-api:${VERSION:-local}
+    build: { context: ., dockerfile: infra/api/Dockerfile, target: api }
+    env_file: [{ path: "${DIR_ENV:-.}/.env.api" }]
+    expose: ["3000"]
+    read_only: true
+    user: "node"
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    networks: [frontal, base]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/salud').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 15s
+    depends_on:
+      db: { condition: service_healthy, required: false } # solo existe en el perfil económico
+    restart: unless-stopped
+
+  migraciones: # Una sola ejecución, con scalekine_migraciones (§7): docker compose run --rm migraciones
+    image: ${REGISTRO:-}scalekine-migraciones:${VERSION:-local}
+    build: { context: ., dockerfile: infra/api/Dockerfile, target: migraciones }
+    env_file: [{ path: "${DIR_ENV:-.}/.env.migraciones" }]
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    networks: [base, salida]
+    profiles: ["migraciones"]
+    depends_on:
+      db: { condition: service_healthy, required: false }
+
+  respaldo: # Copia externa diaria (§8.2); la lanza un temporizador de systemd.
+    image: ${REGISTRO:-}scalekine-respaldo:${VERSION:-local}
+    build: { context: ., dockerfile: infra/respaldo/Dockerfile }
+    env_file: [{ path: "${DIR_ENV:-.}/.env.respaldo" }]
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    networks: [base, salida]
+    profiles: ["tareas"]
+    depends_on:
+      db: { condition: service_healthy, required: false }
+
+  db: # Solo en el perfil económico (§3.1). No publica puertos; red interna `base` (§4).
+    image: postgres:18.6-alpine
+    env_file: [{ path: "${DIR_ENV:-.}/.env.db" }]
+    volumes:
+      # Block Storage montado en el host (p. ej. /mnt/scalekine-db). PostgreSQL 18 usa /var/lib/postgresql.
+      - ${DB_DATOS:-db_datos}:/var/lib/postgresql
+      # Crea los tres usuarios de §7 la primera vez que se inicializa el volumen. Es el mismo script
+      # que usa desarrollo; solo se monta ese (no 01-bases.sql, que crea la base de pruebas).
+      - ./infra/postgres/init/02-usuarios.sh:/docker-entrypoint-initdb.d/02-usuarios.sh:ro
+    networks: [base]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    # TODO(T-37): archivo continuo del registro de transacciones (pgBackRest) y su alerta (§8.1, §11).
+    profiles: ["base-local"]
+    restart: unless-stopped
+
+networks:
+  frontal: {} # web <-> api
+  base: # Red interna de la base: solo api, migraciones, respaldo y db. `web` no pertenece.
+    internal: true
+  salida: {} # Salida a internet de las tareas (B2, base administrada)
+
+volumes:
+  caddy_data: {}
+  caddy_config: {}
+  db_datos: {}

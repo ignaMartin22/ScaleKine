@@ -1,0 +1,10 @@
+# Complemento SOLO para pruebas locales del perfil administrado: conecta api, migraciones y respaldo
+# a la red del PostgreSQL temporal de infra/prueba/docker-compose.base-externa.yml.
+services:
+  api: { networks: [externa] }
+  migraciones: { networks: [externa] }
+  respaldo: { networks: [externa] }
+networks:
+  externa:
+    external: true
+    name: ${RED_EXTERNA:-scalekine-prod-b-ext_externa}
