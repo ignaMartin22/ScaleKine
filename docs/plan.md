@@ -507,10 +507,12 @@ arranca en 1 GB de RAM y se amplía si la memoria lo pide. Copia externa diaria 
 distinto, también dentro de la Unión Europea. El detalle, los costos y la operación están en
 [`despliegue.md`](./despliegue.md).
 
-*Descartado por ahora:* PostgreSQL propio en el mismo Droplet, con el registro de transacciones
-cifrado en el bucket externo. Baja el costo a la mitad, pero los backups, los parches y la
-recuperación a un punto en el tiempo (RNF-07) quedarían a cargo de un único desarrollador. Se
-reconsidera si el costo pasa a ser decisivo para la clínica.
+*Alternativa (perfil económico):* PostgreSQL propio en el mismo Droplet, con el registro de
+transacciones cifrado en el bucket externo. Baja el costo alrededor de un 40 %, pero las copias, los
+parches y la recuperación a un punto en el tiempo (RNF-07) quedan a cargo del operador. No es el
+perfil por defecto: se ofrece cuando la clínica pide un presupuesto más ajustado, y es el que se usa
+para reconstruir en otro proveedor. Las mismas imágenes sirven para los dos perfiles; el detalle
+está en `despliegue.md` §3.1 (decisión del usuario).
 
 *Descartado:* Hetzner (UE) con PostgreSQL propio. Tiene la misma carga operativa que la opción
 anterior y ya no es más barato: en junio de 2026 subió sus precios y, en octubre de 2026, sus planes

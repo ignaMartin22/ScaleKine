@@ -383,16 +383,20 @@ El estado de cada tarea y lo que quedó a medio hacer están en [`avance.md`](./
 ### T-35 · Imágenes y configuración de producción
 - `Dockerfile` de `web` (Caddy + Angular compilado), `api` (Node sin root, sistema de archivos de
   solo lectura) y `respaldo` (`pg_dump` + `age` + `rclone`).
-- `docker-compose.prod.yml` y `Caddyfile` de `despliegue.md` §6.
-- **RF/RNF:** RNF-01, RNF-10.
-- **Hecho:** el stack de producción levanta en local con un certificado de prueba, y las cabeceras y
-  la CSP coinciden con §6.2.
+- `docker-compose.prod.yml` y `Caddyfile` de `despliegue.md` §6, con los dos perfiles de §3.1: el
+  servicio `db` en el perfil de Compose `base-local`, sin puertos publicados y en una red interna
+  que `web` no alcanza.
+- **RF/RNF:** RNF-01, RNF-09, RNF-10.
+- **Hecho:** el stack de producción levanta en local con un certificado de prueba en los dos
+  perfiles (con `db` y con una base externa), y las cabeceras y la CSP coinciden con §6.2. En el
+  perfil económico, `db` no es alcanzable desde el host ni desde `web`.
 
 ### T-36 · Infraestructura y endurecimiento
 - `infra/provision.sh` (idempotente) y la configuración de DigitalOcean según `despliegue.md` §4,
   §5 y §7:
   - Proyecto con 2FA, VPC, Droplet y Cloud Firewall en FRA1.
-  - PostgreSQL administrado con fuentes de confianza y ventana de mantenimiento.
+  - Según el perfil (§3.1): PostgreSQL administrado con fuentes de confianza y ventana de
+    mantenimiento, o el volumen de Block Storage para `db`.
   - Los tres usuarios de la base.
   - SSH endurecido, `unattended-upgrades`, `fail2ban`, rotación de logs y swap de 1 GB.
 - **RF/RNF:** RNF-05, RNF-06, RNF-09, RNF-13.
@@ -403,9 +407,12 @@ El estado de cada tarea y lo que quedó a medio hacer están en [`avance.md`](./
 - Bucket en la UE con Object Lock y retención de 30 días, y clave con el mínimo permiso. Par de
   claves `age`, temporizador de systemd de la tarea diaria con latido,
   `infra/verificar-restauracion.sh` y `docs/operacion/restauraciones.md`.
+- Perfil económico: archivo continuo del registro de transacciones en su bucket (`despliegue.md`
+  §8.1), con la herramienta confirmada, su alerta y el procedimiento de restauración.
 - **RF/RNF:** RNF-05, RNF-06, RNF-07, RNF-12.
 - **Hecho:** primera copia subida, descargada, descifrada, restaurada y verificada, con su registro.
-  Un intento de borrarla falla por el Object Lock.
+  Un intento de borrarla falla por el Object Lock. En el perfil económico, además, una restauración
+  a un punto en el tiempo desde el bucket del registro de transacciones.
 
 ### T-38 · Monitoreo y alertas
 - Monitor externo de `/api/salud` y del certificado, latido de copias y alertas de DigitalOcean,
