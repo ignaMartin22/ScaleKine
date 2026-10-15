@@ -549,7 +549,7 @@ repositorio de otro: se comunican por los servicios, y los turnos solo se escrib
 | `DATABASE_URL` | Conexión a PostgreSQL |
 | `ZONA_HORARIA` | Zona IANA del consultorio, p. ej. `America/Argentina/Buenos_Aires` (RF-12) |
 | `PORT` | Puerto del backend |
-| `FRONTEND_ORIGIN` | Origen permitido para CORS y para el handshake de Socket.io |
+| `FRONTEND_ORIGIN` | Origen de la aplicación: se exige en el encabezado `Origin` de toda escritura y en el handshake de Socket.io (§4.15). No hay CORS: frontend y API comparten origen |
 | `COOKIE_SECURE` | `true` en producción (cookie de sesión solo por HTTPS, RNF-01) |
 | `CLAVE_CIFRADO` | Clave de 32 bytes para cifrar los secretos TOTP (RNF-04). Se respalda fuera del servidor: sin ella, el administrador debe reactivar su segundo factor |
 | `NODE_ENV` | `production` en producción: desactiva trazas en las respuestas |

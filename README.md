@@ -136,6 +136,16 @@ npm run build              # compila a dist/
 El backend no arranca si falta `ZONA_HORARIA` o, en producción, `CLAVE_CIFRADO`. `GET /api/salud`
 responde `ok`.
 
+En desarrollo, `CLAVE_CIFRADO` también hace falta para activar el segundo factor del administrador
+(si está vacía, el backend arranca, pero la activación falla). Para generar una:
+
+```sh
+node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+```
+
+Las URLs de la base usan `127.0.0.1` y no `localhost`: el contenedor publica el puerto solo en IPv4,
+y el motor de Prisma puede resolver `localhost` como `::1` y fallar con `P1001`.
+
 #### Comandos de instalación y operación
 
 La CLI de `backend/src/cli/` usa la misma configuración, la misma conexión (`scalekine_app`) y el
