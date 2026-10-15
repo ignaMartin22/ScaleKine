@@ -86,7 +86,6 @@ function error(codigo: string, estado = 409) {
 const raiz = (f: ComponentFixture<unknown>) => f.nativeElement as HTMLElement;
 const q = <T extends HTMLElement = HTMLElement>(f: ComponentFixture<unknown>, s: string) =>
   raiz(f).querySelector(s) as T;
-const texto = (f: ComponentFixture<unknown>) => raiz(f).textContent ?? '';
 
 async function peticion(servidor: HttpTestingController, url: string, metodo = 'GET') {
   return vi.waitFor(() =>
