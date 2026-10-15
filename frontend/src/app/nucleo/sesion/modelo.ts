@@ -24,10 +24,13 @@ export interface EstadoSesion {
   pasoPendiente: PasoPendiente | null;
 }
 
-/** Pantalla de inicio de cada rol (RF-01). */
+/**
+ * Pantalla de inicio de cada rol (RF-01): la agenda de turnos para el administrador y la secretaría,
+ * y la propia para el kinesiólogo.
+ */
 export const INICIO_POR_ROL: Record<Rol, string> = {
-  administrador: '/admin',
-  secretaria: '/secretaria',
+  administrador: '/secretaria/agenda',
+  secretaria: '/secretaria/agenda',
   kinesiologo: '/kinesiologo',
 };
 

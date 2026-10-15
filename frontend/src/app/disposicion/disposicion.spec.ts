@@ -88,6 +88,15 @@ describe('barra lateral (RNF-15, DESIGN.md §6, RF-13)', () => {
     expect(activo?.textContent?.trim()).toBe('Pacientes');
   });
 
+  it('al entrar a la cuenta, Agenda queda marcada como activa (administrador y secretaría)', async () => {
+    for (const rol of ['administrador', 'secretaria'] as const) {
+      const { raiz } = await abrir('/', rol);
+      const activo = raiz.querySelector('nav[aria-label="Menú principal"] a[aria-current="page"]');
+      expect(activo?.textContent?.trim(), rol).toBe('Agenda');
+      TestBed.resetTestingModule();
+    }
+  });
+
   it('el pie lleva usuario y rol, cambiar contraseña, cerrar sesión y la marca', async () => {
     const { raiz } = await abrir('/secretaria', 'secretaria');
     const pie = raiz.querySelector('.pie') as HTMLElement;

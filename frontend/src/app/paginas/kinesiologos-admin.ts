@@ -9,6 +9,7 @@ import {
 } from '../nucleo/kinesiologos/kinesiologos';
 import { enfocar, mensajeDe } from '../nucleo/ui/enfocar';
 import { Icono } from '../nucleo/ui/icono';
+import { VolverAlInicio } from './volver-al-inicio';
 
 /** Mismo mínimo que la política del backend (RNF-03). */
 const LARGO_MINIMO = 12;
@@ -29,13 +30,9 @@ const esBloque = (valor: string): valor is Bloque => valor === 'manana' || valor
  */
 @Component({
   selector: 'app-kinesiologos-admin',
-  imports: [RouterLink, Icono],
+  imports: [RouterLink, Icono, VolverAlInicio],
   template: `
-    <p>
-      <a routerLink="/admin" class="enlace-icono"
-        ><app-icono nombre="volver" />Volver a administración</a
-      >
-    </p>
+    <app-volver-al-inicio />
     <h1>Kinesiólogos</h1>
 
     @if (aviso(); as mensaje) {

@@ -45,23 +45,23 @@ describe('rutas por rol (RF-01)', () => {
   });
 
   it('la secretaría y el administrador no entran a la agenda del kinesiólogo (D-15)', async () => {
-    expect((await navegar('/kinesiologo', 'secretaria')).url).toBe('/secretaria');
+    expect((await navegar('/kinesiologo', 'secretaria')).url).toBe('/secretaria/agenda');
   });
 
   it('el administrador no entra a la agenda del kinesiólogo (D-15)', async () => {
-    expect((await navegar('/kinesiologo', 'administrador')).url).toBe('/admin');
+    expect((await navegar('/kinesiologo', 'administrador')).url).toBe('/secretaria/agenda');
   });
 
   it('un rol que pide otra pantalla vuelve a la suya', async () => {
-    expect((await navegar('/admin', 'secretaria')).url).toBe('/secretaria');
+    expect((await navegar('/admin', 'secretaria')).url).toBe('/secretaria/agenda');
   });
 
   it('el administrador también entra a la pantalla de secretaría (D-18)', async () => {
-    expect((await navegar('/secretaria', 'administrador')).url).toBe('/secretaria');
+    expect((await navegar('/secretaria', 'administrador')).url).toBe('/secretaria/agenda');
   });
 
   it('la secretaría no entra a las cuentas', async () => {
-    expect((await navegar('/admin/cuentas', 'secretaria')).url).toBe('/secretaria');
+    expect((await navegar('/admin/cuentas', 'secretaria')).url).toBe('/secretaria/agenda');
   });
 
   it('el kinesiólogo no entra a las cuentas', async () => {
@@ -105,7 +105,7 @@ describe('rutas por rol (RF-01)', () => {
   });
 
   it('la secretaría no entra a los kinesiólogos', async () => {
-    expect((await navegar('/admin/kinesiologos', 'secretaria')).url).toBe('/secretaria');
+    expect((await navegar('/admin/kinesiologos', 'secretaria')).url).toBe('/secretaria/agenda');
   });
 
   it('el kinesiólogo no entra a los kinesiólogos', async () => {
@@ -113,7 +113,19 @@ describe('rutas por rol (RF-01)', () => {
   });
 
   it('con sesión, el ingreso lleva directo a la pantalla del rol', async () => {
-    expect((await navegar('/ingresar', 'administrador')).url).toBe('/admin');
+    expect((await navegar('/ingresar', 'administrador')).url).toBe('/secretaria/agenda');
+  });
+
+  it('/admin del administrador redirige a la agenda de turnos', async () => {
+    expect((await navegar('/admin', 'administrador')).url).toBe('/secretaria/agenda');
+  });
+
+  it('/secretaria del administrador redirige a la agenda de turnos', async () => {
+    expect((await navegar('/secretaria', 'administrador')).url).toBe('/secretaria/agenda');
+  });
+
+  it('/secretaria de la secretaría redirige a la agenda de turnos', async () => {
+    expect((await navegar('/secretaria', 'secretaria')).url).toBe('/secretaria/agenda');
   });
 
   it('el encabezado muestra la sección y el usuario', async () => {

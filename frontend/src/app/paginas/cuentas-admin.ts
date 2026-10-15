@@ -1,9 +1,9 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
-import { RouterLink } from '@angular/router';
 import { Cuentas, type CuentaListada } from '../nucleo/cuentas/cuentas';
 import { ErrorApi } from '../nucleo/http/error-api';
 import { enfocar, mensajeDe } from '../nucleo/ui/enfocar';
 import { Icono } from '../nucleo/ui/icono';
+import { VolverAlInicio } from './volver-al-inicio';
 
 /** Mismo mínimo que la política del backend (RNF-03). */
 const LARGO_MINIMO = 12;
@@ -40,13 +40,9 @@ interface Panel {
  */
 @Component({
   selector: 'app-cuentas-admin',
-  imports: [RouterLink, Icono],
+  imports: [Icono, VolverAlInicio],
   template: `
-    <p>
-      <a routerLink="/admin" class="enlace-icono"
-        ><app-icono nombre="volver" />Volver a administración</a
-      >
-    </p>
+    <app-volver-al-inicio />
     <h1>Cuentas</h1>
 
     @if (aviso(); as mensaje) {
