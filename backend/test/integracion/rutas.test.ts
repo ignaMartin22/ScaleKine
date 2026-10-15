@@ -344,6 +344,7 @@ describe('cada variante de exigirSesion aparece solo donde corresponde (RF-06, R
         'PUT /kinesiologos/:id/bloque',
         'PUT /pacientes/:id',
         'PUT /turnos/:id/coseguros',
+        'PUT /turnos/:id/ubicacion',
       ],
     });
   });

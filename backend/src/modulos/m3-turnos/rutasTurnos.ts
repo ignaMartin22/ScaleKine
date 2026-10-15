@@ -43,6 +43,17 @@ import type { ServicioTurnos } from './turnos.js';
  *   ausente da 400, para no borrar un monto sin querer); `null` o texto vacío = sin cargar.
  *   No altera estado ni franja. Registra un evento `modificacion_coseguros` (RF-46). 200 con el
  *   mismo `{ turno }`; 400 `datos_invalidos`; 404 `turno_no_encontrado`.
+ * - `PUT /api/turnos/:id/ubicacion` `{ kinesiologoId, fecha, horaInicio }` reprograma (RF-36): mueve
+ *   el mismo turno `reservado` a la ubicación indicada. Los tres datos son obligatorios (los que no
+ *   cambian se repiten) y con el mismo formato que al asignar; `fecha` admite fechas pasadas. El
+ *   estado, el paciente y los coseguros no cambian. Si cambia el kinesiólogo, la franja se valida
+ *   contra el bloque del nuevo (RF-15). Registra un evento `reprogramacion` sin la ubicación
+ *   anterior (D-9, RF-46). 200 con el mismo `{ turno }`. 400 `datos_invalidos`, 400 `franja_invalida`,
+ *   404 `turno_no_encontrado`, 404 `kinesiologo_no_encontrado` (inexistente o con la cuenta
+ *   desactivada), 409 `turno_no_reservado` (RF-37), 409 `franja_ocupada` / 409
+ *   `paciente_con_turno_en_franja` (RF-37), 409 `reprogramacion_sin_cambio` (la ubicación pedida es
+ *   la actual: se rechaza, sin evento), 409 `turno_modificado` (otro pedido cambió el turno en el
+ *   medio). Todo rechazo deja el turno intacto y sin evento.
  * Comunes: 401 sin sesión, 403 `no_autorizado`.
  */
 const sinNul = (valor: string) => !valor.includes('\u0000');
@@ -121,6 +132,11 @@ const esquemaCoseguros = {
   body: z.object({ coseguroObraSocial: montoExplicito, coseguroAdicional: montoExplicito }),
 };
 
+const esquemaReprogramar = {
+  params: z.object({ id: idTurno }),
+  body: z.object({ kinesiologoId: id, fecha, horaInicio }),
+};
+
 export function crearRutasTurnos({
   servicio,
   exigirSesion,
@@ -191,6 +207,21 @@ export function crearRutasTurnos({
           coseguroAdicional: body.coseguroAdicional ?? null,
         };
         res.json({ turno: await servicio.modificarCoseguros(params.id, montos, sesionActual(res).usuario.id) });
+      } catch (err) {
+        next(err);
+      }
+    },
+  );
+
+  router.put(
+    '/turnos/:id/ubicacion',
+    exigirSesion,
+    autorizarEscritura('turnos'),
+    validar(esquemaReprogramar),
+    async (_req, res, next) => {
+      try {
+        const { params, body } = datosValidados(res.locals, esquemaReprogramar);
+        res.json({ turno: await servicio.reprogramar(params.id, body, sesionActual(res).usuario.id) });
       } catch (err) {
         next(err);
       }

@@ -17,6 +17,15 @@ export interface DatosAsignacion {
   coseguroAdicional?: string | null | undefined;
 }
 
+/** Nueva ubicación que la secretaría elige al reprogramar (RF-36). El autor sale de la sesión. */
+export interface DatosReprogramacion {
+  kinesiologoId: number;
+  /** Fecha calendario 'AAAA-MM-DD' en la zona del consultorio. */
+  fecha: string;
+  /** Hora de inicio de la franja, 'HH:MM'. */
+  horaInicio: string;
+}
+
 /** Turno recién asignado. Los montos van como texto decimal con dos decimales. */
 export interface TurnoAsignado {
   id: number;
@@ -80,6 +89,14 @@ const errorTurnoModificado = () =>
   new ErrorNegocio(
     'turno_modificado',
     'El turno cambió de estado mientras se procesaba la acción. Actualizá la pantalla y volvé a intentar.',
+    409,
+  );
+const errorNoReservado = () =>
+  new ErrorNegocio('turno_no_reservado', 'Solo se puede reprogramar un turno reservado.', 409);
+const errorMismaUbicacion = () =>
+  new ErrorNegocio(
+    'reprogramacion_sin_cambio',
+    'El turno ya está en esa fecha, franja y kinesiólogo: no hay nada que reprogramar.',
     409,
   );
 const errorMismoEstado = () =>
@@ -209,6 +226,63 @@ export function crearServicioTurnos({ db, reloj }: { db: BaseDeDatos; reloj: Rel
         });
         return aActualizado(await tx.turno.findUniqueOrThrow({ where: { id: turnoId } }));
       });
+    },
+
+    /**
+     * Reprograma (RF-36): mueve el mismo turno `reservado` a otra fecha, franja o kinesiólogo; conserva
+     * estado, paciente y coseguros, y no guarda la ubicación anterior (D-9): el evento `reprogramacion`
+     * no lleva datos de ella (RF-46). Con un kinesiólogo inexistente o de cuenta desactivada, 404 (como
+     * al asignar); la franja se valida contra la grilla del bloque del kinesiólogo de destino (RF-15).
+     * Reprogramar a la misma ubicación exacta se rechaza (409), sin evento. La actualización está
+     * condicionada al estado y a la ubicación leídos: si otro pedido los cambió en el medio, 409 sin
+     * evento. La ocupación de la franja la deciden los índices únicos parciales (RF-24, RF-25, RF-37).
+     * `autorId` es el de la sesión.
+     */
+    async reprogramar(turnoId: number, destino: DatosReprogramacion, autorId: number): Promise<TurnoActualizado> {
+      const ahora = reloj.ahora();
+      try {
+        return await db.$transaction(async (tx) => {
+          const actual = await tx.turno.findUnique({
+            where: { id: turnoId },
+            select: { estado: true, kinesiologoId: true, fecha: true, horaInicio: true },
+          });
+          if (!actual) throw errorTurnoNoEncontrado();
+          if (actual.estado !== 'reservado') throw errorNoReservado();
+          const kinesiologo = await tx.kinesiologo.findUnique({
+            where: { id: destino.kinesiologoId },
+            select: { bloque: true, usuario: { select: { activo: true } } },
+          });
+          if (!kinesiologo || !kinesiologo.usuario.activo) throw errorKinesiologoNoEncontrado();
+          if (!franjasDelDia(destino.fecha, kinesiologo.bloque).some((f) => f.inicio === destino.horaInicio)) {
+            throw errorFranjaInvalida();
+          }
+          const nuevaFecha = new Date(`${destino.fecha}T00:00:00Z`);
+          if (
+            actual.kinesiologoId === destino.kinesiologoId &&
+            actual.fecha.getTime() === nuevaFecha.getTime() &&
+            actual.horaInicio === destino.horaInicio
+          ) {
+            throw errorMismaUbicacion();
+          }
+          const { count } = await tx.turno.updateMany({
+            where: {
+              id: turnoId,
+              estado: actual.estado,
+              kinesiologoId: actual.kinesiologoId,
+              fecha: actual.fecha,
+              horaInicio: actual.horaInicio,
+            },
+            data: { kinesiologoId: destino.kinesiologoId, fecha: nuevaFecha, horaInicio: destino.horaInicio },
+          });
+          if (count !== 1) throw errorTurnoModificado();
+          await tx.turnoEvento.create({
+            data: { turnoId, tipo: 'reprogramacion', autorId, ocurridoEn: ahora },
+          });
+          return aActualizado(await tx.turno.findUniqueOrThrow({ where: { id: turnoId } }));
+        });
+      } catch (err) {
+        return traducirOcupacion(err);
+      }
     },
 
     /**
