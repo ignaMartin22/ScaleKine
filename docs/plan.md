@@ -271,7 +271,7 @@ de lectura (el ticket):
 | `modificarCoseguros` | Cambia los montos; no toca estado ni franja. Registra un evento `modificacion_coseguros` | RF-27, RF-46 |
 | `transicionar` | Aplica una acción del flujo normal | RF-30 … RF-33 |
 | `corregir` | Lleva el turno a cualquier estado | RF-35 |
-| `reprogramar` | Cambia fecha, franja y/o kinesiólogo de un turno `reservado` | RF-36 |
+| `reprogramar` | Cambia fecha, franja y/o kinesiólogo de un turno `reservado`; rechaza un kinesiólogo de destino con la cuenta desactivada como si no existiera, también si es el mismo que ya tiene el turno | RF-36 |
 | `ticket` | Devuelve el PDF del ticket con QR, generado con los datos vigentes | RF-28 |
 
 **Tabla del flujo normal en un solo lugar.** Las cuatro transiciones de `spec.md` §3.5 viven en
@@ -393,8 +393,9 @@ el trabajo diario de las correcciones.
 **Elegido:** sin versiones ni bloqueo optimista en general. Los índices de §2.3 impiden el único
 daño estructural posible (doble ocupación de franja). Una excepción acotada: `transicionar` y
 `corregir` actualizan el turno condicionados al estado leído (`updateMany where {id, estado}`), para
-que el evento registre el estado anterior real. Si otro pedido se cruzó, la respuesta es 409
-`turno_modificado` y no se escribe evento.
+que el evento registre el estado anterior real. `reprogramar` también actualiza condicionado, al
+estado y a la ubicación leídos, para no mover un turno que otro pedido anuló, marcó o movió en el
+medio. Si otro pedido se cruzó, la respuesta es 409 `turno_modificado` y no se escribe evento.
 
 *Descartado:* bloqueo optimista. Las secretarias no trabajan en simultáneo (D-12); el kinesiólogo
 no escribe. No hay escenario realista de dos escrituras cruzadas sobre el mismo turno.

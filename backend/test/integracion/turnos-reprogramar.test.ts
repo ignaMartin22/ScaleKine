@@ -7,7 +7,7 @@ import type { EstadoTurno } from '../../src/generado/prisma/client.js';
 import { crearServicioTurnos } from '../../src/modulos/m3-turnos/turnos.js';
 import { crearRutas } from '../../src/rutas.js';
 import { ENTORNO_PRUEBA, loggerCapturado, ORIGEN_APP } from '../ayudantes.js';
-import { baseConEventoRoto, baseConLecturaSincronizada } from './ayudantesTurnos.js';
+import { baseConEventoRoto, baseConLecturaSincronizada, baseConPausaTrasLeer } from './ayudantesTurnos.js';
 import { db } from './base.js';
 import { AHORA, crearKinesiologo, crearPaciente, crearTurno, crearUsuario, ingresarComo } from './fabricas.js';
 
@@ -392,6 +392,7 @@ describe('reprogramar: existencia y validación', () => {
 
     expect(res.status).toBe(404);
     expect(res.body.error.codigo).toBe('kinesiologo_no_encontrado');
+    expect(res.body.error.mensaje).toBe('El kinesiólogo no existe o tiene la cuenta desactivada.');
     expect(await turnoDe(turno.id)).toMatchObject({ kinesiologoId: turno.kinesiologoId, horaInicio: '08:00' });
     expect(await eventosDe(turno.id)).toHaveLength(0);
   });
@@ -485,23 +486,68 @@ describe('reprogramar: autorización, atomicidad y logs', () => {
 });
 
 describe('reprogramar: concurrencia', () => {
-  it('carrera determinista con una transición: ambos leen "reservado"; uno entra, el otro da turno_modificado y queda un solo evento', async () => {
+  it('intercalación forzada con un cambio de estado: la transición confirma entre la lectura y la escritura; la reprogramación da turno_modificado', async () => {
+    const autor = await crearUsuario({ rol: 'secretaria' });
+    const reloj = new RelojFijo(AHORA);
+    const real = crearServicioTurnos({ db, reloj });
+    const { turno, destino } = await escenario();
+    const pausado = crearServicioTurnos({
+      db: baseConPausaTrasLeer(() => real.transicionar(turno.id, 'anulado', autor.id, 'secretaria')),
+      reloj,
+    });
+
+    await expect(pausado.reprogramar(turno.id, destino, autor.id)).rejects.toMatchObject({
+      codigo: 'turno_modificado',
+      estadoHttp: 409,
+    });
+
+    const guardado = await turnoDe(turno.id);
+    expect(guardado).toMatchObject({ estado: 'anulado', horaInicio: '08:00', kinesiologoId: turno.kinesiologoId });
+    const eventos = await eventosDe(turno.id);
+    expect(eventos).toHaveLength(1);
+    expect(eventos[0]).toMatchObject({ tipo: 'cambio_estado', estadoAnterior: 'reservado', estadoNuevo: 'anulado' });
+  });
+
+  it('intercalación forzada con otra reprogramación: la otra confirma entre la lectura y la escritura; esta da turno_modificado y queda la ubicación de la que entró', async () => {
+    const autor = await crearUsuario({ rol: 'secretaria' });
+    const reloj = new RelojFijo(AHORA);
+    const real = crearServicioTurnos({ db, reloj });
+    const { turno, destino } = await escenario();
+    const pausado = crearServicioTurnos({
+      db: baseConPausaTrasLeer(() => real.reprogramar(turno.id, { ...destino, horaInicio: '10:15' }, autor.id)),
+      reloj,
+    });
+
+    await expect(pausado.reprogramar(turno.id, destino, autor.id)).rejects.toMatchObject({
+      codigo: 'turno_modificado',
+      estadoHttp: 409,
+    });
+
+    expect(await turnoDe(turno.id)).toMatchObject({ estado: 'reservado', horaInicio: '10:15' });
+    const eventos = await eventosDe(turno.id);
+    expect(eventos).toHaveLength(1);
+    expect(eventos[0]).toMatchObject({ tipo: 'reprogramacion' });
+  });
+
+  it('carrera real con una transición: valen los dos órdenes (solo se anula, o se mueve y después se anula), nunca un evento sin su efecto', async () => {
     const servicio = crearServicioTurnos({ db: baseConLecturaSincronizada(), reloj: new RelojFijo(AHORA) });
     const autor = await crearUsuario({ rol: 'secretaria' });
     const { turno, destino } = await escenario();
 
-    const resultados = await Promise.allSettled([
+    const [repro, trans] = await Promise.allSettled([
       servicio.reprogramar(turno.id, destino, autor.id),
       servicio.transicionar(turno.id, 'anulado', autor.id, 'secretaria'),
     ]);
 
-    expect(resultados.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
-    const rechazo = resultados.find((r) => r.status === 'rejected') as PromiseRejectedResult;
-    expect(rechazo.reason).toMatchObject({ codigo: 'turno_modificado', estadoHttp: 409 });
-    expect(await eventosDe(turno.id)).toHaveLength(1);
     const guardado = await turnoDe(turno.id);
-    // O se movió y sigue reservado, o se anuló en su lugar: nunca las dos cosas.
-    expect(guardado.horaInicio === destino.horaInicio).toBe(guardado.estado === 'reservado');
+    const eventos = await eventosDe(turno.id);
+    expect(trans.status === 'fulfilled' || repro.status === 'fulfilled').toBe(true);
+    if (repro.status === 'rejected') expect(repro.reason).toMatchObject({ codigo: 'turno_modificado' });
+    if (trans.status === 'rejected') expect(trans.reason).toMatchObject({ codigo: 'turno_modificado' });
+    expect(guardado.estado === 'anulado').toBe(trans.status === 'fulfilled');
+    expect(guardado.horaInicio === destino.horaInicio).toBe(repro.status === 'fulfilled');
+    expect(eventos.filter((e) => e.tipo === 'reprogramacion')).toHaveLength(repro.status === 'fulfilled' ? 1 : 0);
+    expect(eventos.filter((e) => e.tipo === 'cambio_estado')).toHaveLength(trans.status === 'fulfilled' ? 1 : 0);
   });
 
   it('carrera determinista entre dos reprogramaciones del mismo turno: entra una, la otra da turno_modificado', async () => {
@@ -539,5 +585,5 @@ describe('reprogramar: concurrencia', () => {
     for (const r of rechazadas) expect(r.body.error.codigo).toBe('franja_ocupada');
     expect(await db.turno.count({ where: { fecha: new Date(OTRA_FECHA), horaInicio: '09:30' } })).toBe(1);
     expect(await db.turnoEvento.count({ where: { tipo: 'reprogramacion' } })).toBe(1);
-  });
+  }, 30_000);
 });

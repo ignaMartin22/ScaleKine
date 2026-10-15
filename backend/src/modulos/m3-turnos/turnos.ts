@@ -72,7 +72,7 @@ function indiceViolado(err: unknown): string | null {
 
 const errorPacienteNoEncontrado = () => new ErrorNegocio('paciente_no_encontrado', 'El paciente no existe.', 404);
 const errorKinesiologoNoEncontrado = () =>
-  new ErrorNegocio('kinesiologo_no_encontrado', 'El kinesiólogo no existe.', 404);
+  new ErrorNegocio('kinesiologo_no_encontrado', 'El kinesiólogo no existe o tiene la cuenta desactivada.', 404);
 const errorFranjaInvalida = () =>
   new ErrorNegocio(
     'franja_invalida',

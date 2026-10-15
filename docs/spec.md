@@ -299,7 +299,10 @@ cualquier otro (RF-35), como acción explícita y registrada.
 
 - **RF-36** — *Evento:* Cuando la secretaría reprograma un turno `reservado` a otra fecha, franja o
   kinesiólogo, entonces el sistema mueve el mismo turno, que conserva su estado `reservado`, su
-  paciente y sus coseguros. No se guarda la fecha y franja anteriores.
+  paciente y sus coseguros. No se guarda la fecha y franja anteriores. Como al asignar (RF-23), un
+  kinesiólogo con la cuenta desactivada (RF-09) es para esto como si no existiera: reprogramar hacia
+  él se rechaza, también si es el mismo que ya tiene el turno; el turno se puede mover a otro
+  kinesiólogo activo, anular o marcar.
   *Por qué:* Reprogramar es mover el turno, no crear uno nuevo. El consultorio no necesita saber
   dónde estaba antes (D-9).
 
@@ -627,6 +630,8 @@ El MVP se considera terminado cuando **todos** los puntos siguientes son verific
 - [ ] Reprogramar mueve el mismo turno `reservado` a otra fecha, franja o kinesiólogo (RF-36).
 - [ ] Una corrección o reprogramación hacia una franja ocupada, o la reprogramación de un turno no
       `reservado`, se rechaza sin modificar el turno (RF-37).
+- [ ] Reprogramar hacia un kinesiólogo con la cuenta desactivada se rechaza, también si es el mismo
+      que ya tiene el turno (RF-36).
 - [ ] La franja de un turno cerrado queda disponible (RF-38).
 - [ ] No existe ninguna forma de eliminar un turno (RF-39).
 

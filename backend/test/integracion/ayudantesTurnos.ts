@@ -54,3 +54,34 @@ export function baseConLecturaSincronizada(): typeof db {
       }),
   );
 }
+
+/**
+ * Base que, dentro de la primera transacción, después de leer el turno (`findUnique`), espera
+ * `alLeer()` antes de seguir. Fuerza la intercalación: `alLeer` corre sobre la base real y confirma
+ * su escritura mientras la transacción pausada ya leyó el turno, así que el orden es siempre el mismo.
+ */
+export function baseConPausaTrasLeer(alLeer: () => Promise<unknown>): typeof db {
+  let pausada = false;
+  return baseConTransaccionEnvuelta(
+    (tx) =>
+      new Proxy(tx, {
+        get(destino, propiedad, receptor) {
+          if (propiedad !== 'turno') return Reflect.get(destino, propiedad, receptor);
+          const turno = Reflect.get(destino, propiedad, receptor) as { findUnique: (a: unknown) => Promise<unknown> };
+          return new Proxy(turno, {
+            get(t, p, r) {
+              if (p !== 'findUnique') return Reflect.get(t, p, r);
+              return async (args: unknown) => {
+                const fila = await t.findUnique(args);
+                if (!pausada) {
+                  pausada = true;
+                  await alLeer();
+                }
+                return fila;
+              };
+            },
+          });
+        },
+      }),
+  );
+}
