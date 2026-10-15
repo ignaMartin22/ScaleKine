@@ -8,6 +8,7 @@ import {
 } from '../nucleo/turnos/disponibilidad';
 import { normalizarMonto, traducirErrorAsignacion } from '../nucleo/turnos/errores-asignacion';
 import { Turnos, type TurnoAsignado } from '../nucleo/turnos/turnos';
+import { descargarArchivo } from '../nucleo/ui/descargar';
 import { enfocar, mensajeDe } from '../nucleo/ui/enfocar';
 import {
   FormularioPaciente,
@@ -590,14 +591,7 @@ export class AsignarTurno {
     this.descargando.set(true);
     try {
       const pdf = await this.turnos.descargarTicket(id);
-      const direccion = URL.createObjectURL(pdf);
-      const enlace = document.createElement('a');
-      enlace.href = direccion;
-      enlace.download = `turno-${id}.pdf`;
-      document.body.appendChild(enlace);
-      enlace.click();
-      enlace.remove();
-      setTimeout(() => URL.revokeObjectURL(direccion));
+      descargarArchivo(pdf, `turno-${id}.pdf`);
     } catch (error) {
       this.errorTicket.set(mensajeDe(error));
       enfocar('error-ticket');
