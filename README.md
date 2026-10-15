@@ -36,7 +36,7 @@ El sistema maneja datos de salud, que la Ley 25.326 considera sensibles. Por eso
 - Los datos se alojan solo en la UE, cifrados, con copias externas cifradas y probadas cada mes.
 - Los logs no contienen datos personales.
 
-Requisitos en `docs/spec.md` §3.9 (RNF-01 … RNF-13); implementación y operación en `docs/despliegue.md`.
+Requisitos en `docs/spec.md` §3.9 (RNF-01 … RNF-14); implementación y operación en `docs/despliegue.md`.
 
 ## Turnos
 

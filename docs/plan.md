@@ -465,13 +465,17 @@ parte del esquema que no sale de `schema.prisma`.
 
 ### 4.15 Defensas de la aplicación
 
-**Elegido** (RNF-01, RNF-08, RNF-10):
+**Elegido** (RNF-01, RNF-08, RNF-10, RNF-14):
 - `helmet` con CSP estricta (`default-src 'self'`, sin scripts en línea ni orígenes externos),
   `frame-ancestors 'none'` y HSTS (además de Caddy, ver `despliegue.md`).
 - Validación de cada cuerpo, parámetro y consulta con `zod` antes de llegar al servicio. Límite de
   tamaño de petición de 100 kB.
 - CSRF: la cookie es `SameSite=Strict` y, además, toda petición de escritura verifica que el
   encabezado `Origin` sea el de la aplicación. El handshake de Socket.io verifica lo mismo.
+- Sin caché (RNF-14): un middleware fija `Cache-Control: no-store` en toda respuesta de `/api`,
+  incluidos los errores 4xx/5xx y el 404 de una ruta inexistente bajo `/api`; se monta antes de los
+  routers para cubrirlas. No afecta a los archivos estáticos del frontend, que sirve Caddy. No se
+  agrega `Pragma: no-cache`: solo lo leen clientes HTTP/1.0, que no se usan.
 - Errores: el manejador central responde un código y un mensaje de negocio; el detalle va solo al
   log del servidor.
 - Logs con `pino` y redacción de campos (`dni`, `nombre`, `telefono`, `obraSocial`, coseguros,
@@ -692,6 +696,7 @@ reloj inyectable, no el del sistema.
 | RNF-11 | CI | `npm audit` en el pipeline |
 | RNF-12 | infraestructura | simulacro de caída y de backup fallido |
 | RNF-13 | infraestructura | verificación de despliegue |
+| RNF-14 | transversal | integración (cabecera en datos, errores y 404) |
 
 ---
 

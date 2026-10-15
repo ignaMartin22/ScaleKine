@@ -29,6 +29,18 @@ export function cabecerasDeSeguridad(): RequestHandler {
   });
 }
 
+/**
+ * Ninguna respuesta de la API se guarda en caché (RNF-14, plan.md §4.15): contienen datos de salud
+ * y la PC de recepción es compartida. Se monta en `/api` antes de los routers, así que cubre
+ * también los errores y el 404; Express no borra las cabeceras al llegar al manejador de errores.
+ */
+export function sinCache(): RequestHandler {
+  return (_req, res, next) => {
+    res.set('Cache-Control', 'no-store');
+    next();
+  };
+}
+
 const METODOS_DE_LECTURA = new Set(['GET', 'HEAD', 'OPTIONS']);
 
 /**
