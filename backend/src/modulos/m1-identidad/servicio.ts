@@ -5,6 +5,7 @@ import type { Reloj } from '../../comun/reloj.js';
 import type { Rol } from '../../generado/prisma/client.js';
 import { hashearContrasena, validarPoliticaContrasena, verificarContrasena } from './contrasenas.js';
 import { crearLimiteIntentos, cuentaBloqueada, SIN_BLOQUEO } from './limiteIntentos.js';
+import { avisarRevocacion, SIN_AVISO, type AvisoRevocaciones } from './revocaciones.js';
 
 /** Duración fija de la sesión, sin renovación por actividad (RF-11, D-14). */
 export const DURACION_SESION_MS = 12 * 60 * 60 * 1000;
@@ -24,6 +25,8 @@ export interface SesionActiva {
   usuario: UsuarioSesion;
   /** La sesión ya pasó el segundo factor (RNF-04). Solo es relevante para el administrador. */
   segundoFactorVerificado: boolean;
+  /** Instante de vencimiento de la sesión (RF-11); M5 programa la desconexión de sus sockets para entonces. */
+  venceEn: Date;
 }
 
 /** En la base solo se guarda el hash del token: una filtración de la tabla no da sesiones (RNF-01). */
@@ -43,7 +46,15 @@ export function errorDemasiadosIntentos(): ErrorNegocio {
   );
 }
 
-export async function crearServicioIdentidad({ db, reloj }: { db: BaseDeDatos; reloj: Reloj }) {
+export async function crearServicioIdentidad({
+  db,
+  reloj,
+  avisoRevocaciones = SIN_AVISO,
+}: {
+  db: BaseDeDatos;
+  reloj: Reloj;
+  avisoRevocaciones?: AvisoRevocaciones;
+}) {
   // Hash de una contraseña al azar, calculado al crear el servicio: si argon2 falla se nota al
   // arrancar y no en el primer ingreso. Sirve para verificar contra algo cuando el usuario no
   // existe y que la respuesta tarde lo mismo (RF-02).
@@ -169,6 +180,7 @@ export async function crearServicioIdentidad({ db, reloj }: { db: BaseDeDatos; r
         id: sesion.id,
         usuario: { id, nombreUsuario, rol, debeCambiarContrasena, totpActivo },
         segundoFactorVerificado: sesion.segundoFactorVerificado,
+        venceEn: sesion.venceEn,
       };
     },
 
@@ -271,6 +283,7 @@ export async function crearServicioIdentidad({ db, reloj }: { db: BaseDeDatos; r
           409,
         );
       }
+      avisarRevocacion(avisoRevocaciones, { usuarioId, exceptoSesionId: sesionId });
       // Solo con el cambio confirmado se devuelve el punto: solo los fallos cuentan (RNF-02).
       await limite.liberarIntentoDireccion(ip, ahora);
     },
@@ -281,6 +294,7 @@ export async function crearServicioIdentidad({ db, reloj }: { db: BaseDeDatos; r
         where: { hashToken: hashDeToken(token), revocadaEn: null },
         data: { revocadaEn: reloj.ahora() },
       });
+      avisarRevocacion(avisoRevocaciones, { hashToken: hashDeToken(token) });
     },
   };
 }

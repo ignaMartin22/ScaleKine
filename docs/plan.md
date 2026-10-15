@@ -314,11 +314,18 @@ commit, emite un evento de dominio que M5 difunde.
 
 ### M5 · Tiempo real — RF-43 … RF-45
 
-- **Salas**: una por kinesiólogo y una de secretaría. Un cambio va a la sala del kinesiólogo del
-  turno y a la de secretaría. Una reprogramación que cambia de kinesiólogo va a ambas salas de
-  kinesiólogo.
-- **Proyección**: todas las salas reciben la misma proyección del turno; la lista de acciones
-  disponibles solo viaja a la sala de secretaría (que incluye al administrador).
+- **Salas**: una por kinesiólogo y una de secretaría. El servidor asigna la sala al conectar según la
+  sesión; el cliente no elige. El cambio va a la sala del kinesiólogo **actual** del turno (el que
+  resulta de releerlo al difundir, no el que tenía al operar) y a la de secretaría. Una
+  reprogramación que cambia de kinesiólogo manda `turno:quitado { turnoId }`, sin datos, a la sala
+  del kinesiólogo anterior; también a todo kinesiólogo que haya tenido el turno en los avisos
+  pendientes y ya no sea el actual (D-16). Los avisos pendientes del mismo turno se agrupan y cada
+  difusión tiene un tiempo límite.
+- **Proyección**: cada sala recibe la proyección de su agenda en M4. La de secretaría (y
+  administrador) es la de `GET /api/agenda`, con `paciente.id`, `kinesiologo` y la lista de acciones
+  disponibles. La del kinesiólogo es la de `GET /api/mi-agenda`: sin acciones (D-15), sin
+  `paciente.id` ni `kinesiologo` (D-16). El contrato de los eventos (`turno:cambio`, `turno:quitado`,
+  `sesion:cerrada`) está en `m5-tiempo-real/tiempoReal.ts`.
 - **RF-45**: el frontend detecta la pérdida de conexión y lo marca en pantalla. Al reconectar vuelve
   a pedir la agenda en vez de confiar en lo que tenía en memoria.
 
