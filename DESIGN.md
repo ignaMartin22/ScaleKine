@@ -54,13 +54,14 @@ componentes usan **solo los tokens semánticos** (nunca un hexadecimal suelto).
 | `--primario` | `#0A7672` | `#2CC5BE` | Botón principal, enlaces, ítem activo |
 | `--sobre-primario` | `#FFFFFF` | `#04201F` | Texto e ícono sobre `--primario` |
 | `--primario-hover` | `#085F5C` | `#3DD3CC` | Hover del botón principal |
-| `--acento` | `#0E9F9A` | `#2CC5BE` | Anillo de foco, detalles decorativos |
+| `--acento` | `#0C928D` | `#2CC5BE` | Anillo de foco, detalles decorativos |
 | `--acento-suave` | `#E3F6F5` | `#0F2A29` | Fondos de selección, fila seleccionada |
 | `--celeste` | `#5BC0EB` | `#5BC0EB` | Color de apoyo, solo decorativo (nunca texto sobre blanco) |
 | `--info` | `#1170A0` | `#8FD3F5` | Mensajes informativos |
 
-`#0E9F9A` con texto blanco no llega a AA (3,26:1): por eso el botón usa `#0A7672` (5,46:1) y el teal
-claro queda para el foco y los detalles.
+`#0C928D` con texto blanco no llega a AA (3,81:1): por eso el botón usa `#0A7672` (5,46:1) y el teal
+claro queda para el foco y los detalles. Como anillo de foco llega a 3:1 sobre `--fondo` (3,57),
+`--superficie` (3,81), `--superficie-2` (3,40) y `--acento-suave` (3,40).
 
 ### 2.3 Colores de acción (cuatro niveles)
 

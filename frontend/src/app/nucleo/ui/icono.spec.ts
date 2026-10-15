@@ -58,7 +58,7 @@ describe('Icono (RNF-15, DESIGN.md §5)', () => {
   it('dibuja cada ícono con al menos una forma', () => {
     for (const nombre of Object.keys(ICONOS) as NombreDeIcono[]) {
       const svg = montar({ nombre });
-      expect(svg.querySelectorAll('path, circle, rect').length, nombre).toBeGreaterThan(0);
+      expect(svg.querySelectorAll('path, circle, rect, line').length, nombre).toBeGreaterThan(0);
       TestBed.resetTestingModule();
     }
   });

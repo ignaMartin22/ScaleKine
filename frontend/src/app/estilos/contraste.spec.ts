@@ -44,6 +44,8 @@ const PARES: readonly (readonly [string, string, number])[] = [
   ['borde-control', 'fondo', CONTROL],
   ['acento', 'fondo', CONTROL],
   ['acento', 'superficie', CONTROL],
+  ['acento', 'superficie-2', CONTROL],
+  ['acento', 'acento-suave', CONTROL],
   ['advertencia', 'superficie', CONTROL],
   ['advertencia', 'fondo', CONTROL],
   ['exito', 'superficie', CONTROL],
