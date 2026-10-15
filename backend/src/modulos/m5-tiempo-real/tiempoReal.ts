@@ -219,10 +219,11 @@ export function crearTiempoReal(opciones: OpcionesTiempoReal): TiempoReal {
    * secretaría; a cada otro kinesiólogo que el turno tuvo según los avisos (D-16) solo le llega
    * `turno:quitado`, sin datos del paciente.
    */
-  async function difundir(turnoId: number, kinesiologos: Set<number>): Promise<void> {
+  async function difundir(turnoId: number, kinesiologos: Set<number>, cancelada: { valor: boolean }): Promise<void> {
     if (!io || !dependencias) return;
     const proyecciones = await dependencias.turnoParaDifusion(turnoId);
-    if (!proyecciones) return;
+    // Vencido el tiempo límite, esta lectura quedó vieja: una difusión más nueva pudo haber salido ya.
+    if (!proyecciones || cancelada.valor) return;
     io.to(SALA_SECRETARIA).emit(EVENTO_CAMBIO, { turno: proyecciones.secretaria });
     io.to(salaDeKinesiologo(proyecciones.kinesiologoId)).emit(EVENTO_CAMBIO, { turno: proyecciones.kinesiologo });
     for (const id of kinesiologos) {
@@ -233,12 +234,16 @@ export function crearTiempoReal(opciones: OpcionesTiempoReal): TiempoReal {
   /** `difundir` con tiempo límite: una relectura colgada no frena los avisos siguientes. */
   async function difundirConLimite(turnoId: number, kinesiologos: Set<number>): Promise<void> {
     let temporizador: NodeJS.Timeout | undefined;
+    const cancelada = { valor: false };
     const vencido = new Promise<never>((_, rechazar) => {
-      temporizador = setTimeout(() => rechazar(new Error('tiempo agotado')), tiempoLimiteDifusionMs);
+      temporizador = setTimeout(() => {
+        cancelada.valor = true;
+        rechazar(new Error('tiempo agotado'));
+      }, tiempoLimiteDifusionMs);
       temporizador.unref();
     });
     try {
-      await Promise.race([difundir(turnoId, kinesiologos), vencido]);
+      await Promise.race([difundir(turnoId, kinesiologos, cancelada), vencido]);
     } catch (error) {
       logger.error({ tipo: tipoDeError(error) }, 'no se pudo difundir un cambio de turno');
     } finally {

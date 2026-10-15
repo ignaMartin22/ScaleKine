@@ -732,6 +732,38 @@ describe('cola de difusión acotada y con tiempo límite', () => {
     });
   });
 
+  it('una relectura lenta que resuelve después del vencimiento no emite nada', async () => {
+    let soltar!: () => void;
+    const frenada = new Promise<void>((r) => (soltar = r));
+    let llamadas = 0;
+    const e = await armar({
+      tiempoLimiteDifusionMs: 150,
+      envolver: (d) => ({
+        ...d,
+        turnoParaDifusion: async (id) => {
+          const lectura = await d.turnoParaDifusion(id);
+          if (++llamadas === 1) await frenada;
+          return lectura;
+        },
+      }),
+    });
+    const secretaria = await ingresarComo(e.app, 'secretaria');
+    const k1 = await kinesiologoConSesion(e.app, 'kin-1');
+    const cs = await conectado(e.url, secretaria.cookie);
+    const c1 = await conectado(e.url, k1.cookie);
+    const turno = await crearTurno({ fecha: FECHA, kinesiologoId: k1.kinesiologo.id });
+
+    e.tiempoReal.emisor.turnoCambiado({ turnoId: turno.id, kinesiologoId: k1.kinesiologo.id });
+    await esperar(() => llamadas === 1);
+    await esperar(() => e.texto().includes('no se pudo difundir un cambio de turno'));
+    soltar();
+    await e.tiempoReal.vaciar();
+    await pausa(300);
+
+    expect(cs.eventos).toEqual([]);
+    expect(c1.eventos).toEqual([]);
+  });
+
   it('varios avisos del mismo turno se agrupan en una sola relectura', async () => {
     let soltar!: () => void;
     const frenada = new Promise<void>((r) => (soltar = r));
