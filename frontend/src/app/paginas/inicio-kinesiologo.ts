@@ -38,9 +38,8 @@ export function ordenarProximos(turnos: readonly TurnoPropio[]): TurnoPropio[] {
  * al almacenamiento del navegador.
  */
 @Component({
-  imports: [EstadoDelTurno, Icono],
   selector: 'app-inicio-kinesiologo',
-  imports: [IndicadorConexion],
+  imports: [IndicadorConexion, EstadoDelTurno, Icono],
   template: `
     <h1>Mi agenda</h1>
     <app-indicador-conexion />
