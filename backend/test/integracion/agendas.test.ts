@@ -66,6 +66,7 @@ describe('GET /api/agenda (RF-41, RF-34)', () => {
       horaFin: '09:30',
       estado: 'reservado',
       llegadaEn: null,
+      horaLlegada: null,
       coseguroObraSocial: '1500.50',
       coseguroAdicional: '200.00',
       paciente: {
@@ -162,6 +163,7 @@ describe('GET /api/agenda (RF-41, RF-34)', () => {
     expect(res.body.turnos[0]).toMatchObject({
       id: turno.id,
       llegadaEn: '2026-10-14T13:00:00.000Z',
+      horaLlegada: '10:00',
       acciones: { transiciones: [{ hacia: 'asistio', accion: 'Asistió' }], puedeCorregir: true },
     });
   });
@@ -271,7 +273,11 @@ describe('GET /api/mi-agenda (RF-40, D-15, D-16)', () => {
     expect(res.body.fecha).toBe(HOY);
     expect(ids(res.body.enEspera)).toEqual([llegoPrimero.id, llegoSegundo.id]);
     expect(ids(res.body.proximos)).toEqual([temprano.id, tarde.id]);
-    expect(res.body.enEspera[0]).toMatchObject({ estado: 'en_espera', llegadaEn: '2026-10-14T11:05:00.000Z' });
+    expect(res.body.enEspera[0]).toMatchObject({
+      estado: 'en_espera',
+      llegadaEn: '2026-10-14T11:05:00.000Z',
+      horaLlegada: '08:05',
+    });
     expect(res.body.proximos[1]).toEqual({
       id: tarde.id,
       fecha: HOY,
@@ -279,6 +285,7 @@ describe('GET /api/mi-agenda (RF-40, D-15, D-16)', () => {
       horaFin: '11:45',
       estado: 'reservado',
       llegadaEn: null,
+      horaLlegada: null,
       coseguroObraSocial: '800.00',
       coseguroAdicional: '50.25',
       paciente: { nombre: 'Paciente Ficticio Dos', dni: '90333444', telefono: paciente.telefono, obraSocial: 'Particular' },

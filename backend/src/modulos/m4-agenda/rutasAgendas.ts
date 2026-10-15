@@ -44,6 +44,10 @@ import type { ServicioAgendas } from './servicioAgendas.js';
  *   `historial` del más reciente al más antiguo. Paciente sin turnos: ambas listas vacías. 404
  *   `paciente_no_encontrado`; 400 `datos_invalidos` ante un id mal formado.
  *
+ * Todo turno trae `llegadaEn` (instante ISO o null) y `horaLlegada`: esa llegada en hora de pared
+ * de la zona del consultorio como 'HH:MM', o null si no hay llegada; el cliente la muestra sin
+ * conocer la zona (RF-12).
+ *
  * Comunes: 401 sin sesión, 403 `no_autorizado`. No se registra ningún dato del paciente.
  */
 const esquemaSecretaria = {

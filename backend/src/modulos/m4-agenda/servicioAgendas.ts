@@ -32,7 +32,7 @@ interface FilaAgenda {
 }
 
 /** Proyección común a las dos agendas (D-15: el kinesiólogo ve lo mismo que la secretaría). */
-function proyectar(t: FilaAgenda) {
+function proyectar(t: FilaAgenda, zonaHoraria: string) {
   return {
     id: t.id,
     fecha: t.fecha.toISOString().slice(0, 10),
@@ -40,6 +40,8 @@ function proyectar(t: FilaAgenda) {
     horaFin: finDeFranja(t.horaInicio),
     estado: t.estado,
     llegadaEn: t.llegadaEn?.toISOString() ?? null,
+    // La misma llegada en hora de pared de la zona del consultorio, para que el cliente no deba conocerla.
+    horaLlegada: t.llegadaEn ? fechaYHoraLocal(t.llegadaEn, zonaHoraria).hora : null,
     coseguroObraSocial: t.coseguroObraSocial?.toFixed(2) ?? null,
     coseguroAdicional: t.coseguroAdicional?.toFixed(2) ?? null,
   };
@@ -71,7 +73,7 @@ export function crearServicioAgendas({ db, reloj }: { db: BaseDeDatos; reloj: Re
       return filas.map((t) => {
         const acciones = accionesDisponibles(t.estado, rol);
         return {
-          ...proyectar(t),
+          ...proyectar(t, reloj.zonaHoraria),
           paciente: t.paciente,
           kinesiologo: t.kinesiologo,
           acciones: {
@@ -97,7 +99,7 @@ export function crearServicioAgendas({ db, reloj }: { db: BaseDeDatos; reloj: Re
         orderBy: [{ fecha: 'asc' }, { horaInicio: 'asc' }, { id: 'asc' }],
       });
       const ahora = reloj.ahora();
-      const turnos = filas.map((t) => ({ ...proyectar(t), kinesiologo: t.kinesiologo }));
+      const turnos = filas.map((t) => ({ ...proyectar(t, reloj.zonaHoraria), kinesiologo: t.kinesiologo }));
       const proximos: typeof turnos = [];
       const historial: typeof turnos = [];
       for (const turno of turnos) {
@@ -133,7 +135,7 @@ export function crearServicioAgendas({ db, reloj }: { db: BaseDeDatos; reloj: Re
       // El kinesiólogo no necesita el id del paciente: no tiene ninguna ruta de pacientes (D-16).
       const aTurno = (t: (typeof enEspera)[number]) => {
         const { dni, nombre, telefono, obraSocial } = t.paciente;
-        return { ...proyectar(t), paciente: { nombre, dni, telefono, obraSocial } };
+        return { ...proyectar(t, reloj.zonaHoraria), paciente: { nombre, dni, telefono, obraSocial } };
       };
       return { enEspera: enEspera.map(aTurno), proximos: proximos.map(aTurno) };
     },

@@ -72,6 +72,7 @@ describe('GET /api/pacientes/:id/turnos (RF-47)', () => {
       horaFin: '11:15',
       estado: 'reservado',
       llegadaEn: null,
+      horaLlegada: null,
       coseguroObraSocial: '1500.50',
       coseguroAdicional: '200.00',
       kinesiologo: { id: k2.id, nombre: k2.nombre },
@@ -186,6 +187,26 @@ describe('GET /api/pacientes/:id/turnos (RF-47)', () => {
 
     expect(res.status).toBe(403);
     expect(res.body).toEqual(ERROR_NO_AUTORIZADO);
+  });
+
+  it('horaLlegada es la llegada en hora de la zona del consultorio; null si no hay llegada', async () => {
+    const { app } = await crearAppDePrueba();
+    const { cookie } = await ingresarComo(app, 'secretaria');
+    const paciente = await crearPaciente();
+    const llego = await crearTurno({ fecha: HOY, horaInicio: '08:00', estado: 'en_espera', pacienteId: paciente.id });
+    const llegoDeNoche = await crearTurno({ fecha: HOY, horaInicio: '23:00', estado: 'en_espera', pacienteId: paciente.id });
+    const sinLlegada = await crearTurno({ fecha: HOY, horaInicio: '10:00', pacienteId: paciente.id });
+    await db.turno.update({ where: { id: llego.id }, data: { llegadaEn: new Date('2026-10-14T11:05:00Z') } });
+    // 02:30 UTC del 15 es 23:30 del 14 en Buenos Aires: en UTC saldría otra hora y otro día.
+    await db.turno.update({ where: { id: llegoDeNoche.id }, data: { llegadaEn: new Date('2026-10-15T02:30:00Z') } });
+
+    const { body } = await ficha(app, paciente.id, cookie);
+    const todos = [...body.proximos, ...body.historial] as { id: number; llegadaEn: string | null; horaLlegada: string | null }[];
+    const de = (id: number) => todos.find((t) => t.id === id);
+
+    expect(de(llego.id)).toMatchObject({ llegadaEn: '2026-10-14T11:05:00.000Z', horaLlegada: '08:05' });
+    expect(de(llegoDeNoche.id)).toMatchObject({ llegadaEn: '2026-10-15T02:30:00.000Z', horaLlegada: '23:30' });
+    expect(de(sinLlegada.id)).toMatchObject({ llegadaEn: null, horaLlegada: null });
   });
 
   it('la respuesta no se guarda en caché (RNF-14)', async () => {
