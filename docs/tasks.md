@@ -30,7 +30,7 @@ El estado de cada tarea y lo que quedó a medio hacer están en [`avance.md`](./
 | 3 | T-16 → T-17 → T-18 | T-14 | Backend de la fase 1 |
 | 4 | T-22 → T-23 → T-24 | T-19 → T-21 → T-25 → T-26 | Fase 2, T-15 y T-20. T-25 necesita T-22 |
 | 5 | T-27 → T-29 | T-28 → T-30 | Fase 3 |
-| 6 | T-31 → T-32 | T-35 → T-37 | Fase 4 |
+| 6 | T-31 → T-32 | T-41 → T-35 → T-37 | Fase 4. T-41 antes de la infraestructura (decisión del usuario) |
 | 7 | T-33 → T-34 | T-36 → T-38 → T-39 | Todo lo anterior |
 | — | T-40 | — | Todo |
 
@@ -345,6 +345,17 @@ El estado de cada tarea y lo que quedó a medio hacer están en [`avance.md`](./
 
 ## Fase 6 · Cierre funcional
 
+### T-41 · F · Diseño visual
+- Implementa `DESIGN.md`: tokens de color, tipografía, espaciado, radios y sombras en
+  `styles.css`, con modo claro y oscuro; componente `app-icono` con los SVG de §5; barra lateral por
+  rol; pastillas de estado; los cuatro niveles de botón en todas las pantallas; vistas de 900 y
+  600 px.
+- Va antes de T-33, para que las pruebas de punta a punta corran sobre la interfaz final, y antes
+  de T-35, por decisión del usuario.
+- **RF/RNF:** RNF-15 (y la presentación de RF-34, RF-40 a RF-42).
+- **Hecho:** el criterio de `DESIGN.md` §10, con una prueba de unidad que verifica el contraste AA
+  de los pares de tokens, y recorrido manual del usuario en claro, oscuro y una pantalla chica.
+
 ### T-33 · E2E
 - Playwright con dos contextos (secretaría y kinesiólogo) que recorre:
   1. Instalar.
@@ -446,3 +457,5 @@ El estado de cada tarea y lo que quedó a medio hacer están en [`avance.md`](./
 | RF-18 | T-18 | RF-38 | T-03, T-23 | RNF-11 | T-06, T-39 |
 | RF-19 | T-18, T-30 | RF-39 | T-04, T-26 | RNF-12 | T-37, T-38 |
 | RF-20 | T-18, T-19 | RF-40 | T-27, T-30 | RNF-13 | T-36 |
+| | | | | RNF-14 | #49 |
+| | | | | RNF-15 | T-41 |
