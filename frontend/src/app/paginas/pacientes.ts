@@ -15,6 +15,7 @@ import {
   ID_CAMPO,
   type ErroresPaciente,
 } from './formulario-paciente';
+import { VolverAlInicio } from './volver-al-inicio';
 
 type Modo = 'dni' | 'nombre';
 
@@ -25,9 +26,9 @@ type Modo = 'dni' | 'nombre';
  */
 @Component({
   selector: 'app-pacientes',
-  imports: [RouterLink, FormularioPaciente],
+  imports: [RouterLink, VolverAlInicio, FormularioPaciente],
   template: `
-    <p><a routerLink="/secretaria">Volver a la agenda</a></p>
+    <app-volver-al-inicio />
     <h1>Pacientes</h1>
 
     @if (errorGeneral(); as mensaje) {

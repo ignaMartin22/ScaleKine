@@ -1,8 +1,8 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
-import { RouterLink } from '@angular/router';
 import { Consultorio, type DatosConsultorio } from '../nucleo/consultorio/consultorio';
 import { ErrorApi } from '../nucleo/http/error-api';
 import { enfocar, mensajeDe } from '../nucleo/ui/enfocar';
+import { VolverAlInicio } from './volver-al-inicio';
 
 type Campo = 'nombre' | 'direccion' | 'telefono';
 type Errores = Partial<Record<Campo, string>>;
@@ -21,9 +21,9 @@ const MAXIMO: Readonly<Record<Campo, number>> = { nombre: 120, direccion: 200, t
  */
 @Component({
   selector: 'app-consultorio',
-  imports: [RouterLink],
+  imports: [VolverAlInicio],
   template: `
-    <p><a routerLink="/secretaria">Volver a la agenda</a></p>
+    <app-volver-al-inicio />
     <h1>Datos del consultorio</h1>
 
     @if (aviso(); as mensaje) {

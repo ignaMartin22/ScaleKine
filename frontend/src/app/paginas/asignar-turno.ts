@@ -1,5 +1,4 @@
 import { Component, inject, signal } from '@angular/core';
-import { RouterLink } from '@angular/router';
 import { normalizarDni } from '../nucleo/pacientes/dni';
 import { Pacientes, type DatosPaciente, type Paciente } from '../nucleo/pacientes/pacientes';
 import {
@@ -16,6 +15,7 @@ import {
   erroresDeCampo,
   type ErroresPaciente,
 } from './formulario-paciente';
+import { VolverAlInicio } from './volver-al-inicio';
 
 interface Consulta {
   fecha: string;
@@ -56,9 +56,9 @@ export function esFinDeSemana(fecha: string): boolean {
  */
 @Component({
   selector: 'app-asignar-turno',
-  imports: [RouterLink, FormularioPaciente],
+  imports: [VolverAlInicio, FormularioPaciente],
   template: `
-    <p><a routerLink="/secretaria">Volver a la agenda</a></p>
+    <app-volver-al-inicio />
     <h1>Asignar turno</h1>
 
     @if (asignado(); as a) {
