@@ -3,8 +3,6 @@ import { describe, expect, it } from 'vitest';
 import { crearApp } from '../../src/app.js';
 import { cargarConfiguracion } from '../../src/comun/configuracion.js';
 import { RelojFijo } from '../../src/comun/reloj.js';
-import type { Rol } from '../../src/generado/prisma/client.js';
-import { hashearContrasena } from '../../src/modulos/m1-identidad/contrasenas.js';
 import { crearRutas } from '../../src/rutas.js';
 import { crearServicioTurnos } from '../../src/modulos/m3-turnos/turnos.js';
 import { ENTORNO_PRUEBA, loggerCapturado, ORIGEN_APP } from '../ayudantes.js';
@@ -15,10 +13,9 @@ import {
   crearPaciente,
   crearTurno,
   crearUsuario,
-  ingresarComoAdministradorVerificado,
+  ingresarComo,
 } from './fabricas.js';
 
-const CLAVE = 'clave-de-prueba-larga';
 const ERROR_NO_AUTORIZADO = {
   error: { codigo: 'no_autorizado', mensaje: 'No estás autorizado para realizar esta acción.' },
 };
@@ -27,9 +24,6 @@ const FECHA = '2026-10-12';
 /** Lunes anterior a `AHORA` (2026-10-07): la carga retroactiva se admite (RF-23). */
 const FECHA_VENCIDA = '2026-09-14';
 const SABADO = '2026-10-10';
-
-// Argon2 es lento a propósito: se calcula una vez y se reutiliza en todas las pruebas.
-const hashClave = hashearContrasena(CLAVE);
 
 /** Base cuyo `TurnoEvento.create` falla, tanto dentro de la transacción como fuera de ella. */
 const fallar = () => Promise.reject(new Error('fallo simulado del evento'));
@@ -52,22 +46,6 @@ async function crearAppDePrueba(baseDeDatos: typeof db = db) {
   return { app: crearApp({ config, logger: capturado.logger, reloj, rutas }), ...capturado };
 }
 type App = Awaited<ReturnType<typeof crearAppDePrueba>>['app'];
-
-/** Cuenta ficticia del rol con sesión abierta; devuelve la cabecera `Cookie` y el id del usuario. */
-async function ingresarComo(app: App, rol: Rol): Promise<{ cookie: string; usuarioId: number }> {
-  if (rol === 'administrador') {
-    const { cookie, usuario } = await ingresarComoAdministradorVerificado(app);
-    return { cookie, usuarioId: usuario.id };
-  }
-  // Cuenta de relleno: el autor de la sesión nunca es el id 1, así un autor fijo no pasa inadvertido.
-  await crearUsuario();
-  const nombreUsuario = `ficticio-${rol}`;
-  const usuario = await crearUsuario({ rol, nombreUsuario, hashContrasena: await hashClave });
-  const res = await request(app).post('/api/sesion').set('Origin', ORIGEN_APP).send({ nombreUsuario, contrasena: CLAVE });
-  expect(res.status).toBe(200);
-  const cookie = (res.headers['set-cookie'] as string[] | undefined)?.[0]?.split(';')[0] ?? '';
-  return { cookie, usuarioId: usuario.id };
-}
 
 const conCookie = (cookie?: string) => (cookie ? { Origin: ORIGEN_APP, Cookie: cookie } : { Origin: ORIGEN_APP });
 const asignar = (app: App, cookie: string | undefined, cuerpo: unknown) =>

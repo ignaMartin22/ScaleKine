@@ -3,14 +3,11 @@ import { describe, expect, it } from 'vitest';
 import { crearApp } from '../../src/app.js';
 import { cargarConfiguracion } from '../../src/comun/configuracion.js';
 import { RelojFijo } from '../../src/comun/reloj.js';
-import type { Rol } from '../../src/generado/prisma/client.js';
-import { hashearContrasena } from '../../src/modulos/m1-identidad/contrasenas.js';
 import { crearRutas } from '../../src/rutas.js';
 import { ENTORNO_PRUEBA, loggerCapturado, ORIGEN_APP } from '../ayudantes.js';
 import { db } from './base.js';
-import { AHORA, crearPaciente, crearUsuario, ingresarComoAdministradorVerificado } from './fabricas.js';
+import { AHORA, crearPaciente, ingresarComo } from './fabricas.js';
 
-const CLAVE = 'clave-de-prueba-larga';
 const ERROR_NO_AUTORIZADO = {
   error: {
     codigo: 'no_autorizado',
@@ -23,9 +20,6 @@ const ALTA = {
   telefono: '11 5555 0101',
   obraSocial: 'Obra Ficticia',
 };
-
-// Argon2 es lento a propósito: se calcula una vez y se reutiliza en todas las pruebas.
-const hashClave = hashearContrasena(CLAVE);
 
 async function crearAppDePrueba() {
   const config = cargarConfiguracion({
@@ -41,19 +35,6 @@ async function crearAppDePrueba() {
   };
 }
 type App = Awaited<ReturnType<typeof crearAppDePrueba>>['app'];
-
-/** Cuenta ficticia del rol, con sesión abierta; devuelve la cabecera `Cookie`. */
-async function ingresarComo(app: App, rol: Rol): Promise<string> {
-  if (rol === 'administrador') return (await ingresarComoAdministradorVerificado(app)).cookie;
-  const nombreUsuario = `ficticio-${rol}`;
-  await crearUsuario({ rol, nombreUsuario, hashContrasena: await hashClave });
-  const res = await request(app)
-    .post('/api/sesion')
-    .set('Origin', ORIGEN_APP)
-    .send({ nombreUsuario, contrasena: CLAVE });
-  expect(res.status).toBe(200);
-  return ((res.headers['set-cookie'] as unknown as string[])[0] ?? '').split(';')[0] ?? '';
-}
 
 const conCookie = (cookie?: string) => (cookie ? { Origin: ORIGEN_APP, Cookie: cookie } : { Origin: ORIGEN_APP });
 const alta = (app: App, cookie: string | undefined, cuerpo: unknown) =>
@@ -74,7 +55,7 @@ const buscar = (app: App, cookie: string | undefined, consulta: string) =>
 describe('alta de paciente (RF-17, RF-18)', () => {
   it('guarda el DNI normalizado y devuelve el paciente; "Particular" lo manda el cliente', async () => {
     const { app } = await crearAppDePrueba();
-    const cookie = await ingresarComo(app, 'secretaria');
+    const cookie = (await ingresarComo(app, 'secretaria')).cookie;
 
     const res = await alta(app, cookie, { ...ALTA, obraSocial: 'Particular' });
 
@@ -99,12 +80,12 @@ describe('alta de paciente (RF-17, RF-18)', () => {
 
   it('el administrador también puede dar de alta', async () => {
     const { app } = await crearAppDePrueba();
-    expect((await alta(app, await ingresarComo(app, 'administrador'), ALTA)).status).toBe(201);
+    expect((await alta(app, (await ingresarComo(app, 'administrador')).cookie, ALTA)).status).toBe(201);
   });
 
   it('un DNI de 7 dígitos y uno con ceros a la izquierda son válidos', async () => {
     const { app } = await crearAppDePrueba();
-    const cookie = await ingresarComo(app, 'secretaria');
+    const cookie = (await ingresarComo(app, 'secretaria')).cookie;
 
     expect((await alta(app, cookie, { ...ALTA, dni: '9.123.456' })).body.paciente.dni).toBe('9123456');
     expect((await alta(app, cookie, { ...ALTA, dni: '0123456' })).body.paciente.dni).toBe('0123456');
@@ -112,7 +93,7 @@ describe('alta de paciente (RF-17, RF-18)', () => {
 
   it('el backend no completa la obra social: sin ella, 400', async () => {
     const { app } = await crearAppDePrueba();
-    const cookie = await ingresarComo(app, 'secretaria');
+    const cookie = (await ingresarComo(app, 'secretaria')).cookie;
 
     const res = await alta(app, cookie, { ...ALTA, obraSocial: undefined });
 
@@ -122,7 +103,7 @@ describe('alta de paciente (RF-17, RF-18)', () => {
 
   it('DNI ya registrado, aunque se escriba distinto: 409 dni_en_uso y no se crea nada', async () => {
     const { app } = await crearAppDePrueba();
-    const cookie = await ingresarComo(app, 'secretaria');
+    const cookie = (await ingresarComo(app, 'secretaria')).cookie;
     await crearPaciente({ dni: '90123456' });
 
     const res = await alta(app, cookie, ALTA);
@@ -134,7 +115,7 @@ describe('alta de paciente (RF-17, RF-18)', () => {
 
   it('dos altas simultáneas con el mismo DNI: una gana y la otra recibe 409', async () => {
     const { app } = await crearAppDePrueba();
-    const cookie = await ingresarComo(app, 'secretaria');
+    const cookie = (await ingresarComo(app, 'secretaria')).cookie;
 
     const [a, b] = await Promise.all([
       alta(app, cookie, ALTA),
@@ -163,7 +144,7 @@ describe('alta de paciente (RF-17, RF-18)', () => {
     ['cuerpo vacío', {}],
   ])('%s: 400 y no se crea nada', async (_caso, cuerpo) => {
     const { app } = await crearAppDePrueba();
-    const cookie = await ingresarComo(app, 'secretaria');
+    const cookie = (await ingresarComo(app, 'secretaria')).cookie;
 
     const res = await alta(app, cookie, cuerpo);
 
@@ -173,7 +154,7 @@ describe('alta de paciente (RF-17, RF-18)', () => {
 
   it('el kinesiólogo recibe 403; sin sesión, 401; y no se crea nada', async () => {
     const { app } = await crearAppDePrueba();
-    const kine = await ingresarComo(app, 'kinesiologo');
+    const kine = (await ingresarComo(app, 'kinesiologo')).cookie;
 
     const prohibido = await alta(app, kine, ALTA);
     const sinSesion = await alta(app, undefined, ALTA);
@@ -188,7 +169,7 @@ describe('alta de paciente (RF-17, RF-18)', () => {
 describe('edición de paciente (RF-20)', () => {
   it('reemplaza los datos y normaliza el DNI', async () => {
     const { app } = await crearAppDePrueba();
-    const cookie = await ingresarComo(app, 'secretaria');
+    const cookie = (await ingresarComo(app, 'secretaria')).cookie;
     const { id } = await crearPaciente({ dni: '90000001' });
 
     const res = await editar(app, cookie, id, { ...ALTA, dni: '91.000.002' });
@@ -209,7 +190,7 @@ describe('edición de paciente (RF-20)', () => {
 
   it('guardar el propio DNI, aunque escrito con puntos, no es conflicto', async () => {
     const { app } = await crearAppDePrueba();
-    const cookie = await ingresarComo(app, 'secretaria');
+    const cookie = (await ingresarComo(app, 'secretaria')).cookie;
     const { id } = await crearPaciente({ dni: '90123456' });
 
     const res = await editar(app, cookie, id, {
@@ -226,7 +207,7 @@ describe('edición de paciente (RF-20)', () => {
 
   it('el DNI de otro paciente: 409 dni_en_uso y los datos no cambian', async () => {
     const { app } = await crearAppDePrueba();
-    const cookie = await ingresarComo(app, 'secretaria');
+    const cookie = (await ingresarComo(app, 'secretaria')).cookie;
     const { id } = await crearPaciente({ dni: '90000001' });
     await crearPaciente({ dni: '90123456' });
 
@@ -249,7 +230,7 @@ describe('edición de paciente (RF-20)', () => {
     ['sin obra social', { ...ALTA, obraSocial: undefined }],
   ])('%s: 400 y no cambia nada', async (_caso, cuerpo) => {
     const { app } = await crearAppDePrueba();
-    const cookie = await ingresarComo(app, 'secretaria');
+    const cookie = (await ingresarComo(app, 'secretaria')).cookie;
     const { id } = await crearPaciente({ dni: '90000001' });
     const antes = await db.paciente.findUniqueOrThrow({ where: { id } });
 
@@ -261,7 +242,7 @@ describe('edición de paciente (RF-20)', () => {
 
   it('paciente inexistente: 404; id mal formado: 400', async () => {
     const { app } = await crearAppDePrueba();
-    const cookie = await ingresarComo(app, 'secretaria');
+    const cookie = (await ingresarComo(app, 'secretaria')).cookie;
 
     const inexistente = await editar(app, cookie, 99999, ALTA);
     const malFormado = await editar(app, cookie, 'abc', ALTA);
@@ -273,7 +254,7 @@ describe('edición de paciente (RF-20)', () => {
 
   it('el kinesiólogo recibe 403; sin sesión, 401; y no cambia nada', async () => {
     const { app } = await crearAppDePrueba();
-    const kine = await ingresarComo(app, 'kinesiologo');
+    const kine = (await ingresarComo(app, 'kinesiologo')).cookie;
     const { id } = await crearPaciente({ dni: '90000001' });
 
     expect((await editar(app, kine, id, ALTA)).status).toBe(403);
@@ -287,7 +268,7 @@ describe('edición de paciente (RF-20)', () => {
 describe('ficha del paciente (RF-21)', () => {
   it('devuelve los datos de M2', async () => {
     const { app } = await crearAppDePrueba();
-    const cookie = await ingresarComo(app, 'secretaria');
+    const cookie = (await ingresarComo(app, 'secretaria')).cookie;
     const p = await crearPaciente({ dni: '90000001' });
 
     const res = await ficha(app, cookie, p.id);
@@ -306,8 +287,8 @@ describe('ficha del paciente (RF-21)', () => {
 
   it('inexistente: 404; mal formado: 400; kinesiólogo: 403; sin sesión: 401', async () => {
     const { app } = await crearAppDePrueba();
-    const secretaria = await ingresarComo(app, 'secretaria');
-    const kine = await ingresarComo(app, 'kinesiologo');
+    const secretaria = (await ingresarComo(app, 'secretaria')).cookie;
+    const kine = (await ingresarComo(app, 'kinesiologo')).cookie;
     const p = await crearPaciente();
 
     expect((await ficha(app, secretaria, 99999)).status).toBe(404);
@@ -322,7 +303,7 @@ describe('ficha del paciente (RF-21)', () => {
 describe('búsqueda de pacientes (RF-19, RF-21)', () => {
   it.each(['30123456', '30.123.456', '30 123 456'])('por DNI exacto: %j encuentra al paciente', async (dni) => {
     const { app } = await crearAppDePrueba();
-    const cookie = await ingresarComo(app, 'secretaria');
+    const cookie = (await ingresarComo(app, 'secretaria')).cookie;
     const p = await crearPaciente({ dni: '30123456' });
     await crearPaciente({ dni: '30123457' });
 
@@ -342,7 +323,7 @@ describe('búsqueda de pacientes (RF-19, RF-21)', () => {
 
   it('por DNI inexistente: 200 con lista vacía (ofrece el alta)', async () => {
     const { app } = await crearAppDePrueba();
-    const cookie = await ingresarComo(app, 'administrador');
+    const cookie = (await ingresarComo(app, 'administrador')).cookie;
     await crearPaciente({ dni: '30123456' });
 
     const res = await buscar(app, cookie, '?dni=30123450');
@@ -353,7 +334,7 @@ describe('búsqueda de pacientes (RF-19, RF-21)', () => {
 
   it('el DNI es exacto: un prefijo no encuentra nada', async () => {
     const { app } = await crearAppDePrueba();
-    const cookie = await ingresarComo(app, 'secretaria');
+    const cookie = (await ingresarComo(app, 'secretaria')).cookie;
     await crearPaciente({ dni: '30123456' });
 
     expect((await buscar(app, cookie, '?dni=3012345')).body.pacientes).toEqual([]);
@@ -363,7 +344,7 @@ describe('búsqueda de pacientes (RF-19, RF-21)', () => {
     'DNI de formato inválido %j: 400, no "sin resultados"',
     async (dni) => {
       const { app } = await crearAppDePrueba();
-      const cookie = await ingresarComo(app, 'secretaria');
+      const cookie = (await ingresarComo(app, 'secretaria')).cookie;
 
       const res = await buscar(app, cookie, `?dni=${dni}`);
 
@@ -374,7 +355,7 @@ describe('búsqueda de pacientes (RF-19, RF-21)', () => {
 
   it('por nombre: parcial, sin distinguir mayúsculas y ordenado por nombre', async () => {
     const { app } = await crearAppDePrueba();
-    const cookie = await ingresarComo(app, 'secretaria');
+    const cookie = (await ingresarComo(app, 'secretaria')).cookie;
     await crearPaciente({ nombre: 'Zulema Gómez' });
     await crearPaciente({ nombre: 'Ana Gómez' });
     await crearPaciente({ nombre: 'Luis Pérez' });
@@ -387,7 +368,7 @@ describe('búsqueda de pacientes (RF-19, RF-21)', () => {
 
   it('por nombre: sin coincidencias, lista vacía; los espacios de los costados se recortan', async () => {
     const { app } = await crearAppDePrueba();
-    const cookie = await ingresarComo(app, 'secretaria');
+    const cookie = (await ingresarComo(app, 'secretaria')).cookie;
     await crearPaciente({ nombre: 'Ana Gómez' });
 
     expect((await buscar(app, cookie, '?nombre=zzz')).body).toEqual({
@@ -399,7 +380,7 @@ describe('búsqueda de pacientes (RF-19, RF-21)', () => {
 
   it('por nombre: los comodines de LIKE se buscan como texto', async () => {
     const { app } = await crearAppDePrueba();
-    const cookie = await ingresarComo(app, 'secretaria');
+    const cookie = (await ingresarComo(app, 'secretaria')).cookie;
     await crearPaciente({ nombre: 'Ana Gómez' });
     await crearPaciente({ nombre: '100% Ficticio' });
 
@@ -411,7 +392,7 @@ describe('búsqueda de pacientes (RF-19, RF-21)', () => {
 
   it('por nombre: mínimo de 3 caracteres y tope de 20 resultados', async () => {
     const { app } = await crearAppDePrueba();
-    const cookie = await ingresarComo(app, 'secretaria');
+    const cookie = (await ingresarComo(app, 'secretaria')).cookie;
     for (let i = 0; i < 25; i++) await crearPaciente({ nombre: `Ficticio ${String(i).padStart(2, '0')}` });
 
     expect((await buscar(app, cookie, '?nombre=Fi')).status).toBe(400);
@@ -426,7 +407,7 @@ describe('búsqueda de pacientes (RF-19, RF-21)', () => {
     'consulta %j sin exactamente uno de dni y nombre: 400',
     async (consulta) => {
       const { app } = await crearAppDePrueba();
-      const cookie = await ingresarComo(app, 'secretaria');
+      const cookie = (await ingresarComo(app, 'secretaria')).cookie;
 
       expect((await buscar(app, cookie, consulta)).status).toBe(400);
     },
@@ -434,7 +415,7 @@ describe('búsqueda de pacientes (RF-19, RF-21)', () => {
 
   it('el kinesiólogo recibe 403 aunque la consulta sea inválida; sin sesión, 401', async () => {
     const { app } = await crearAppDePrueba();
-    const kine = await ingresarComo(app, 'kinesiologo');
+    const kine = (await ingresarComo(app, 'kinesiologo')).cookie;
     await crearPaciente({ dni: '30123456' });
 
     for (const consulta of ['?dni=30123456', '?nombre=Ficticio', '']) {
@@ -449,7 +430,7 @@ describe('búsqueda de pacientes (RF-19, RF-21)', () => {
 describe('datos sensibles fuera de los logs (CLAUDE.md)', () => {
   it('ni el alta, ni la edición, ni las búsquedas, ni los errores registran DNI, nombre, teléfono u obra social', async () => {
     const { app, texto } = await crearAppDePrueba();
-    const cookie = await ingresarComo(app, 'secretaria');
+    const cookie = (await ingresarComo(app, 'secretaria')).cookie;
 
     const creada = await alta(app, cookie, ALTA);
     await editar(app, cookie, creada.body.paciente.id, {

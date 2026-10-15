@@ -3,8 +3,6 @@ import { describe, expect, it } from 'vitest';
 import { crearApp } from '../../src/app.js';
 import { cargarConfiguracion } from '../../src/comun/configuracion.js';
 import { RelojFijo } from '../../src/comun/reloj.js';
-import type { Rol } from '../../src/generado/prisma/client.js';
-import { hashearContrasena } from '../../src/modulos/m1-identidad/contrasenas.js';
 import { crearRutas } from '../../src/rutas.js';
 import { ENTORNO_PRUEBA, loggerCapturado, ORIGEN_APP } from '../ayudantes.js';
 import { db } from './base.js';
@@ -13,20 +11,15 @@ import {
   crearKinesiologo,
   crearPaciente,
   crearTurno,
-  crearUsuario,
-  ingresarComoAdministradorVerificado,
+  ingresarComo,
 } from './fabricas.js';
 
-const CLAVE = 'clave-de-prueba-larga';
 const LUNES = '2026-10-12';
 const MARTES = '2026-10-13';
 const MANANA = ['08:00', '08:45', '09:30', '10:15', '11:00', '11:45'];
 const ERROR_NO_AUTORIZADO = {
   error: { codigo: 'no_autorizado', mensaje: 'No estás autorizado para realizar esta acción.' },
 };
-
-// Argon2 es lento a propósito: se calcula una vez y se reutiliza en todas las pruebas.
-const hashClave = hashearContrasena(CLAVE);
 
 async function crearAppDePrueba() {
   const config = cargarConfiguracion({ ...ENTORNO_PRUEBA, COOKIE_SECURE: 'false' });
@@ -36,18 +29,6 @@ async function crearAppDePrueba() {
   return { app: crearApp({ config, logger: capturado.logger, reloj, rutas }), ...capturado };
 }
 type App = Awaited<ReturnType<typeof crearAppDePrueba>>['app'];
-
-async function ingresarComo(app: App, rol: Rol): Promise<string> {
-  if (rol === 'administrador') return (await ingresarComoAdministradorVerificado(app)).cookie;
-  const nombreUsuario = `ficticio-${rol}`;
-  await crearUsuario({ rol, nombreUsuario, hashContrasena: await hashClave });
-  const res = await request(app)
-    .post('/api/sesion')
-    .set('Origin', ORIGEN_APP)
-    .send({ nombreUsuario, contrasena: CLAVE });
-  expect(res.status).toBe(200);
-  return ((res.headers['set-cookie'] as unknown as string[])[0] ?? '').split(';')[0] ?? '';
-}
 
 const consultar = (app: App, cookie: string | undefined, query: Record<string, string>) =>
   request(app)
@@ -64,7 +45,7 @@ const franjasDe = (cuerpo: Cuerpo, id: number) =>
 describe('GET /api/disponibilidad (RF-22, RF-15)', () => {
   it('devuelve los kinesiólogos del bloque con la grilla completa y su hora de fin', async () => {
     const { app } = await crearAppDePrueba();
-    const cookie = await ingresarComo(app, 'secretaria');
+    const cookie = (await ingresarComo(app, 'secretaria')).cookie;
     const k = await crearKinesiologo({ bloque: 'manana' });
 
     const res = await consultar(app, cookie, { fecha: LUNES, bloque: 'manana' });
@@ -80,7 +61,7 @@ describe('GET /api/disponibilidad (RF-22, RF-15)', () => {
 
   it('el administrador también puede consultar', async () => {
     const { app } = await crearAppDePrueba();
-    const cookie = await ingresarComo(app, 'administrador');
+    const cookie = (await ingresarComo(app, 'administrador')).cookie;
     await crearKinesiologo();
 
     const res = await consultar(app, cookie, { fecha: LUNES, bloque: 'manana' });
@@ -90,7 +71,7 @@ describe('GET /api/disponibilidad (RF-22, RF-15)', () => {
 
   it('los turnos activos ocupan la franja y los cerrados no', async () => {
     const { app } = await crearAppDePrueba();
-    const cookie = await ingresarComo(app, 'secretaria');
+    const cookie = (await ingresarComo(app, 'secretaria')).cookie;
     const k = await crearKinesiologo();
     await crearTurno({ kinesiologoId: k.id, fecha: LUNES, horaInicio: '08:00', estado: 'reservado' });
     await crearTurno({ kinesiologoId: k.id, fecha: LUNES, horaInicio: '08:45', estado: 'en_espera' });
@@ -105,7 +86,7 @@ describe('GET /api/disponibilidad (RF-22, RF-15)', () => {
 
   it('un turno de otra fecha no ocupa la franja', async () => {
     const { app } = await crearAppDePrueba();
-    const cookie = await ingresarComo(app, 'secretaria');
+    const cookie = (await ingresarComo(app, 'secretaria')).cookie;
     const k = await crearKinesiologo();
     await crearTurno({ kinesiologoId: k.id, fecha: MARTES, horaInicio: '08:00' });
 
@@ -116,7 +97,7 @@ describe('GET /api/disponibilidad (RF-22, RF-15)', () => {
 
   it('los kinesiólogos de otro bloque no aparecen', async () => {
     const { app } = await crearAppDePrueba();
-    const cookie = await ingresarComo(app, 'secretaria');
+    const cookie = (await ingresarComo(app, 'secretaria')).cookie;
     const deManana = await crearKinesiologo({ bloque: 'manana' });
     const deTarde = await crearKinesiologo({ bloque: 'tarde' });
 
@@ -130,7 +111,7 @@ describe('GET /api/disponibilidad (RF-22, RF-15)', () => {
 
   it('un kinesiólogo con la cuenta desactivada no aparece y uno activo del mismo bloque sí (RF-22)', async () => {
     const { app } = await crearAppDePrueba();
-    const cookie = await ingresarComo(app, 'secretaria');
+    const cookie = (await ingresarComo(app, 'secretaria')).cookie;
     const activo = await crearKinesiologo({ bloque: 'manana' });
     const desactivado = await crearKinesiologo({ bloque: 'manana' });
     await db.usuario.update({ where: { id: desactivado.usuarioId }, data: { activo: false } });
@@ -144,7 +125,7 @@ describe('GET /api/disponibilidad (RF-22, RF-15)', () => {
 
   it('un turno de otro kinesiólogo no ocupa la franja de este si no se pide paciente', async () => {
     const { app } = await crearAppDePrueba();
-    const cookie = await ingresarComo(app, 'secretaria');
+    const cookie = (await ingresarComo(app, 'secretaria')).cookie;
     const a = await crearKinesiologo();
     const b = await crearKinesiologo();
     await crearTurno({ kinesiologoId: b.id, fecha: LUNES, horaInicio: '08:00' });
@@ -157,7 +138,7 @@ describe('GET /api/disponibilidad (RF-22, RF-15)', () => {
 
   it('con paciente, su turno activo con otro kinesiólogo ocupa esa hora en todos', async () => {
     const { app } = await crearAppDePrueba();
-    const cookie = await ingresarComo(app, 'secretaria');
+    const cookie = (await ingresarComo(app, 'secretaria')).cookie;
     const a = await crearKinesiologo();
     const b = await crearKinesiologo();
     const paciente = await crearPaciente();
@@ -183,7 +164,7 @@ describe('GET /api/disponibilidad (RF-22, RF-15)', () => {
 
   it('sin paciente no se filtra por paciente', async () => {
     const { app } = await crearAppDePrueba();
-    const cookie = await ingresarComo(app, 'secretaria');
+    const cookie = (await ingresarComo(app, 'secretaria')).cookie;
     const a = await crearKinesiologo();
     const b = await crearKinesiologo();
     const paciente = await crearPaciente();
@@ -196,7 +177,7 @@ describe('GET /api/disponibilidad (RF-22, RF-15)', () => {
 
   it('un fin de semana devuelve los kinesiólogos sin franjas', async () => {
     const { app } = await crearAppDePrueba();
-    const cookie = await ingresarComo(app, 'secretaria');
+    const cookie = (await ingresarComo(app, 'secretaria')).cookie;
     const k = await crearKinesiologo();
 
     const res = await consultar(app, cookie, { fecha: '2026-10-10', bloque: 'manana' });
@@ -207,7 +188,7 @@ describe('GET /api/disponibilidad (RF-22, RF-15)', () => {
 
   it('un paciente inexistente es 404 paciente_no_encontrado', async () => {
     const { app } = await crearAppDePrueba();
-    const cookie = await ingresarComo(app, 'secretaria');
+    const cookie = (await ingresarComo(app, 'secretaria')).cookie;
 
     const res = await consultar(app, cookie, { fecha: LUNES, bloque: 'manana', pacienteId: '999999' });
 
@@ -217,7 +198,7 @@ describe('GET /api/disponibilidad (RF-22, RF-15)', () => {
 
   it('el kinesiólogo recibe 403', async () => {
     const { app } = await crearAppDePrueba();
-    const cookie = await ingresarComo(app, 'kinesiologo');
+    const cookie = (await ingresarComo(app, 'kinesiologo')).cookie;
 
     const res = await consultar(app, cookie, { fecha: LUNES, bloque: 'manana' });
 
@@ -246,7 +227,7 @@ describe('GET /api/disponibilidad (RF-22, RF-15)', () => {
     ['paciente fuera de rango', { fecha: LUNES, bloque: 'manana', pacienteId: '99999999999' }],
   ])('parámetros inválidos (%s) son 400 datos_invalidos', async (_caso, query) => {
     const { app } = await crearAppDePrueba();
-    const cookie = await ingresarComo(app, 'secretaria');
+    const cookie = (await ingresarComo(app, 'secretaria')).cookie;
 
     const res = await consultar(app, cookie, query);
 
@@ -256,7 +237,7 @@ describe('GET /api/disponibilidad (RF-22, RF-15)', () => {
 
   it('no escribe turnos ni deja datos personales en los logs', async () => {
     const { app, texto } = await crearAppDePrueba();
-    const cookie = await ingresarComo(app, 'secretaria');
+    const cookie = (await ingresarComo(app, 'secretaria')).cookie;
     const k = await crearKinesiologo();
     const paciente = await crearPaciente();
     await crearTurno({ kinesiologoId: k.id, pacienteId: paciente.id, fecha: LUNES, horaInicio: '08:00' });

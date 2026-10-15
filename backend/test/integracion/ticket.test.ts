@@ -3,8 +3,6 @@ import { describe, expect, it } from 'vitest';
 import { crearApp } from '../../src/app.js';
 import { cargarConfiguracion } from '../../src/comun/configuracion.js';
 import { RelojFijo } from '../../src/comun/reloj.js';
-import type { Rol } from '../../src/generado/prisma/client.js';
-import { hashearContrasena } from '../../src/modulos/m1-identidad/contrasenas.js';
 import { crearRutas } from '../../src/rutas.js';
 import { ENTORNO_PRUEBA, loggerCapturado, ORIGEN_APP } from '../ayudantes.js';
 import { db } from './base.js';
@@ -13,13 +11,9 @@ import {
   crearKinesiologo,
   crearPaciente,
   crearTurno,
-  crearUsuario,
-  ingresarComoAdministradorVerificado,
+  ingresarComo,
 } from './fabricas.js';
 import { decodificarQrDelPdf, textoDelPdf } from './qrDelPdf.js';
-
-const CLAVE = 'clave-de-prueba-larga';
-const hashClave = hashearContrasena(CLAVE);
 
 const CONSULTORIO = { nombre: 'Consultorio Ficticio', direccion: 'Calle Falsa 123', telefono: '11 4000 0000' };
 
@@ -31,15 +25,6 @@ async function crearAppDePrueba() {
   return { app: crearApp({ config, logger: capturado.logger, reloj, rutas }), ...capturado };
 }
 type App = Awaited<ReturnType<typeof crearAppDePrueba>>['app'];
-
-async function ingresarComo(app: App, rol: Rol): Promise<string> {
-  if (rol === 'administrador') return (await ingresarComoAdministradorVerificado(app)).cookie;
-  const nombreUsuario = `ficticio-${rol}`;
-  await crearUsuario({ rol, nombreUsuario, hashContrasena: await hashClave });
-  const res = await request(app).post('/api/sesion').set('Origin', ORIGEN_APP).send({ nombreUsuario, contrasena: CLAVE });
-  expect(res.status).toBe(200);
-  return (res.headers['set-cookie'] as string[] | undefined)?.[0]?.split(';')[0] ?? '';
-}
 
 /** Descarga binaria: se junta el cuerpo en un Buffer. */
 const pedir = (app: App, id: number | string, cookie?: string) =>
@@ -76,7 +61,7 @@ const textoEsperado = (id: number, paciente: string, kinesiologo: string, fechaH
 describe('ticket con QR (RF-28)', () => {
   it('responde el PDF con las cabeceras previstas y sin datos personales en el nombre', async () => {
     const { app } = await crearAppDePrueba();
-    const cookie = await ingresarComo(app, 'secretaria');
+    const cookie = (await ingresarComo(app, 'secretaria')).cookie;
     const { turno } = await escenario();
 
     const res = await pedir(app, turno.id, cookie);
@@ -90,7 +75,7 @@ describe('ticket con QR (RF-28)', () => {
 
   it('el QR del PDF lleva número de turno, paciente, kinesiólogo, fecha y hora', async () => {
     const { app } = await crearAppDePrueba();
-    const cookie = await ingresarComo(app, 'administrador');
+    const cookie = (await ingresarComo(app, 'administrador')).cookie;
     const { turno, kinesiologo } = await escenario();
 
     const res = await pedir(app, turno.id, cookie);
@@ -103,7 +88,7 @@ describe('ticket con QR (RF-28)', () => {
 
   it('el QR no contiene el DNI, los coseguros ni la obra social', async () => {
     const { app } = await crearAppDePrueba();
-    const cookie = await ingresarComo(app, 'secretaria');
+    const cookie = (await ingresarComo(app, 'secretaria')).cookie;
     const { turno } = await escenario();
 
     const qr = decodificarQrDelPdf((await pedir(app, turno.id, cookie)).body as Buffer);
@@ -115,7 +100,7 @@ describe('ticket con QR (RF-28)', () => {
 
   it('usa los datos vigentes del consultorio en cada pedido, antes y después de cambiarlos', async () => {
     const { app } = await crearAppDePrueba();
-    const cookie = await ingresarComo(app, 'secretaria');
+    const cookie = (await ingresarComo(app, 'secretaria')).cookie;
     const { turno } = await escenario();
 
     const antes = textoDelPdf((await pedir(app, turno.id, cookie)).body as Buffer);
@@ -136,7 +121,7 @@ describe('ticket con QR (RF-28)', () => {
 
   it('el PDF repite en texto legible los datos del turno, con tildes y eñes', async () => {
     const { app } = await crearAppDePrueba();
-    const cookie = await ingresarComo(app, 'secretaria');
+    const cookie = (await ingresarComo(app, 'secretaria')).cookie;
     const { turno, kinesiologo } = await escenario();
 
     const texto = textoDelPdf((await pedir(app, turno.id, cookie)).body as Buffer);
@@ -150,7 +135,7 @@ describe('ticket con QR (RF-28)', () => {
 
   it('tras reprogramar, el QR lleva la fecha y la hora nuevas', async () => {
     const { app } = await crearAppDePrueba();
-    const cookie = await ingresarComo(app, 'secretaria');
+    const cookie = (await ingresarComo(app, 'secretaria')).cookie;
     const { turno, kinesiologo } = await escenario();
     const antes = decodificarQrDelPdf((await pedir(app, turno.id, cookie)).body as Buffer);
     expect(antes).toBe(textoEsperado(turno.id, 'Ñandú Pérez', kinesiologo.nombre, 'lunes 19/10/2026, 08:00'));
@@ -165,7 +150,7 @@ describe('ticket con QR (RF-28)', () => {
 
   it('el kinesiólogo recibe 403 y no se genera el ticket', async () => {
     const { app } = await crearAppDePrueba();
-    const cookie = await ingresarComo(app, 'kinesiologo');
+    const cookie = (await ingresarComo(app, 'kinesiologo')).cookie;
     const { turno } = await escenario();
 
     const res = await pedir(app, turno.id, cookie);
@@ -182,7 +167,7 @@ describe('ticket con QR (RF-28)', () => {
 
   it('un turno inexistente responde 404 y un identificador mal formado, 400', async () => {
     const { app } = await crearAppDePrueba();
-    const cookie = await ingresarComo(app, 'secretaria');
+    const cookie = (await ingresarComo(app, 'secretaria')).cookie;
     await escenario();
 
     expect((await pedir(app, 999999, cookie)).status).toBe(404);
@@ -191,7 +176,7 @@ describe('ticket con QR (RF-28)', () => {
 
   it('ni el nombre del paciente ni el contenido del ticket pasan por los logs', async () => {
     const { app, texto } = await crearAppDePrueba();
-    const cookie = await ingresarComo(app, 'secretaria');
+    const cookie = (await ingresarComo(app, 'secretaria')).cookie;
     const { turno } = await escenario();
 
     await pedir(app, turno.id, cookie);

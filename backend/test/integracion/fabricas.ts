@@ -51,6 +51,7 @@ export const CONTRASENA_ADMINISTRADOR_VERIFICADO = 'clave-de-prueba-larga';
 
 // Argon2 es lento a propósito: se calcula una vez y se reutiliza.
 let hashAdministrador: Promise<string> | undefined;
+let hashClavePrueba: Promise<string> | undefined;
 
 /**
  * Deja una sesión de administrador lista para usar rutas de negocio (RNF-04): crea la cuenta con el
@@ -89,6 +90,39 @@ export async function ingresarComoAdministradorVerificado(
   if (!token) throw new Error('El ingreso no trajo cookie.');
   await db.sesion.update({ where: { hashToken: hashDeToken(token) }, data: { segundoFactorVerificado: true } });
   return { usuario, token, cookie: `sesion=${token}` };
+}
+
+/**
+ * Cuenta ficticia del rol con sesión abierta por la API real. Devuelve `cookie` (cabecera `Cookie`,
+ * `sesion=<token>`), `token` (valor de la cookie) y `usuarioId`. La contraseña es
+ * `CONTRASENA_ADMINISTRADOR_VERIFICADO`. El administrador se delega en
+ * `ingresarComoAdministradorVerificado` (exige segundo factor, RNF-04).
+ *
+ * Por defecto crea antes un usuario de relleno, así el autor de la sesión nunca es el id 1 y una
+ * prueba que dependa de un autor fijo (en vez del de la sesión) falla. `conRelleno: false` lo omite
+ * para las pruebas que necesiten el control exacto de los ids.
+ */
+export async function ingresarComo(
+  app: Parameters<typeof request>[0],
+  rol: Rol,
+  opciones: { conRelleno?: boolean } = {},
+) {
+  if (rol === 'administrador') {
+    const { cookie, token, usuario } = await ingresarComoAdministradorVerificado(app);
+    return { cookie, token, usuarioId: usuario.id };
+  }
+  if (opciones.conRelleno ?? true) await crearUsuario();
+  hashClavePrueba ??= hashearContrasena(CONTRASENA_ADMINISTRADOR_VERIFICADO);
+  const nombreUsuario = `ficticio-${rol}`;
+  const usuario = await crearUsuario({ rol, nombreUsuario, hashContrasena: await hashClavePrueba });
+  const res = await request(app)
+    .post('/api/sesion')
+    .set('Origin', ORIGEN_APP)
+    .send({ nombreUsuario, contrasena: CONTRASENA_ADMINISTRADOR_VERIFICADO });
+  if (res.status !== 200) throw new Error(`El ingreso de prueba (${rol}) dio ${res.status}.`);
+  const token = /^sesion=([^;]*)/.exec((res.headers['set-cookie'] as string[] | undefined)?.[0] ?? '')?.[1];
+  if (!token) throw new Error('El ingreso no trajo cookie.');
+  return { cookie: `sesion=${token}`, token, usuarioId: usuario.id };
 }
 
 export async function crearKinesiologo(datos: { bloque?: Bloque } = {}) {

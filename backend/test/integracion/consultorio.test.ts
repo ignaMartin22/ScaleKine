@@ -3,14 +3,11 @@ import { describe, expect, it } from 'vitest';
 import { crearApp } from '../../src/app.js';
 import { cargarConfiguracion } from '../../src/comun/configuracion.js';
 import { RelojFijo } from '../../src/comun/reloj.js';
-import type { Rol } from '../../src/generado/prisma/client.js';
-import { hashearContrasena } from '../../src/modulos/m1-identidad/contrasenas.js';
 import { crearRutas } from '../../src/rutas.js';
 import { ENTORNO_PRUEBA, loggerCapturado, ORIGEN_APP } from '../ayudantes.js';
 import { db } from './base.js';
-import { AHORA, crearUsuario, ingresarComoAdministradorVerificado } from './fabricas.js';
+import { AHORA, ingresarComo } from './fabricas.js';
 
-const CLAVE = 'clave-de-prueba-larga';
 const ERROR_NO_AUTORIZADO = {
   error: {
     codigo: 'no_autorizado',
@@ -28,9 +25,6 @@ const NUEVOS = {
   telefono: '11 5555 1111',
 };
 
-// Argon2 es lento a propósito: se calcula una vez y se reutiliza en todas las pruebas.
-const hashClave = hashearContrasena(CLAVE);
-
 async function crearAppDePrueba() {
   const config = cargarConfiguracion({
     ...ENTORNO_PRUEBA,
@@ -46,19 +40,6 @@ async function crearAppDePrueba() {
 }
 type App = Awaited<ReturnType<typeof crearAppDePrueba>>['app'];
 
-/** Cuenta ficticia del rol, con sesión abierta; devuelve la cabecera `Cookie`. */
-async function ingresarComo(app: App, rol: Rol): Promise<string> {
-  if (rol === 'administrador') return (await ingresarComoAdministradorVerificado(app)).cookie;
-  const nombreUsuario = `ficticio-${rol}`;
-  await crearUsuario({ rol, nombreUsuario, hashContrasena: await hashClave });
-  const res = await request(app)
-    .post('/api/sesion')
-    .set('Origin', ORIGEN_APP)
-    .send({ nombreUsuario, contrasena: CLAVE });
-  expect(res.status).toBe(200);
-  return (res.headers['set-cookie'] as unknown as string[])[0]!.split(';')[0]!;
-}
-
 const instalar = () => db.consultorio.create({ data: { id: 1, ...ORIGINAL } });
 const leer = (app: App, cookie?: string) => {
   const peticion = request(app).get('/api/consultorio');
@@ -73,7 +54,7 @@ describe('lectura del consultorio (RF-13)', () => {
   it.each(['secretaria', 'administrador'] as const)('%s lee nombre, dirección y teléfono', async (rol) => {
     const { app } = await crearAppDePrueba();
     await instalar();
-    const cookie = await ingresarComo(app, rol);
+    const cookie = (await ingresarComo(app, rol)).cookie;
 
     const res = await leer(app, cookie);
 
@@ -84,7 +65,7 @@ describe('lectura del consultorio (RF-13)', () => {
   it('el kinesiólogo recibe 403 y no ve ningún dato (D-16)', async () => {
     const { app } = await crearAppDePrueba();
     await instalar();
-    const cookie = await ingresarComo(app, 'kinesiologo');
+    const cookie = (await ingresarComo(app, 'kinesiologo')).cookie;
 
     const res = await leer(app, cookie);
 
@@ -103,7 +84,7 @@ describe('lectura del consultorio (RF-13)', () => {
 
   it('si la instalación no creó la fila, responde un error claro y no la crea', async () => {
     const { app } = await crearAppDePrueba();
-    const cookie = await ingresarComo(app, 'secretaria');
+    const cookie = (await ingresarComo(app, 'secretaria')).cookie;
 
     const res = await leer(app, cookie);
 
@@ -118,7 +99,7 @@ describe('edición del consultorio (RF-13)', () => {
   it.each(['secretaria', 'administrador'] as const)('%s edita y la lectura posterior lo refleja', async (rol) => {
     const { app } = await crearAppDePrueba();
     await instalar();
-    const cookie = await ingresarComo(app, rol);
+    const cookie = (await ingresarComo(app, rol)).cookie;
 
     const res = await editar(app, cookie, NUEVOS);
 
@@ -135,7 +116,7 @@ describe('edición del consultorio (RF-13)', () => {
   it('guarda los textos sin espacios en los extremos', async () => {
     const { app } = await crearAppDePrueba();
     await instalar();
-    const cookie = await ingresarComo(app, 'secretaria');
+    const cookie = (await ingresarComo(app, 'secretaria')).cookie;
 
     const res = await editar(app, cookie, {
       nombre: `  ${NUEVOS.nombre} `,
@@ -150,7 +131,7 @@ describe('edición del consultorio (RF-13)', () => {
   it('el kinesiólogo recibe 403 y no se modifica nada', async () => {
     const { app } = await crearAppDePrueba();
     await instalar();
-    const cookie = await ingresarComo(app, 'kinesiologo');
+    const cookie = (await ingresarComo(app, 'kinesiologo')).cookie;
 
     const res = await editar(app, cookie, NUEVOS);
 
@@ -171,7 +152,7 @@ describe('edición del consultorio (RF-13)', () => {
 
   it('si la fila no existe responde 409 y no la crea desde la API', async () => {
     const { app } = await crearAppDePrueba();
-    const cookie = await ingresarComo(app, 'secretaria');
+    const cookie = (await ingresarComo(app, 'secretaria')).cookie;
 
     const res = await editar(app, cookie, NUEVOS);
 
@@ -199,7 +180,7 @@ describe('edición del consultorio (RF-13)', () => {
     it.each(casos)('%s', async (_nombre, cuerpo) => {
       const { app } = await crearAppDePrueba();
       await instalar();
-      const cookie = await ingresarComo(app, 'secretaria');
+      const cookie = (await ingresarComo(app, 'secretaria')).cookie;
 
       const res = await editar(app, cookie, cuerpo);
 
@@ -212,7 +193,7 @@ describe('edición del consultorio (RF-13)', () => {
   it('un id en el cuerpo se ignora: la fila única no se desdobla', async () => {
     const { app } = await crearAppDePrueba();
     await instalar();
-    const cookie = await ingresarComo(app, 'secretaria');
+    const cookie = (await ingresarComo(app, 'secretaria')).cookie;
 
     const res = await editar(app, cookie, { ...NUEVOS, id: 2 });
 
@@ -223,7 +204,7 @@ describe('edición del consultorio (RF-13)', () => {
   it('no registra nombre, dirección ni teléfono en los logs', async () => {
     const { app, texto } = await crearAppDePrueba();
     await instalar();
-    const cookie = await ingresarComo(app, 'secretaria');
+    const cookie = (await ingresarComo(app, 'secretaria')).cookie;
 
     await editar(app, cookie, NUEVOS);
     await leer(app, cookie);

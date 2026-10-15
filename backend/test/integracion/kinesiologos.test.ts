@@ -3,14 +3,12 @@ import { describe, expect, it, vi } from 'vitest';
 import { crearApp } from '../../src/app.js';
 import { cargarConfiguracion } from '../../src/comun/configuracion.js';
 import { RelojFijo } from '../../src/comun/reloj.js';
-import type { Rol } from '../../src/generado/prisma/client.js';
-import { hashearContrasena, verificarContrasena } from '../../src/modulos/m1-identidad/contrasenas.js';
+import { verificarContrasena } from '../../src/modulos/m1-identidad/contrasenas.js';
 import { crearRutas } from '../../src/rutas.js';
 import { ENTORNO_PRUEBA, loggerCapturado, ORIGEN_APP } from '../ayudantes.js';
 import { db } from './base.js';
-import { AHORA, crearKinesiologo, crearTurno, crearUsuario, ingresarComoAdministradorVerificado } from './fabricas.js';
+import { AHORA, crearKinesiologo, crearTurno, crearUsuario, ingresarComo } from './fabricas.js';
 
-const CLAVE = 'clave-de-prueba-larga';
 const TEMPORAL = 'temporal-del-admin-1';
 const NUEVA_TEMPORAL = 'otra-temporal-del-admin-2';
 const ERROR_NO_AUTORIZADO = {
@@ -22,9 +20,6 @@ const ALTA = {
   nombreUsuario: 'kine-uno',
   contrasenaTemporal: TEMPORAL,
 };
-
-// Argon2 es lento a propósito: se calcula una vez y se reutiliza en todas las pruebas.
-const hashClave = hashearContrasena(CLAVE);
 
 async function crearAppDePrueba() {
   const config = cargarConfiguracion({ ...ENTORNO_PRUEBA, COOKIE_SECURE: 'false' });
@@ -39,16 +34,6 @@ async function ingresar(app: App, nombreUsuario: string, contrasena: string) {
   const res = await request(app).post('/api/sesion').set('Origin', ORIGEN_APP).send({ nombreUsuario, contrasena });
   const cookie = (res.headers['set-cookie'] as string[] | undefined)?.[0]?.split(';')[0] ?? '';
   return { res, cookie };
-}
-
-/** Cuenta ficticia del rol, con sesión abierta; devuelve la cabecera `Cookie`. */
-async function ingresarComo(app: App, rol: Rol): Promise<string> {
-  if (rol === 'administrador') return (await ingresarComoAdministradorVerificado(app)).cookie;
-  const nombreUsuario = `ficticio-${rol}`;
-  await crearUsuario({ rol, nombreUsuario, hashContrasena: await hashClave });
-  const { res, cookie } = await ingresar(app, nombreUsuario, CLAVE);
-  expect(res.status).toBe(200);
-  return cookie;
 }
 
 const conCookie = (cookie?: string) => (cookie ? { Origin: ORIGEN_APP, Cookie: cookie } : { Origin: ORIGEN_APP });
@@ -68,7 +53,7 @@ const cambiarBloque = (app: App, cookie: string | undefined, id: number | string
 describe('alta de kinesiólogo (RF-14)', () => {
   it('crea la cuenta y el perfil: rol kinesiólogo, activa, con cambio de contraseña pendiente', async () => {
     const { app } = await crearAppDePrueba();
-    const admin = await ingresarComo(app, 'administrador');
+    const admin = (await ingresarComo(app, 'administrador')).cookie;
 
     const res = await alta(app, admin, ALTA);
 
@@ -94,7 +79,7 @@ describe('alta de kinesiólogo (RF-14)', () => {
 
   it('no devuelve hashes ni datos de la cuenta, y no registra nombres ni contraseñas en los logs', async () => {
     const { app, texto } = await crearAppDePrueba();
-    const admin = await ingresarComo(app, 'administrador');
+    const admin = (await ingresarComo(app, 'administrador')).cookie;
 
     const res = await alta(app, admin, ALTA);
 
@@ -108,7 +93,7 @@ describe('alta de kinesiólogo (RF-14)', () => {
 
   it('un rol u otras claves en el cuerpo se ignoran: la cuenta siempre es de kinesiólogo', async () => {
     const { app } = await crearAppDePrueba();
-    const admin = await ingresarComo(app, 'administrador');
+    const admin = (await ingresarComo(app, 'administrador')).cookie;
 
     const res = await alta(app, admin, { ...ALTA, rol: 'administrador', activo: false, usuarioId: 1 });
 
@@ -123,7 +108,7 @@ describe('alta de kinesiólogo (RF-14)', () => {
 
   it('crea las dos filas o ninguna: si falla la del perfil, la cuenta no queda', async () => {
     const { app } = await crearAppDePrueba();
-    const admin = await ingresarComo(app, 'administrador');
+    const admin = (await ingresarComo(app, 'administrador')).cookie;
     const usuariosAntes = await db.usuario.count();
     const original = db.$transaction.bind(db);
     const espia = vi.spyOn(db, '$transaction').mockImplementation(((callback: (tx: never) => Promise<unknown>) =>
@@ -150,7 +135,7 @@ describe('alta de kinesiólogo (RF-14)', () => {
 
   it('nombre de usuario en uso: 409 y no se crea nada', async () => {
     const { app } = await crearAppDePrueba();
-    const admin = await ingresarComo(app, 'administrador');
+    const admin = (await ingresarComo(app, 'administrador')).cookie;
     await crearUsuario({ nombreUsuario: 'kine-uno' });
 
     const res = await alta(app, admin, ALTA);
@@ -162,7 +147,7 @@ describe('alta de kinesiólogo (RF-14)', () => {
 
   it('dos altas simultáneas con el mismo nombre de usuario: una gana y la otra recibe 409', async () => {
     const { app } = await crearAppDePrueba();
-    const admin = await ingresarComo(app, 'administrador');
+    const admin = (await ingresarComo(app, 'administrador')).cookie;
 
     const [a, b] = await Promise.all([
       alta(app, admin, ALTA),
@@ -186,7 +171,7 @@ describe('alta de kinesiólogo (RF-14)', () => {
     ['NUL en el nombre', { ...ALTA, nombre: 'Ana\u0000' }],
   ])('%s: 400 y no se crea nada', async (_caso, cuerpo) => {
     const { app } = await crearAppDePrueba();
-    const admin = await ingresarComo(app, 'administrador');
+    const admin = (await ingresarComo(app, 'administrador')).cookie;
 
     const res = await alta(app, admin, cuerpo);
 
@@ -197,7 +182,7 @@ describe('alta de kinesiólogo (RF-14)', () => {
 
   it.each(['secretaria', 'kinesiologo'] as const)('%s recibe 403 y no se crea nada', async (rol) => {
     const { app } = await crearAppDePrueba();
-    const cookie = await ingresarComo(app, rol);
+    const cookie = (await ingresarComo(app, rol)).cookie;
 
     const res = await alta(app, cookie, ALTA);
 
@@ -216,7 +201,7 @@ describe('alta de kinesiólogo (RF-14)', () => {
 describe('cuenta de kinesiólogo gestionada desde /api/cuentas (T-13)', () => {
   it('se restablece: contraseña nueva, cambio pendiente y sesiones revocadas', async () => {
     const { app } = await crearAppDePrueba();
-    const admin = await ingresarComo(app, 'administrador');
+    const admin = (await ingresarComo(app, 'administrador')).cookie;
     const creado = await alta(app, admin, ALTA);
     const { cookie } = await ingresar(app, 'kine-uno', TEMPORAL);
     expect((await request(app).get('/api/sesion').set('Cookie', cookie)).status).toBe(200);
@@ -235,7 +220,7 @@ describe('cuenta de kinesiólogo gestionada desde /api/cuentas (T-13)', () => {
 
   it('se desactiva: revoca sus sesiones, no puede ingresar y el listado la marca inactiva', async () => {
     const { app } = await crearAppDePrueba();
-    const admin = await ingresarComo(app, 'administrador');
+    const admin = (await ingresarComo(app, 'administrador')).cookie;
     const creado = await alta(app, admin, ALTA);
     const { cookie } = await ingresar(app, 'kine-uno', TEMPORAL);
     const usuarioId = (await db.kinesiologo.findUniqueOrThrow({ where: { id: creado.body.kinesiologo.id } })).usuarioId;
@@ -256,7 +241,7 @@ describe('cuenta de kinesiólogo gestionada desde /api/cuentas (T-13)', () => {
 describe('cambio de bloque (RF-16)', () => {
   it('el administrador cambia el bloque y no se toca ningún turno', async () => {
     const { app } = await crearAppDePrueba();
-    const admin = await ingresarComo(app, 'administrador');
+    const admin = (await ingresarComo(app, 'administrador')).cookie;
     const kinesiologo = await crearKinesiologo({ bloque: 'manana' });
     const turno = await crearTurno({ kinesiologoId: kinesiologo.id, horaInicio: '08:00' });
     const eventosAntes = await db.turnoEvento.count();
@@ -275,7 +260,7 @@ describe('cambio de bloque (RF-16)', () => {
 
   it('es idempotente: repetir el mismo bloque responde 200', async () => {
     const { app } = await crearAppDePrueba();
-    const admin = await ingresarComo(app, 'administrador');
+    const admin = (await ingresarComo(app, 'administrador')).cookie;
     const kinesiologo = await crearKinesiologo({ bloque: 'tarde' });
 
     expect((await cambiarBloque(app, admin, kinesiologo.id, { bloque: 'tarde' })).status).toBe(200);
@@ -283,7 +268,7 @@ describe('cambio de bloque (RF-16)', () => {
 
   it('un kinesiólogo inexistente da 404', async () => {
     const { app } = await crearAppDePrueba();
-    const admin = await ingresarComo(app, 'administrador');
+    const admin = (await ingresarComo(app, 'administrador')).cookie;
 
     const res = await cambiarBloque(app, admin, 999_999, { bloque: 'tarde' });
 
@@ -299,7 +284,7 @@ describe('cambio de bloque (RF-16)', () => {
     ['id fuera de rango', '99999999999', { bloque: 'tarde' }],
   ])('%s: 400', async (_caso, id, cuerpo) => {
     const { app } = await crearAppDePrueba();
-    const admin = await ingresarComo(app, 'administrador');
+    const admin = (await ingresarComo(app, 'administrador')).cookie;
     const kinesiologo = await crearKinesiologo({ bloque: 'manana' });
 
     const res = await cambiarBloque(app, admin, id, cuerpo);
@@ -310,7 +295,7 @@ describe('cambio de bloque (RF-16)', () => {
 
   it.each(['secretaria', 'kinesiologo'] as const)('%s recibe 403 y el bloque no cambia', async (rol) => {
     const { app } = await crearAppDePrueba();
-    const cookie = await ingresarComo(app, rol);
+    const cookie = (await ingresarComo(app, rol)).cookie;
     const kinesiologo = await crearKinesiologo({ bloque: 'manana' });
 
     const res = await cambiarBloque(app, cookie, kinesiologo.id, { bloque: 'tarde' });
@@ -330,7 +315,7 @@ describe('cambio de bloque (RF-16)', () => {
 describe('listado de kinesiólogos', () => {
   it.each(['secretaria', 'administrador'] as const)('%s lista id, nombre, bloque y si está activo', async (rol) => {
     const { app } = await crearAppDePrueba();
-    const cookie = await ingresarComo(app, rol);
+    const cookie = (await ingresarComo(app, rol)).cookie;
     const a = await crearKinesiologo({ bloque: 'tarde' });
     const b = await crearKinesiologo({ bloque: 'manana' });
     await db.usuario.update({ where: { id: b.usuarioId }, data: { activo: false } });
@@ -349,7 +334,7 @@ describe('listado de kinesiólogos', () => {
 
   it('filtra por bloque', async () => {
     const { app } = await crearAppDePrueba();
-    const cookie = await ingresarComo(app, 'secretaria');
+    const cookie = (await ingresarComo(app, 'secretaria')).cookie;
     const manana = await crearKinesiologo({ bloque: 'manana' });
     const tarde = await crearKinesiologo({ bloque: 'tarde' });
 
@@ -362,13 +347,13 @@ describe('listado de kinesiólogos', () => {
 
   it('un bloque inválido da 400', async () => {
     const { app } = await crearAppDePrueba();
-    const cookie = await ingresarComo(app, 'secretaria');
+    const cookie = (await ingresarComo(app, 'secretaria')).cookie;
     expect((await listar(app, cookie, '?bloque=noche')).status).toBe(400);
   });
 
   it('sin kinesiólogos devuelve una lista vacía', async () => {
     const { app } = await crearAppDePrueba();
-    const cookie = await ingresarComo(app, 'secretaria');
+    const cookie = (await ingresarComo(app, 'secretaria')).cookie;
     const res = await listar(app, cookie);
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ kinesiologos: [] });
@@ -376,7 +361,7 @@ describe('listado de kinesiólogos', () => {
 
   it('el kinesiólogo recibe 403 y no ve a nadie (D-16)', async () => {
     const { app } = await crearAppDePrueba();
-    const cookie = await ingresarComo(app, 'kinesiologo');
+    const cookie = (await ingresarComo(app, 'kinesiologo')).cookie;
     await crearKinesiologo();
 
     const res = await listar(app, cookie);
