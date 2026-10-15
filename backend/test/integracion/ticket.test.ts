@@ -140,12 +140,31 @@ describe('ticket con QR (RF-28)', () => {
     const antes = decodificarQrDelPdf((await pedir(app, turno.id, cookie)).body as Buffer);
     expect(antes).toBe(textoEsperado(turno.id, 'Ñandú Pérez', kinesiologo.nombre, 'lunes 19/10/2026, 08:00'));
 
-    // T-24 (reprogramar por la API) todavía no existe: se simula moviendo el turno con Prisma.
-    // Cuando T-24 exista, agrega el mismo caso reprogramando por la API.
+    // Variante de bajo nivel: mueve el turno con Prisma directo (el caso por la API está más abajo).
     await db.turno.update({ where: { id: turno.id }, data: { fecha: new Date('2026-10-22'), horaInicio: '09:30' } });
 
     const despues = decodificarQrDelPdf((await pedir(app, turno.id, cookie)).body as Buffer);
     expect(despues).toBe(textoEsperado(turno.id, 'Ñandú Pérez', kinesiologo.nombre, 'jueves 22/10/2026, 09:30'));
+  });
+
+  it('tras reprogramar por la API (fecha, hora y kinesiólogo nuevos), el QR lleva los datos nuevos', async () => {
+    const { app } = await crearAppDePrueba();
+    const cookie = (await ingresarComo(app, 'secretaria')).cookie;
+    const { turno, kinesiologo } = await escenario();
+    const antes = decodificarQrDelPdf((await pedir(app, turno.id, cookie)).body as Buffer);
+    expect(antes).toBe(textoEsperado(turno.id, 'Ñandú Pérez', kinesiologo.nombre, 'lunes 19/10/2026, 08:00'));
+    const otro = await crearKinesiologo({ bloque: 'tarde' });
+
+    const res = await request(app)
+      .put(`/api/turnos/${turno.id}/ubicacion`)
+      .set({ Origin: ORIGEN_APP, Cookie: cookie })
+      .send({ kinesiologoId: otro.id, fecha: '2026-10-22', horaInicio: '16:45' });
+    expect(res.status).toBe(200);
+
+    const despues = decodificarQrDelPdf((await pedir(app, turno.id, cookie)).body as Buffer);
+    expect(despues).toBe(textoEsperado(turno.id, 'Ñandú Pérez', otro.nombre, 'jueves 22/10/2026, 16:45'));
+    // Los coseguros y el DNI siguen fuera del QR tras mover el turno.
+    for (const prohibido of ['7777', '8888', '90123456']) expect(despues).not.toContain(prohibido);
   });
 
   it('el kinesiólogo recibe 403 y no se genera el ticket', async () => {
