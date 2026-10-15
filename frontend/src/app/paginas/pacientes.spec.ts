@@ -3,6 +3,7 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { TestBed, type ComponentFixture } from '@angular/core/testing';
 import { provideRouter, Router } from '@angular/router';
 import { erroresDeApi } from '../nucleo/http/interceptores';
+import type { TurnoDePaciente } from '../nucleo/agenda/agenda';
 import type { Paciente } from '../nucleo/pacientes/pacientes';
 import { PacienteFicha } from './paciente-ficha';
 import { PacientesPagina } from './pacientes';
@@ -362,5 +363,105 @@ describe('PacienteFicha (RF-20, RF-21)', () => {
 
     servidor.expectNone({ method: 'PUT', url: '/api/pacientes/7' });
     expect(raiz(fixture).querySelector('#error-paciente-nombre')).not.toBeNull();
+  });
+});
+
+describe('PacienteFicha: próximos e historial (RF-47)', () => {
+  const turnoDe = (id: number, cambios: Partial<TurnoDePaciente> = {}): TurnoDePaciente => ({
+    id,
+    fecha: '2026-10-20',
+    horaInicio: '08:00',
+    horaFin: '08:45',
+    estado: 'reservado',
+    coseguroObraSocial: null,
+    coseguroAdicional: null,
+    kinesiologo: { id: 3, nombre: 'Kine Ficticio' },
+    ...cambios,
+  });
+
+  async function conTurnos(proximos: TurnoDePaciente[], historial: TurnoDePaciente[]) {
+    const servidor = configurar();
+    const fixture = TestBed.createComponent(PacienteFicha);
+    fixture.componentRef.setInput('id', '7');
+    fixture.detectChanges();
+    servidor.expectOne({ method: 'GET', url: '/api/pacientes/7' }).flush({ paciente: ana });
+    const t = servidor.expectOne({ method: 'GET', url: '/api/pacientes/7/turnos' });
+    expect(t.request.params.keys()).toEqual([]);
+    t.flush({ proximos, historial });
+    await aparece(fixture, '#editar');
+    await aparece(fixture, '#titulo-historial span');
+    return { fixture, servidor };
+  }
+
+  /** Fechas (DD/MM/AAAA) de las filas de una tabla, en el orden en que se ven. */
+  const fechas = (f: ComponentFixture<unknown>, tabla: string) =>
+    Array.from(raiz(f).querySelectorAll(`${tabla} tbody tr td:first-child`)).map((e) =>
+      e.textContent?.trim(),
+    );
+
+  it('muestra fecha, franja, kinesiólogo, estado y coseguros', async () => {
+    const { fixture } = await conTurnos(
+      [turnoDe(1, { coseguroObraSocial: '1500.50' })],
+      [
+        turnoDe(2, {
+          fecha: '2026-10-01',
+          estado: 'asistio',
+          horaInicio: '09:00',
+          horaFin: '09:45',
+        }),
+      ],
+    );
+    const proximos = raiz(fixture).querySelector('#tabla-proximos')?.textContent ?? '';
+    for (const dato of ['20/10/2026', '08:00 a 08:45', 'Kine Ficticio', 'Reservado', '$ 1500.50']) {
+      expect(proximos).toContain(dato);
+    }
+    const historial = raiz(fixture).querySelector('#tabla-historial')?.textContent ?? '';
+    for (const dato of ['01/10/2026', '09:00 a 09:45', 'Asistió', 'sin cargar']) {
+      expect(historial).toContain(dato);
+    }
+  });
+
+  it('próximos del más cercano al más lejano; historial del más reciente al más antiguo', async () => {
+    const { fixture } = await conTurnos(
+      [
+        turnoDe(1, { fecha: '2026-11-03' }),
+        turnoDe(2, { fecha: '2026-10-16' }),
+        turnoDe(3, { fecha: '2026-10-20' }),
+      ],
+      [
+        turnoDe(4, { fecha: '2026-09-01' }),
+        turnoDe(5, { fecha: '2026-10-10' }),
+        turnoDe(6, { fecha: '2026-09-15' }),
+      ],
+    );
+    expect(fechas(fixture, '#tabla-proximos')).toEqual(['16/10/2026', '20/10/2026', '03/11/2026']);
+    expect(fechas(fixture, '#tabla-historial')).toEqual(['10/10/2026', '15/09/2026', '01/09/2026']);
+  });
+
+  it('sin turnos, dice que no hay en cada lista', async () => {
+    const { fixture } = await conTurnos([], []);
+    expect(raiz(fixture).querySelector('#sin-proximos')?.textContent).toContain('no tiene');
+    expect(raiz(fixture).querySelector('#sin-historial')?.textContent).toContain('no tiene');
+  });
+
+  it('las listas no ofrecen acciones nuevas', async () => {
+    const { fixture } = await conTurnos([turnoDe(1)], [turnoDe(2)]);
+    const tablas = Array.from(raiz(fixture).querySelectorAll('table'));
+    expect(tablas.length).toBe(2);
+    for (const t of tablas) expect(t.querySelectorAll('button, a').length).toBe(0);
+  });
+
+  it('si fallan los turnos, avisa y mantiene los datos del paciente', async () => {
+    const servidor = configurar();
+    const fixture = TestBed.createComponent(PacienteFicha);
+    fixture.componentRef.setInput('id', '7');
+    fixture.detectChanges();
+    servidor.expectOne({ method: 'GET', url: '/api/pacientes/7' }).flush({ paciente: ana });
+    servidor
+      .expectOne({ method: 'GET', url: '/api/pacientes/7/turnos' })
+      .flush(error('error_interno'), { status: 500, statusText: 'Error' });
+    await aparece(fixture, '#error-turnos');
+    expect(raiz(fixture).querySelector('#error-turnos')?.getAttribute('role')).toBe('alert');
+    expect(raiz(fixture).querySelector('#ficha-nombre')?.textContent).toBe('Ana Ficticia');
   });
 });

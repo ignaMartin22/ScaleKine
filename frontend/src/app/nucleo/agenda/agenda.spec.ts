@@ -43,3 +43,38 @@ describe('Pendientes de marcar (RF-42)', () => {
     expect((await resultado).cantidad).toBe(0);
   });
 });
+
+describe('Agenda del kinesiólogo (RF-40, D-15)', () => {
+  it('sin fecha no manda ningún parámetro', async () => {
+    const { servidor, agenda } = preparar();
+    const resultado = agenda.miAgenda();
+    const p = servidor.expectOne((r) => r.url === '/api/mi-agenda');
+    expect(p.request.method).toBe('GET');
+    expect(p.request.params.keys()).toEqual([]);
+    p.flush({ fecha: '2026-10-15', enEspera: [], proximos: [] });
+    expect(await resultado).toEqual({ fecha: '2026-10-15', enEspera: [], proximos: [] });
+  });
+
+  it('manda solo la fecha: el kinesiólogo sale de la sesión, nunca de la petición', async () => {
+    const { servidor, agenda } = preparar();
+    const resultado = agenda.miAgenda('2026-10-14');
+    const p = servidor.expectOne((r) => r.url === '/api/mi-agenda');
+    expect(p.request.params.keys()).toEqual(['fecha']);
+    expect(p.request.params.get('fecha')).toBe('2026-10-14');
+    expect(p.request.params.has('kinesiologoId')).toBe(false);
+    p.flush({ fecha: '2026-10-14', enEspera: [], proximos: [] });
+    await resultado;
+  });
+});
+
+describe('Turnos del paciente (RF-47)', () => {
+  it('consulta /api/pacientes/:id/turnos sin parámetros', async () => {
+    const { servidor, agenda } = preparar();
+    const resultado = agenda.delPaciente(7);
+    const p = servidor.expectOne('/api/pacientes/7/turnos');
+    expect(p.request.method).toBe('GET');
+    expect(p.request.params.keys()).toEqual([]);
+    p.flush({ proximos: [], historial: [] });
+    expect(await resultado).toEqual({ proximos: [], historial: [] });
+  });
+});
