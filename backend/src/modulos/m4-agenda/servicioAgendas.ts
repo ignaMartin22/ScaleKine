@@ -3,7 +3,7 @@ import { ErrorNegocio } from '../../comun/errores.js';
 import type { Reloj } from '../../comun/reloj.js';
 import { finDeFranja } from '../m2-maestros/grilla.js';
 import { accionesDisponibles, type EstadoTurno, type Rol } from '../m3-turnos/transiciones.js';
-import { fechaYHoraLocal } from './pendientes.js';
+import { fechaYHoraLocal, franjaTranscurrida } from './pendientes.js';
 
 /** Lo que se lee de la base por turno; la agenda propia y la de secretaría parten de lo mismo. */
 const SELECCION = {
@@ -32,7 +32,7 @@ interface FilaAgenda {
 }
 
 /** Proyección común a las dos agendas (D-15: el kinesiólogo ve lo mismo que la secretaría). */
-function proyectar(t: FilaAgenda) {
+function proyectar(t: FilaAgenda, zonaHoraria: string) {
   return {
     id: t.id,
     fecha: t.fecha.toISOString().slice(0, 10),
@@ -40,6 +40,8 @@ function proyectar(t: FilaAgenda) {
     horaFin: finDeFranja(t.horaInicio),
     estado: t.estado,
     llegadaEn: t.llegadaEn?.toISOString() ?? null,
+    // La misma llegada en hora de pared de la zona del consultorio, para que el cliente no deba conocerla.
+    horaLlegada: t.llegadaEn ? fechaYHoraLocal(t.llegadaEn, zonaHoraria).hora : null,
     coseguroObraSocial: t.coseguroObraSocial?.toFixed(2) ?? null,
     coseguroAdicional: t.coseguroAdicional?.toFixed(2) ?? null,
   };
@@ -71,7 +73,7 @@ export function crearServicioAgendas({ db, reloj }: { db: BaseDeDatos; reloj: Re
       return filas.map((t) => {
         const acciones = accionesDisponibles(t.estado, rol);
         return {
-          ...proyectar(t),
+          ...proyectar(t, reloj.zonaHoraria),
           paciente: t.paciente,
           kinesiologo: t.kinesiologo,
           acciones: {
@@ -80,6 +82,30 @@ export function crearServicioAgendas({ db, reloj }: { db: BaseDeDatos; reloj: Re
           },
         };
       });
+    },
+
+    /**
+     * Ficha del paciente (RF-47): todos sus turnos, en cualquier estado y con cualquier
+     * kinesiólogo, partidos según `franjaTranscurrida` con el "ahora" del reloj inyectable. Los
+     * `proximos` (franja no transcurrida, también la que está en curso) van del más cercano al más
+     * lejano; el `historial`, del más reciente al más antiguo. 404 si el paciente no existe.
+     */
+    async delPaciente(pacienteId: number) {
+      const paciente = await db.paciente.findUnique({ where: { id: pacienteId }, select: { id: true } });
+      if (!paciente) throw new ErrorNegocio('paciente_no_encontrado', 'El paciente no existe.', 404);
+      const filas = await db.turno.findMany({
+        where: { pacienteId },
+        select: { ...SELECCION, paciente: false },
+        orderBy: [{ fecha: 'asc' }, { horaInicio: 'asc' }, { id: 'asc' }],
+      });
+      const ahora = reloj.ahora();
+      const turnos = filas.map((t) => ({ ...proyectar(t, reloj.zonaHoraria), kinesiologo: t.kinesiologo }));
+      const proximos: typeof turnos = [];
+      const historial: typeof turnos = [];
+      for (const turno of turnos) {
+        (franjaTranscurrida(turno.fecha, turno.horaInicio, ahora, reloj.zonaHoraria) ? historial : proximos).push(turno);
+      }
+      return { proximos, historial: historial.reverse() };
     },
 
     /**
@@ -109,7 +135,7 @@ export function crearServicioAgendas({ db, reloj }: { db: BaseDeDatos; reloj: Re
       // El kinesiólogo no necesita el id del paciente: no tiene ninguna ruta de pacientes (D-16).
       const aTurno = (t: (typeof enEspera)[number]) => {
         const { dni, nombre, telefono, obraSocial } = t.paciente;
-        return { ...proyectar(t), paciente: { nombre, dni, telefono, obraSocial } };
+        return { ...proyectar(t, reloj.zonaHoraria), paciente: { nombre, dni, telefono, obraSocial } };
       };
       return { enEspera: enEspera.map(aTurno), proximos: proximos.map(aTurno) };
     },

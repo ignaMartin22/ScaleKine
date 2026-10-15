@@ -52,14 +52,21 @@ function minutosDePared(fecha: string, hora: string): number {
 }
 
 /**
- * Si el turno es activo y su franja terminó antes de `ahora`. Se compara en hora de pared de la zona
- * del consultorio, al minuto: el instante exacto de fin todavía no cuenta.
+ * Si la franja que empieza en `fecha` + `horaInicio` ya terminó antes de `ahora`. Se compara en hora de
+ * pared de la zona del consultorio, al minuto: el instante exacto de fin todavía no cuenta, así que
+ * un turno en curso (o que termina justo ahora) no está transcurrido. Es el criterio único de "franja
+ * transcurrida": lo usan el aviso de pendientes (RF-42) y la ficha del paciente (RF-47).
  */
+export function franjaTranscurrida(fecha: string, horaInicio: string, ahora: Date, zonaHoraria: string): boolean {
+  const local = fechaYHoraLocal(ahora, zonaHoraria);
+  const finDeLaFranja = minutosDePared(fecha, horaInicio) + DURACION_FRANJA_MINUTOS;
+  return finDeLaFranja < minutosDePared(local.fecha, local.hora);
+}
+
+/** Si el turno es activo y su franja ya transcurrió (`franjaTranscurrida`). */
 export function estaPendiente(turno: TurnoParaPendiente, ahora: Date, zonaHoraria: string): boolean {
   if (!(ESTADOS_ACTIVOS as readonly string[]).includes(turno.estado)) return false;
-  const local = fechaYHoraLocal(ahora, zonaHoraria);
-  const finDeLaFranja = minutosDePared(turno.fecha, turno.horaInicio) + DURACION_FRANJA_MINUTOS;
-  return finDeLaFranja < minutosDePared(local.fecha, local.hora);
+  return franjaTranscurrida(turno.fecha, turno.horaInicio, ahora, zonaHoraria);
 }
 
 /** Los pendientes entre `turnos`, en el orden en que vienen. */
