@@ -1,10 +1,13 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, DestroyRef, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import {
   Agenda,
   NOMBRE_DEL_ESTADO,
   type EstadoTurno,
   type TurnoPropio,
 } from '../nucleo/agenda/agenda';
+import { IndicadorConexion } from '../nucleo/tiempo-real/indicador-conexion';
+import { TiempoReal } from '../nucleo/tiempo-real/tiempo-real';
 import { enfocar, mensajeDe } from '../nucleo/ui/enfocar';
 import { fechaLegible } from './asignar-turno';
 
@@ -28,13 +31,16 @@ export function ordenarProximos(turnos: readonly TurnoPropio[]): TurnoPropio[] {
  * turnos de la fecha elegida. Es de solo lectura (D-15, RF-34): no hay botones de estado, ni
  * corrección, ni ticket, ni enlaces a la ficha del paciente ni a agendas ajenas (D-16). El
  * kinesiólogo sale de la sesión: la consulta no lleva ningún identificador. Se carga al entrar, al
- * cambiar la fecha y con «Actualizar» (el tiempo real es T-32). Ningún dato personal va a la URL ni
+ * cambiar la fecha, con «Actualizar» y en vivo por tiempo real (RF-43): los eventos reemplazan el
+ * turno, y al reconectar se vuelve a pedir la agenda completa (RF-45). Ningún dato personal va a la URL ni
  * al almacenamiento del navegador.
  */
 @Component({
   selector: 'app-inicio-kinesiologo',
+  imports: [IndicadorConexion],
   template: `
     <h1>Mi agenda</h1>
+    <app-indicador-conexion />
 
     <form class="formulario" novalidate (submit)="$event.preventDefault()">
       <div class="campo">
@@ -171,8 +177,53 @@ export class InicioKinesiologo {
   protected readonly cargando = signal(false);
   protected readonly error = signal<string | null>(null);
 
+  private readonly tiempoReal = inject(TiempoReal);
+
   constructor() {
     void this.cargar();
+    const destruccion = inject(DestroyRef);
+    this.tiempoReal
+      .cambios<TurnoPropio>()
+      .pipe(takeUntilDestroyed(destruccion))
+      .subscribe((turno) => this.aplicarCambio(turno));
+    this.tiempoReal.quitado$
+      .pipe(takeUntilDestroyed(destruccion))
+      .subscribe((id) => this.quitar(id));
+    this.tiempoReal.reconectado$
+      .pipe(takeUntilDestroyed(destruccion))
+      .subscribe(() => void this.cargar());
+  }
+
+  /**
+   * `turno:cambio`: el turno completo y actual. Se saca de donde estaba y se pone donde le toca:
+   * `en_espera` a la espera, por hora de llegada (RF-43), `reservado` a próximos; los demás estados
+   * y los de otra fecha no se muestran. Las dos listas siguen el mismo orden que la API (RF-40).
+   */
+  private aplicarCambio(turno: TurnoPropio): void {
+    const actual = this.agenda();
+    if (!actual) return;
+    const enEspera = actual.enEspera.filter((t) => t.id !== turno.id);
+    const proximos = actual.proximos.filter((t) => t.id !== turno.id);
+    if (turno.fecha === actual.fecha) {
+      if (turno.estado === 'en_espera') enEspera.push(turno);
+      else if (turno.estado === 'reservado') proximos.push(turno);
+    }
+    this.agenda.set({
+      fecha: actual.fecha,
+      enEspera: ordenarEspera(enEspera),
+      proximos: ordenarProximos(proximos),
+    });
+  }
+
+  /** `turno:quitado`: el turno pasó a otro kinesiólogo; se saca sin esperar datos. */
+  private quitar(turnoId: number): void {
+    const actual = this.agenda();
+    if (!actual) return;
+    this.agenda.set({
+      ...actual,
+      enEspera: actual.enEspera.filter((t) => t.id !== turnoId),
+      proximos: actual.proximos.filter((t) => t.id !== turnoId),
+    });
   }
 
   protected monto(valor: string | null): string {

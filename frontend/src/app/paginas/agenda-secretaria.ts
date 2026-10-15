@@ -1,4 +1,5 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, DestroyRef, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import {
   Agenda,
   ESTADOS,
@@ -17,6 +18,8 @@ import { normalizarMonto } from '../nucleo/turnos/errores-asignacion';
 import { traducirErrorAccion, type ContextoAccion } from '../nucleo/turnos/errores-agenda';
 import { Turnos } from '../nucleo/turnos/turnos';
 import { Kinesiologos, type Kinesiologo } from '../nucleo/kinesiologos/kinesiologos';
+import { IndicadorConexion } from '../nucleo/tiempo-real/indicador-conexion';
+import { TiempoReal } from '../nucleo/tiempo-real/tiempo-real';
 import { descargarArchivo } from '../nucleo/ui/descargar';
 import { enfocar, mensajeDe } from '../nucleo/ui/enfocar';
 import { fechaLegible } from './asignar-turno';
@@ -53,10 +56,11 @@ interface FranjaElegida {
  */
 @Component({
   selector: 'app-agenda-secretaria',
-  imports: [VolverAlInicio, Dialogo],
+  imports: [VolverAlInicio, Dialogo, IndicadorConexion],
   template: `
     <app-volver-al-inicio />
     <h1>Agenda de turnos</h1>
+    <app-indicador-conexion />
 
     @if (errorPendientes(); as mensaje) {
       <p class="error" id="error-pendientes" role="alert">{{ mensaje }}</p>
@@ -513,8 +517,50 @@ export class AgendaSecretaria {
   protected readonly repSeleccion = signal<FranjaElegida | null>(null);
   protected readonly repAviso = signal<string | null>(null);
 
+  private readonly tiempoReal = inject(TiempoReal);
+
   constructor() {
     void this.iniciar();
+    const destruccion = inject(DestroyRef);
+    this.tiempoReal
+      .cambios<TurnoDeAgenda>()
+      .pipe(takeUntilDestroyed(destruccion))
+      .subscribe((turno) => this.aplicarCambio(turno));
+    this.tiempoReal.quitado$
+      .pipe(takeUntilDestroyed(destruccion))
+      .subscribe((id) => this.quitar(id));
+    this.tiempoReal.reconectado$
+      .pipe(takeUntilDestroyed(destruccion))
+      .subscribe(() => void this.refrescar());
+  }
+
+  /**
+   * `turno:cambio` (RF-44): reemplaza o agrega el turno si es de la fecha y del kinesiólogo que se
+   * miran; si no, lo saca. Las acciones disponibles vienen en el turno que manda el servidor.
+   */
+  private aplicarCambio(turno: TurnoDeAgenda): void {
+    const actuales = this.turnos();
+    if (actuales === null) return;
+    const filtro = this.kinesiologoId();
+    const corresponde =
+      turno.fecha === this.fecha() && (filtro === '' || turno.kinesiologo.id === Number(filtro));
+    const resto = actuales.filter((t) => t.id !== turno.id);
+    if (corresponde) resto.push(turno);
+    resto.sort(
+      (a, b) =>
+        a.horaInicio.localeCompare(b.horaInicio) ||
+        a.kinesiologo.nombre.localeCompare(b.kinesiologo.nombre) ||
+        a.id - b.id,
+    );
+    this.turnos.set(resto);
+    void this.cargarPendientes();
+  }
+
+  /** `turno:quitado`: el turno ya no corresponde a esta agenda. */
+  private quitar(turnoId: number): void {
+    const actuales = this.turnos();
+    if (actuales === null) return;
+    this.turnos.set(actuales.filter((t) => t.id !== turnoId));
   }
 
   private async iniciar(): Promise<void> {
