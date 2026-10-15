@@ -1,4 +1,4 @@
-import type { Server as ServidorHttp } from 'node:http';
+import type { IncomingMessage, Server as ServidorHttp } from 'node:http';
 import type { Logger } from 'pino';
 import { Server, type Socket } from 'socket.io';
 import type { Reloj } from '../../comun/reloj.js';
@@ -6,7 +6,7 @@ import { leerCookieSesion } from '../m1-identidad/cookie.js';
 import { pasoPendiente } from '../m1-identidad/pasos.js';
 import type { AvisoRevocaciones, CriterioRevocacion } from '../m1-identidad/revocaciones.js';
 import { hashDeToken, type SesionActiva } from '../m1-identidad/servicio.js';
-import type { CambioDeTurno, EmisorTurnos } from '../m3-turnos/eventos.js';
+import type { EmisorTurnos } from '../m3-turnos/eventos.js';
 
 /**
  * M5 Tiempo real (RF-11, RF-43, RF-44; plan.md §3 M5 y §4.15). Difunde los cambios de turnos que M3
@@ -36,8 +36,11 @@ import type { CambioDeTurno, EmisorTurnos } from '../m3-turnos/eventos.js';
  *   Va a la sala del kinesiólogo del turno y a la de secretaría, con la proyección de M4 de cada agenda:
  *   - sala `secretaria`: la de `GET /api/agenda` (con `paciente.id`, `kinesiologo` y `acciones`);
  *   - sala del kinesiólogo: la de `GET /api/mi-agenda`, sin `acciones` (D-15) ni id de paciente.
- * - `turno:quitado` `{ turnoId }`: solo a la sala del kinesiólogo ANTERIOR cuando una reprogramación
- *   cambió de kinesiólogo: el turno ya no es suyo (D-16) y debe sacarlo de su agenda sin recibir sus datos.
+ *   El destino sale del kinesiólogo ACTUAL del turno, tal como se lo relee al difundir, no del que
+ *   tenía al operar: si otra operación lo movió entre tanto, el anterior no recibe sus datos (D-16).
+ * - `turno:quitado` `{ turnoId }`: a cada kinesiólogo que tuvo el turno según los avisos pendientes y
+ *   ya no es el actual (reprogramación entre kinesiólogos): debe sacarlo de su agenda sin recibir sus
+ *   datos. Los avisos pendientes del mismo turno se agrupan en una sola difusión.
  * - `sesion:cerrada` `{ motivo: 'vencida' | 'revocada' }`: justo antes de que el servidor cierre el
  *   socket porque la sesión venció (RF-11) o se revocó (cierre de sesión, cuenta desactivada,
  *   contraseña restablecida o cambiada, revocación desde la línea de comandos). El cliente debe volver
@@ -73,8 +76,13 @@ const programadorDelSistema: Programador = (ms, accion) => {
 export interface DependenciasDeDifusion {
   sesionVigente(token: string): Promise<SesionActiva | null>;
   kinesiologoIdDeCuenta(usuarioId: number): Promise<number | null>;
-  /** Proyecciones de M4 del turno, o `null` si no existe. */
-  turnoParaDifusion(turnoId: number): Promise<{ secretaria: object; kinesiologo: object } | null>;
+  /**
+   * Proyecciones de M4 del turno y el kinesiólogo ACTUAL del turno, tal como se lo releyó; `null` si
+   * no existe. El destino del cambio sale de acá y no del aviso, que pudo quedar viejo (D-16).
+   */
+  turnoParaDifusion(
+    turnoId: number,
+  ): Promise<{ kinesiologoId: number; secretaria: object; kinesiologo: object } | null>;
 }
 
 export interface OpcionesTiempoReal {
@@ -87,6 +95,8 @@ export interface OpcionesTiempoReal {
   programar?: Programador;
   /** Cada cuánto se revalida la sesión de los sockets abiertos; 0 lo desactiva. Por defecto 60 s. */
   intervaloRevalidacionMs?: number;
+  /** Tiempo máximo de una difusión (releer el turno y emitir). Por defecto 5 s. */
+  tiempoLimiteDifusionMs?: number;
 }
 
 /** Lo que el resto del backend necesita de M5 para armarse (sin Socket.io). */
@@ -127,13 +137,17 @@ export function crearTiempoReal(opciones: OpcionesTiempoReal): TiempoReal {
   const { logger, reloj, origenPermitido, cookieSegura } = opciones;
   const programar = opciones.programar ?? programadorDelSistema;
   const intervaloRevalidacionMs = opciones.intervaloRevalidacionMs ?? 60_000;
+  const tiempoLimiteDifusionMs = opciones.tiempoLimiteDifusionMs ?? 5000;
 
   let dependencias: DependenciasDeDifusion | undefined;
   let io: Server | undefined;
   let revalidacion: NodeJS.Timeout | undefined;
   const vivos = new Set<SocketVivo>();
-  // Las difusiones se encadenan: cada una relee el turno, y en orden la última siempre deja el estado actual.
-  let cola: Promise<void> = Promise.resolve();
+  // Avisos pendientes agrupados por turno: acotada a los turnos distintos. Por cada turno se guardan los
+  // kinesiólogos que alguna vez lo tuvieron según los avisos, para quitárselo a los que ya no lo tienen.
+  const pendientes = new Map<number, Set<number>>();
+  let drenando: Promise<void> | null = null;
+  let revalidando = false;
 
   /** Solo el tipo del error: el mensaje de un error de base podría incluir datos de la consulta. */
   const tipoDeError = (error: unknown) => (error instanceof Error ? error.name : typeof error);
@@ -160,19 +174,28 @@ export function crearTiempoReal(opciones: OpcionesTiempoReal): TiempoReal {
   }
 
   /** Cubre lo que M1 no puede avisar desde este proceso (p. ej. `revocarSesiones` de la línea de comandos). */
-  async function revalidar(): Promise<void> {
+  async function revalidarUno(vivo: SocketVivo): Promise<void> {
     if (!dependencias) return;
-    for (const vivo of [...vivos]) {
-      try {
-        const sesion = await dependencias.sesionVigente(vivo.token);
-        if (!vivos.has(vivo)) continue;
-        if (!sesion || pasoPendiente(sesion.usuario, sesion.segundoFactorVerificado) !== null) {
-          cerrarVivo(vivo, 'revocada');
-        }
-      } catch (error) {
-        // Ante un fallo de la base no se corta a nadie: se reintenta en la próxima vuelta.
-        logger.error({ tipo: tipoDeError(error) }, 'no se pudo revalidar una sesión de socket');
+    try {
+      const sesion = await dependencias.sesionVigente(vivo.token);
+      if (!vivos.has(vivo)) return;
+      if (!sesion || pasoPendiente(sesion.usuario, sesion.segundoFactorVerificado) !== null) {
+        cerrarVivo(vivo, 'revocada');
       }
+    } catch (error) {
+      // Ante un fallo de la base no se corta a nadie: se reintenta en la próxima vuelta.
+      logger.error({ tipo: tipoDeError(error) }, 'no se pudo revalidar una sesión de socket');
+    }
+  }
+
+  async function revalidar(): Promise<void> {
+    // Sin superposición: con la base lenta no se acumulan vueltas.
+    if (revalidando) return;
+    revalidando = true;
+    try {
+      for (const vivo of [...vivos]) await revalidarUno(vivo);
+    } finally {
+      revalidando = false;
     }
   }
 
@@ -191,24 +214,64 @@ export function crearTiempoReal(opciones: OpcionesTiempoReal): TiempoReal {
     return { sesion, token, sala: SALA_SECRETARIA };
   }
 
-  async function difundir(cambio: CambioDeTurno): Promise<void> {
+  /**
+   * Relee el turno y lo manda. El cambio va solo a la sala del kinesiólogo ACTUAL del turno y a la de
+   * secretaría; a cada otro kinesiólogo que el turno tuvo según los avisos (D-16) solo le llega
+   * `turno:quitado`, sin datos del paciente.
+   */
+  async function difundir(turnoId: number, kinesiologos: Set<number>): Promise<void> {
     if (!io || !dependencias) return;
-    const proyecciones = await dependencias.turnoParaDifusion(cambio.turnoId);
+    const proyecciones = await dependencias.turnoParaDifusion(turnoId);
     if (!proyecciones) return;
     io.to(SALA_SECRETARIA).emit(EVENTO_CAMBIO, { turno: proyecciones.secretaria });
-    io.to(salaDeKinesiologo(cambio.kinesiologoId)).emit(EVENTO_CAMBIO, { turno: proyecciones.kinesiologo });
-    if (cambio.kinesiologoAnteriorId !== undefined) {
-      io.to(salaDeKinesiologo(cambio.kinesiologoAnteriorId)).emit(EVENTO_QUITADO, { turnoId: cambio.turnoId });
+    io.to(salaDeKinesiologo(proyecciones.kinesiologoId)).emit(EVENTO_CAMBIO, { turno: proyecciones.kinesiologo });
+    for (const id of kinesiologos) {
+      if (id !== proyecciones.kinesiologoId) io.to(salaDeKinesiologo(id)).emit(EVENTO_QUITADO, { turnoId });
     }
+  }
+
+  /** `difundir` con tiempo límite: una relectura colgada no frena los avisos siguientes. */
+  async function difundirConLimite(turnoId: number, kinesiologos: Set<number>): Promise<void> {
+    let temporizador: NodeJS.Timeout | undefined;
+    const vencido = new Promise<never>((_, rechazar) => {
+      temporizador = setTimeout(() => rechazar(new Error('tiempo agotado')), tiempoLimiteDifusionMs);
+      temporizador.unref();
+    });
+    try {
+      await Promise.race([difundir(turnoId, kinesiologos), vencido]);
+    } catch (error) {
+      logger.error({ tipo: tipoDeError(error) }, 'no se pudo difundir un cambio de turno');
+    } finally {
+      clearTimeout(temporizador);
+    }
+  }
+
+  function drenar(): Promise<void> {
+    drenando ??= (async () => {
+      try {
+        // Cede un turno del bucle de eventos: los avisos de la misma operación llegan juntos y se agrupan.
+        await Promise.resolve();
+        for (;;) {
+          const siguiente = pendientes.entries().next();
+          if (siguiente.done) return;
+          const [turnoId, kinesiologos] = siguiente.value;
+          pendientes.delete(turnoId);
+          await difundirConLimite(turnoId, kinesiologos);
+        }
+      } finally {
+        drenando = null;
+      }
+    })();
+    return drenando;
   }
 
   const emisor: EmisorTurnos = {
     turnoCambiado(cambio) {
-      cola = cola
-        .then(() => difundir(cambio))
-        .catch((error: unknown) => {
-          logger.error({ tipo: tipoDeError(error) }, 'no se pudo difundir un cambio de turno');
-        });
+      const kinesiologos = pendientes.get(cambio.turnoId) ?? new Set<number>();
+      kinesiologos.add(cambio.kinesiologoId);
+      if (cambio.kinesiologoAnteriorId !== undefined) kinesiologos.add(cambio.kinesiologoAnteriorId);
+      pendientes.set(cambio.turnoId, kinesiologos);
+      void drenar();
     },
   };
 
@@ -219,7 +282,13 @@ export function crearTiempoReal(opciones: OpcionesTiempoReal): TiempoReal {
           'hashToken' in criterio
             ? vivo.hashToken === criterio.hashToken
             : vivo.usuarioId === criterio.usuarioId && vivo.sesionId !== criterio.exceptoSesionId;
-        if (coincide) cerrarVivo(vivo, 'revocada');
+        if (!coincide) continue;
+        // Un fallo con un socket no corta el cierre de los demás.
+        try {
+          cerrarVivo(vivo, 'revocada');
+        } catch (error) {
+          logger.error({ tipo: tipoDeError(error) }, 'no se pudo cerrar un socket revocado');
+        }
       }
     },
   };
@@ -240,6 +309,12 @@ export function crearTiempoReal(opciones: OpcionesTiempoReal): TiempoReal {
         allowRequest: (req, devolver) => {
           devolver(null, req.headers.origin === origenPermitido);
         },
+      });
+
+      // También en las peticiones que ya traen `sid` y en el paso de polling a websocket, donde
+      // `allowRequest` no se vuelve a evaluar.
+      io.engine.use((req: IncomingMessage, _res: unknown, siguiente: (error?: Error) => void) => {
+        siguiente(req.headers.origin === origenPermitido ? undefined : new Error('origen_no_permitido'));
       });
 
       io.use((socket, siguiente) => {
@@ -272,6 +347,8 @@ export function crearTiempoReal(opciones: OpcionesTiempoReal): TiempoReal {
         vivos.add(vivo);
         void socket.join(sala);
         programarVencimiento(vivo, sesion.venceEn);
+        // La sesión pudo revocarse entre la autenticación y este punto: se revalida una vez ya registrado.
+        void revalidarUno(vivo);
         socket.on('disconnect', () => {
           vivos.delete(vivo);
           vivo.cancelarVencimiento();
@@ -286,13 +363,14 @@ export function crearTiempoReal(opciones: OpcionesTiempoReal): TiempoReal {
     },
 
     async vaciar() {
-      await cola;
+      while (drenando) await drenando;
     },
 
     async cerrar() {
       if (revalidacion) clearInterval(revalidacion);
       for (const vivo of vivos) vivo.cancelarVencimiento();
       vivos.clear();
+      pendientes.clear();
       const servidor = io;
       io = undefined;
       if (servidor) await servidor.close();

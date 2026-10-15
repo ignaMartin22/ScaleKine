@@ -108,6 +108,8 @@ export function crearServicioAgendas({ db, reloj }: { db: BaseDeDatos; reloj: Re
       const t = await db.turno.findUnique({ where: { id: turnoId }, select: SELECCION });
       if (!t) return null;
       return {
+        // El kinesiólogo actual del turno según esta lectura: de ahí sale a qué sala va el cambio.
+        kinesiologoId: t.kinesiologo.id,
         secretaria: aTurnoDeSecretaria(t, 'secretaria', reloj.zonaHoraria),
         kinesiologo: aTurnoDeKinesiologo(t, reloj.zonaHoraria),
       };

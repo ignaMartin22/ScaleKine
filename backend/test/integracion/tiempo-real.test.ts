@@ -1,4 +1,4 @@
-import { createServer, type Server } from 'node:http';
+import { createServer, request as peticionHttp, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import request from 'supertest';
 import { io as conectar, type Socket } from 'socket.io-client';
@@ -8,7 +8,7 @@ import { cargarConfiguracion } from '../../src/comun/configuracion.js';
 import { RelojFijo } from '../../src/comun/reloj.js';
 import { hashDeToken } from '../../src/modulos/m1-identidad/servicio.js';
 import { crearServicioTurnos } from '../../src/modulos/m3-turnos/turnos.js';
-import { crearTiempoReal, type Programador } from '../../src/modulos/m5-tiempo-real/tiempoReal.js';
+import { crearTiempoReal, type DependenciasDeDifusion, type Programador } from '../../src/modulos/m5-tiempo-real/tiempoReal.js';
 import { crearRutas } from '../../src/rutas.js';
 import { ENTORNO_PRUEBA, loggerCapturado, ORIGEN_APP } from '../ayudantes.js';
 import { baseConEventoRoto } from './ayudantesTurnos.js';
@@ -60,7 +60,15 @@ afterEach(async () => {
   abiertos.cerrar = [];
 });
 
-async function armar(opciones: { programar?: Programador; intervaloRevalidacionMs?: number } = {}) {
+async function armar(
+  opciones: {
+    programar?: Programador;
+    intervaloRevalidacionMs?: number;
+    tiempoLimiteDifusionMs?: number;
+    /** Envuelve lo que M5 recibe de los demás módulos, para frenar o espiar sus lecturas. */
+    envolver?: (dependencias: DependenciasDeDifusion) => DependenciasDeDifusion;
+  } = {},
+) {
   const config = cargarConfiguracion({ ...ENTORNO_PRUEBA, COOKIE_SECURE: 'false' });
   const reloj = new RelojFijo(AHORA_PRUEBA);
   const capturado = loggerCapturado();
@@ -71,8 +79,17 @@ async function armar(opciones: { programar?: Programador; intervaloRevalidacionM
     cookieSegura: config.cookieSegura,
     intervaloRevalidacionMs: opciones.intervaloRevalidacionMs ?? 0,
     ...(opciones.programar ? { programar: opciones.programar } : {}),
+    ...(opciones.tiempoLimiteDifusionMs ? { tiempoLimiteDifusionMs: opciones.tiempoLimiteDifusionMs } : {}),
   });
-  const rutas = await crearRutas({ db, reloj, config, tiempoReal });
+  const { envolver } = opciones;
+  const enganche = envolver
+    ? {
+        emisor: tiempoReal.emisor,
+        revocaciones: tiempoReal.revocaciones,
+        enlazar: (d: DependenciasDeDifusion) => tiempoReal.enlazar(envolver(d)),
+      }
+    : tiempoReal;
+  const rutas = await crearRutas({ db, reloj, config, tiempoReal: enganche });
   const app = crearApp({ config, logger: capturado.logger, reloj, rutas });
   const servidor = createServer(app);
   await new Promise<void>((listo) => servidor.listen(0, '127.0.0.1', listo));
@@ -631,5 +648,248 @@ describe('sesión cerrada o cuenta desactivada con el socket abierto', () => {
     expect(await cerrado).toBe('io server disconnect');
     expect(cliente.eventos).toEqual([['sesion:cerrada', { motivo: 'revocada' }]]);
     expect(queSigue.socket.connected).toBe(true);
+  });
+});
+
+describe('destino del cambio: el kinesiólogo actual (D-16)', () => {
+  async function tresKinesiologos() {
+    const e = await armar();
+    const ks = [
+      await kinesiologoConSesion(e.app, 'kin-1'),
+      await kinesiologoConSesion(e.app, 'kin-2'),
+      await kinesiologoConSesion(e.app, 'kin-3'),
+    ];
+    const secretaria = await ingresarComo(e.app, 'secretaria');
+    const cs = await conectado(e.url, secretaria.cookie);
+    const c1 = await conectado(e.url, ks[0]!.cookie);
+    const c2 = await conectado(e.url, ks[1]!.cookie);
+    const c3 = await conectado(e.url, ks[2]!.cookie);
+    return { e, ks, cs, c1, c2, c3 };
+  }
+
+  it('un aviso con un kinesiólogo que ya no es el del turno: ese solo recibe turno:quitado, y el actual el cambio', async () => {
+    const { e, ks, cs, c1, c2, c3 } = await tresKinesiologos();
+    const paciente = await crearPaciente({ nombre: 'Paciente Ficticio Fuga', dni: '90777888' });
+    const turno = await crearTurno({ fecha: FECHA, kinesiologoId: ks[1]!.kinesiologo.id, pacienteId: paciente.id });
+
+    // El aviso es del momento en que el turno era de K1; cuando se lo relee ya es de K2.
+    e.tiempoReal.emisor.turnoCambiado({ turnoId: turno.id, kinesiologoId: ks[0]!.kinesiologo.id });
+    await e.tiempoReal.vaciar();
+    await esperar(() => nombres(c2).length > 0 && nombres(cs).length > 0 && nombres(c1).length > 0);
+    await pausa();
+
+    expect(c1.eventos).toEqual([['turno:quitado', { turnoId: turno.id }]]);
+    expect(JSON.stringify(c1.eventos)).not.toContain('Fuga');
+    expect(c2.eventos).toHaveLength(1);
+    expect(c2.eventos[0]![0]).toBe('turno:cambio');
+    expect(nombres(cs)).toEqual(['turno:cambio']);
+    expect(c3.eventos).toEqual([]);
+  });
+
+  it('K1 a K2 a K3 con los avisos juntos: K1 y K2 reciben solo turno:quitado y K3 el cambio', async () => {
+    const { e, ks, cs, c1, c2, c3 } = await tresKinesiologos();
+    const turno = await crearTurno({ fecha: FECHA, kinesiologoId: ks[2]!.kinesiologo.id });
+    const [k1, k2, k3] = ks.map((k) => k.kinesiologo.id) as [number, number, number];
+
+    e.tiempoReal.emisor.turnoCambiado({ turnoId: turno.id, kinesiologoId: k1 });
+    e.tiempoReal.emisor.turnoCambiado({ turnoId: turno.id, kinesiologoId: k2, kinesiologoAnteriorId: k1 });
+    e.tiempoReal.emisor.turnoCambiado({ turnoId: turno.id, kinesiologoId: k3, kinesiologoAnteriorId: k2 });
+    await e.tiempoReal.vaciar();
+    await esperar(() => nombres(c3).length > 0 && nombres(c1).length > 0 && nombres(c2).length > 0);
+    await pausa();
+
+    expect(c1.eventos).toEqual([['turno:quitado', { turnoId: turno.id }]]);
+    expect(c2.eventos).toEqual([['turno:quitado', { turnoId: turno.id }]]);
+    expect(nombres(c3)).toEqual(['turno:cambio']);
+    expect(nombres(cs)).toEqual(['turno:cambio']);
+  });
+});
+
+describe('cola de difusión acotada y con tiempo límite', () => {
+  it('una relectura colgada no frena los eventos siguientes', async () => {
+    let llamadas = 0;
+    const e = await armar({
+      tiempoLimiteDifusionMs: 200,
+      envolver: (d) => ({
+        ...d,
+        turnoParaDifusion: (id) => (++llamadas === 1 ? new Promise(() => undefined) : d.turnoParaDifusion(id)),
+      }),
+    });
+    const secretaria = await ingresarComo(e.app, 'secretaria');
+    const k = await kinesiologoConSesion(e.app, 'kin-1');
+    const cs = await conectado(e.url, secretaria.cookie);
+    const colgado = await crearTurno({ fecha: FECHA, kinesiologoId: k.kinesiologo.id });
+    const bueno = await crearTurno({ fecha: FECHA, horaInicio: '08:45', kinesiologoId: k.kinesiologo.id });
+
+    e.tiempoReal.emisor.turnoCambiado({ turnoId: colgado.id, kinesiologoId: k.kinesiologo.id });
+    e.tiempoReal.emisor.turnoCambiado({ turnoId: bueno.id, kinesiologoId: k.kinesiologo.id });
+    await esperar(() => nombres(cs).length === 1);
+
+    expect(cs.eventos[0]![1].turno.id).toBe(bueno.id);
+    // Solo el tipo del error, sin datos.
+    expect(e.registros().find((r) => r.msg === 'no se pudo difundir un cambio de turno')).toMatchObject({
+      tipo: 'Error',
+    });
+  });
+
+  it('varios avisos del mismo turno se agrupan en una sola relectura', async () => {
+    let soltar!: () => void;
+    const frenada = new Promise<void>((r) => (soltar = r));
+    const lecturas: number[] = [];
+    const e = await armar({
+      envolver: (d) => ({
+        ...d,
+        turnoParaDifusion: async (id) => {
+          lecturas.push(id);
+          if (lecturas.length === 1) await frenada;
+          return d.turnoParaDifusion(id);
+        },
+      }),
+    });
+    const secretaria = await ingresarComo(e.app, 'secretaria');
+    const k = await kinesiologoConSesion(e.app, 'kin-1');
+    const cs = await conectado(e.url, secretaria.cookie);
+    const primero = await crearTurno({ fecha: FECHA, kinesiologoId: k.kinesiologo.id });
+    const segundo = await crearTurno({ fecha: FECHA, horaInicio: '08:45', kinesiologoId: k.kinesiologo.id });
+
+    e.tiempoReal.emisor.turnoCambiado({ turnoId: primero.id, kinesiologoId: k.kinesiologo.id });
+    await esperar(() => lecturas.length === 1);
+    for (let i = 0; i < 5; i++) {
+      e.tiempoReal.emisor.turnoCambiado({ turnoId: segundo.id, kinesiologoId: k.kinesiologo.id });
+    }
+    soltar();
+    await e.tiempoReal.vaciar();
+    await esperar(() => nombres(cs).length === 2);
+    await pausa();
+
+    expect(lecturas).toEqual([primero.id, segundo.id]);
+    expect(nombres(cs)).toEqual(['turno:cambio', 'turno:cambio']);
+  });
+});
+
+describe('ganchos de M1 y carreras de la sesión', () => {
+  it('cambiar la contraseña cierra los sockets de las otras sesiones y conserva el de la propia', async () => {
+    const e = await armar();
+    const propia = await ingresarOtra(e.app, 'secretaria', 'secretaria-cambio');
+    const login = await request(e.app)
+      .post('/api/sesion')
+      .set('Origin', ORIGEN_APP)
+      .send({ nombreUsuario: 'secretaria-cambio', contrasena: CONTRASENA_ADMINISTRADOR_VERIFICADO });
+    const galleta = (login.headers['set-cookie'] as unknown as string[])[0] ?? '';
+    const otraCookie = `sesion=${/^sesion=([^;]*)/.exec(galleta)?.[1]}`;
+    const cPropia = await conectado(e.url, propia.cookie);
+    const cOtra = await conectado(e.url, otraCookie);
+    const cerrada = new Promise<string>((r) => cOtra.socket.on('disconnect', r));
+
+    const res = await request(e.app)
+      .put('/api/sesion/contrasena')
+      .set({ Origin: ORIGEN_APP, Cookie: propia.cookie })
+      .send({ contrasenaActual: CONTRASENA_ADMINISTRADOR_VERIFICADO, contrasenaNueva: 'otra-clave-de-prueba-larga-9' });
+    expect(res.status).toBe(204);
+
+    expect(await cerrada).toBe('io server disconnect');
+    expect(cOtra.eventos).toEqual([['sesion:cerrada', { motivo: 'revocada' }]]);
+    await pausa();
+    expect(cPropia.socket.connected).toBe(true);
+    expect(cPropia.eventos).toEqual([]);
+  });
+
+  it('restablecer la contraseña de una cuenta cierra su socket', async () => {
+    const e = await armar();
+    const admin = await ingresarComo(e.app, 'administrador');
+    const secretaria = await ingresarOtra(e.app, 'secretaria', 'secretaria-restablecer');
+    const cliente = await conectado(e.url, secretaria.cookie);
+    const cerrado = new Promise<string>((r) => cliente.socket.on('disconnect', r));
+
+    const res = await request(e.app)
+      .post(`/api/cuentas/${secretaria.usuarioId}/restablecimiento`)
+      .set({ Origin: ORIGEN_APP, Cookie: admin.cookie })
+      .send({ contrasenaTemporal: 'temporal-de-prueba-larga-1' });
+    expect(res.status).toBe(204);
+
+    expect(await cerrado).toBe('io server disconnect');
+    expect(cliente.eventos).toEqual([['sesion:cerrada', { motivo: 'revocada' }]]);
+  });
+
+  it('una sesión revocada entre la autenticación y el alta del socket se cierra', async () => {
+    let llamadas = 0;
+    const e = await armar({
+      envolver: (d) => ({
+        ...d,
+        sesionVigente: async (token) => {
+          const sesion = await d.sesionVigente(token);
+          // Justo después de autenticar, antes de que el socket quede registrado.
+          if (++llamadas === 1) {
+            await db.sesion.updateMany({ where: { hashToken: hashDeToken(token) }, data: { revocadaEn: new Date() } });
+          }
+          return sesion;
+        },
+      }),
+    });
+    const { cookie } = await ingresarComo(e.app, 'secretaria');
+    const cliente = await conectarCliente(e.url, { cookie });
+    expect(cliente.conectado).toBe(true);
+    await esperar(() => !cliente.socket.connected);
+    expect(cliente.eventos).toEqual([['sesion:cerrada', { motivo: 'revocada' }]]);
+  });
+});
+
+describe('Origin en todos los transportes (plan.md §4.15)', () => {
+  it('con polling, un Origin ajeno o ausente se rechaza', async () => {
+    const e = await armar();
+    const { cookie } = await ingresarComo(e.app, 'secretaria');
+    const polling = { transports: ['polling'] };
+    const ajeno = await conectarCliente(e.url, { cookie, origen: 'http://sitio-ajeno.example', extra: polling });
+    const sin = await conectarCliente(e.url, { cookie, origen: null, extra: polling });
+    const bueno = await conectarCliente(e.url, { cookie, extra: polling });
+    expect(ajeno.conectado).toBe(false);
+    expect(sin.conectado).toBe(false);
+    expect(bueno.conectado).toBe(true);
+  });
+
+  /** GET crudo con las cabeceras dadas; devuelve estado y cuerpo. */
+  function pedir(url: string, ruta: string, headers: Record<string, string>) {
+    return new Promise<{ estado: number; cuerpo: string }>((resolver, rechazar) => {
+      const req = peticionHttp(`${url}${ruta}`, { headers }, (res) => {
+        let cuerpo = '';
+        res.on('data', (c: Buffer) => (cuerpo += c.toString()));
+        res.on('end', () => resolver({ estado: res.statusCode ?? 0, cuerpo }));
+      });
+      req.on('error', rechazar);
+      req.end();
+    });
+  }
+
+  it('una petición con sid pero con Origin ajeno, y un upgrade con Origin ajeno, se rechazan', async () => {
+    const e = await armar();
+    const abierto = await pedir(e.url, '/socket.io/?EIO=4&transport=polling', { Origin: ORIGEN_APP });
+    expect(abierto.estado).toBe(200);
+    const sid = /"sid":"([^"]+)"/.exec(abierto.cuerpo)?.[1];
+    expect(sid).toBeDefined();
+
+    const ajena = await pedir(e.url, `/socket.io/?EIO=4&transport=polling&sid=${sid}`, {
+      Origin: 'http://sitio-ajeno.example',
+    });
+    expect(ajena.estado).not.toBe(200);
+
+    const upgrade = await new Promise<'aceptado' | 'rechazado'>((resolver) => {
+      const req = peticionHttp(`${e.url}/socket.io/?EIO=4&transport=websocket&sid=${sid}`, {
+        headers: {
+          Origin: 'http://sitio-ajeno.example',
+          Connection: 'Upgrade',
+          Upgrade: 'websocket',
+          'Sec-WebSocket-Version': '13',
+          'Sec-WebSocket-Key': Buffer.from('clave-de-prueba-16').toString('base64'),
+        },
+      });
+      req.on('upgrade', (_res, socket) => {
+        socket.destroy();
+        resolver('aceptado');
+      });
+      req.on('response', () => resolver('rechazado'));
+      req.on('error', () => resolver('rechazado'));
+      req.end();
+    });
+    expect(upgrade).toBe('rechazado');
   });
 });
