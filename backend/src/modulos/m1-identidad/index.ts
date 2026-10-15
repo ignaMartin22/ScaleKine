@@ -3,6 +3,7 @@ import type { Configuracion } from '../../comun/configuracion.js';
 import type { Reloj } from '../../comun/reloj.js';
 import { crearExigirSesionConPasos, TODOS_LOS_PASOS } from './middleware.js';
 import type { PasoAdmitido } from './pasos.js';
+import type { AvisoRevocaciones } from './revocaciones.js';
 import { crearRutasIdentidad } from './rutas.js';
 import { crearServicioIdentidad } from './servicio.js';
 import { crearServicioSegundoFactor } from './servicioSegundoFactor.js';
@@ -12,12 +13,14 @@ export async function crearModuloIdentidad({
   db,
   reloj,
   config,
+  avisoRevocaciones,
 }: {
   db: BaseDeDatos;
   reloj: Reloj;
   config: Configuracion;
+  avisoRevocaciones?: AvisoRevocaciones;
 }) {
-  const servicio = await crearServicioIdentidad({ db, reloj });
+  const servicio = await crearServicioIdentidad({ db, reloj, ...(avisoRevocaciones ? { avisoRevocaciones } : {}) });
   const servicioSegundoFactor = crearServicioSegundoFactor({ db, reloj, claveCifrado: config.claveCifrado });
   const variante = (...pasos: PasoAdmitido[]) => crearExigirSesionConPasos(servicio, config, pasos);
   // `exigirSesion` es el que usan todas las rutas de negocio: solo admite una sesión sin pasos
@@ -42,6 +45,7 @@ export async function crearModuloIdentidad({
   };
 }
 
+export type { AvisoRevocaciones, CriterioRevocacion } from './revocaciones.js';
 export { SIN_BLOQUEO } from './limiteIntentos.js';
 export { sesionActual } from './middleware.js';
 export type { SesionActiva, UsuarioSesion } from './servicio.js';

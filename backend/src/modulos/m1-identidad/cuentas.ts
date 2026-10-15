@@ -4,6 +4,7 @@ import type { Reloj } from '../../comun/reloj.js';
 import type { Rol } from '../../generado/prisma/client.js';
 import { hashearContrasena, validarPoliticaContrasena } from './contrasenas.js';
 import { SIN_BLOQUEO } from './limiteIntentos.js';
+import { avisarRevocacion, SIN_AVISO, type AvisoRevocaciones } from './revocaciones.js';
 
 /** Cuenta tal como la ve el administrador: nunca incluye hashes, secretos ni datos de bloqueo. */
 export interface CuentaListada {
@@ -42,7 +43,15 @@ function esViolacionDeUnicidad(err: unknown): boolean {
  * ANTES que las sesiones: un ingreso concurrente que confirme en el medio queda serializado por la
  * fila y, o ve la cuenta ya cambiada y no crea sesión, o la crea antes y la revocación la alcanza.
  */
-export function crearServicioCuentas({ db, reloj }: { db: BaseDeDatos; reloj: Reloj }) {
+export function crearServicioCuentas({
+  db,
+  reloj,
+  avisoRevocaciones = SIN_AVISO,
+}: {
+  db: BaseDeDatos;
+  reloj: Reloj;
+  avisoRevocaciones?: AvisoRevocaciones;
+}) {
   async function cuentaGestionable(id: number) {
     const cuenta = await db.usuario.findUnique({
       where: { id },
@@ -115,6 +124,7 @@ export function crearServicioCuentas({ db, reloj }: { db: BaseDeDatos; reloj: Re
           data: { revocadaEn: ahora },
         });
       });
+      avisarRevocacion(avisoRevocaciones, { usuarioId: id });
     },
 
     /**
@@ -135,6 +145,7 @@ export function crearServicioCuentas({ db, reloj }: { db: BaseDeDatos; reloj: Re
           data: { revocadaEn: ahora },
         });
       });
+      avisarRevocacion(avisoRevocaciones, { usuarioId: id });
     },
   };
 }

@@ -47,6 +47,31 @@ function proyectar(t: FilaAgenda, zonaHoraria: string) {
   };
 }
 
+type FilaSeleccionada = FilaAgenda & {
+  paciente: { id: number; nombre: string; dni: string; telefono: string; obraSocial: string | null };
+  kinesiologo: { id: number; nombre: string };
+};
+
+/** Turno de la agenda de secretaría (RF-41): proyección común, paciente, kinesiólogo y acciones. */
+function aTurnoDeSecretaria(t: FilaSeleccionada, rol: Rol, zonaHoraria: string) {
+  const acciones = accionesDisponibles(t.estado, rol);
+  return {
+    ...proyectar(t, zonaHoraria),
+    paciente: t.paciente,
+    kinesiologo: t.kinesiologo,
+    acciones: {
+      transiciones: acciones.transiciones.map(({ hacia, accion }) => ({ hacia, accion })),
+      puedeCorregir: acciones.puedeCorregir,
+    },
+  };
+}
+
+/** Turno de la agenda propia del kinesiólogo (RF-40): sin id de paciente (D-16) y sin acciones (D-15). */
+function aTurnoDeKinesiologo(t: FilaSeleccionada, zonaHoraria: string) {
+  const { dni, nombre, telefono, obraSocial } = t.paciente;
+  return { ...proyectar(t, zonaHoraria), paciente: { nombre, dni, telefono, obraSocial } };
+}
+
 /**
  * Lectura de las agendas (M4, RF-40, RF-41). No escribe nada. Quién puede llamar a cada método lo
  * decide la ruta; la agenda propia recibe el id de la cuenta de la sesión, nunca un kinesiólogo.
@@ -70,18 +95,28 @@ export function crearServicioAgendas({ db, reloj }: { db: BaseDeDatos; reloj: Re
         select: SELECCION,
         orderBy: [{ horaInicio: 'asc' }, { kinesiologo: { nombre: 'asc' } }, { id: 'asc' }],
       });
-      return filas.map((t) => {
-        const acciones = accionesDisponibles(t.estado, rol);
-        return {
-          ...proyectar(t, reloj.zonaHoraria),
-          paciente: t.paciente,
-          kinesiologo: t.kinesiologo,
-          acciones: {
-            transiciones: acciones.transiciones.map(({ hacia, accion }) => ({ hacia, accion })),
-            puedeCorregir: acciones.puedeCorregir,
-          },
-        };
-      });
+      return filas.map((t) => aTurnoDeSecretaria(t, rol, reloj.zonaHoraria));
+    },
+
+    /**
+     * Turno para difundir en tiempo real (RF-44, M5): el mismo turno con la forma de cada agenda, o
+     * `null` si no existe. `secretaria` es la de la agenda de secretaría, con las acciones (las
+     * mismas para secretaría y administrador); `kinesiologo` es la de la agenda propia, sin acciones
+     * (D-15). Es una lectura: el que llama decide a qué sala va cada una.
+     */
+    async paraDifusion(turnoId: number) {
+      const t = await db.turno.findUnique({ where: { id: turnoId }, select: SELECCION });
+      if (!t) return null;
+      return {
+        secretaria: aTurnoDeSecretaria(t, 'secretaria', reloj.zonaHoraria),
+        kinesiologo: aTurnoDeKinesiologo(t, reloj.zonaHoraria),
+      };
+    },
+
+    /** El `Kinesiologo` de la cuenta `usuarioId`, o `null` si la cuenta no tiene perfil de kinesiólogo. */
+    async kinesiologoIdDeCuenta(usuarioId: number): Promise<number | null> {
+      const k = await db.kinesiologo.findUnique({ where: { usuarioId }, select: { id: true } });
+      return k?.id ?? null;
     },
 
     /**
@@ -133,10 +168,7 @@ export function crearServicioAgendas({ db, reloj }: { db: BaseDeDatos; reloj: Re
         }),
       ]);
       // El kinesiólogo no necesita el id del paciente: no tiene ninguna ruta de pacientes (D-16).
-      const aTurno = (t: (typeof enEspera)[number]) => {
-        const { dni, nombre, telefono, obraSocial } = t.paciente;
-        return { ...proyectar(t, reloj.zonaHoraria), paciente: { nombre, dni, telefono, obraSocial } };
-      };
+      const aTurno = (t: (typeof enEspera)[number]) => aTurnoDeKinesiologo(t, reloj.zonaHoraria);
       return { enEspera: enEspera.map(aTurno), proximos: proximos.map(aTurno) };
     },
   };

@@ -2,6 +2,7 @@ import type { BaseDeDatos } from '../../comun/baseDeDatos.js';
 import { ErrorNegocio } from '../../comun/errores.js';
 import type { Reloj } from '../../comun/reloj.js';
 import { franjasDelDia } from '../m2-maestros/grilla.js';
+import { EMISOR_NULO, type CambioDeTurno, type EmisorTurnos } from './eventos.js';
 import { validarTransicion, type EstadoTurno, type Rol } from './transiciones.js';
 
 /** Datos que la secretaría elige al asignar (RF-23). El autor no viene acá: sale de la sesión. */
@@ -140,7 +141,25 @@ function aActualizado(t: FilaTurno): TurnoActualizado {
  * Ciclo de vida del turno (M3). Es el único módulo que escribe turnos, y cada escritura registra su
  * `TurnoEvento` en la misma transacción (RF-46). Quién puede llamar lo decide la ruta.
  */
-export function crearServicioTurnos({ db, reloj }: { db: BaseDeDatos; reloj: Reloj }) {
+export function crearServicioTurnos({
+  db,
+  reloj,
+  emisor = EMISOR_NULO,
+}: {
+  db: BaseDeDatos;
+  reloj: Reloj;
+  /** Recibe un aviso por operación confirmada (nunca dentro de la transacción ni si falló). */
+  emisor?: EmisorTurnos;
+}) {
+  /** Avisa tras el commit. Un fallo del receptor no cambia el resultado de una operación ya confirmada. */
+  const avisar = (cambio: CambioDeTurno): void => {
+    try {
+      emisor.turnoCambiado(cambio);
+    } catch {
+      // La difusión es de mejor esfuerzo; el que difunde registra sus propios fallos.
+    }
+  };
+
   return {
     /**
      * Asigna un turno en `reservado` (RF-23). Admite fechas vencidas. La ocupación de la franja la
@@ -182,6 +201,7 @@ export function crearServicioTurnos({ db, reloj }: { db: BaseDeDatos; reloj: Rel
           });
           return creado;
         });
+        avisar({ turnoId: turno.id, kinesiologoId: turno.kinesiologoId });
         return {
           id: turno.id,
           pacienteId: turno.pacienteId,
@@ -205,7 +225,7 @@ export function crearServicioTurnos({ db, reloj }: { db: BaseDeDatos; reloj: Rel
      */
     async transicionar(turnoId: number, hacia: EstadoTurno, autorId: number, rol: Rol): Promise<TurnoActualizado> {
       const ahora = reloj.ahora();
-      return db.$transaction(async (tx) => {
+      const turno = await db.$transaction(async (tx) => {
         const actual = await tx.turno.findUnique({ where: { id: turnoId }, select: { estado: true } });
         if (!actual) throw errorTurnoNoEncontrado();
         validarTransicion(rol, actual.estado, hacia);
@@ -226,6 +246,8 @@ export function crearServicioTurnos({ db, reloj }: { db: BaseDeDatos; reloj: Rel
         });
         return aActualizado(await tx.turno.findUniqueOrThrow({ where: { id: turnoId } }));
       });
+      avisar({ turnoId, kinesiologoId: turno.kinesiologoId });
+      return turno;
     },
 
     /**
@@ -240,8 +262,9 @@ export function crearServicioTurnos({ db, reloj }: { db: BaseDeDatos; reloj: Rel
      */
     async reprogramar(turnoId: number, destino: DatosReprogramacion, autorId: number): Promise<TurnoActualizado> {
       const ahora = reloj.ahora();
+      let resultado: { turno: TurnoActualizado; anteriorId: number };
       try {
-        return await db.$transaction(async (tx) => {
+        resultado = await db.$transaction(async (tx) => {
           const actual = await tx.turno.findUnique({
             where: { id: turnoId },
             select: { estado: true, kinesiologoId: true, fecha: true, horaInicio: true },
@@ -278,11 +301,19 @@ export function crearServicioTurnos({ db, reloj }: { db: BaseDeDatos; reloj: Rel
           await tx.turnoEvento.create({
             data: { turnoId, tipo: 'reprogramacion', autorId, ocurridoEn: ahora },
           });
-          return aActualizado(await tx.turno.findUniqueOrThrow({ where: { id: turnoId } }));
+          const turno = aActualizado(await tx.turno.findUniqueOrThrow({ where: { id: turnoId } }));
+          return { turno, anteriorId: actual.kinesiologoId };
         });
       } catch (err) {
         return traducirOcupacion(err);
       }
+      const { turno, anteriorId } = resultado;
+      avisar({
+        turnoId,
+        kinesiologoId: turno.kinesiologoId,
+        ...(anteriorId === turno.kinesiologoId ? {} : { kinesiologoAnteriorId: anteriorId }),
+      });
+      return turno;
     },
 
     /**
@@ -296,7 +327,7 @@ export function crearServicioTurnos({ db, reloj }: { db: BaseDeDatos; reloj: Rel
       autorId: number,
     ): Promise<TurnoActualizado> {
       const ahora = reloj.ahora();
-      return db.$transaction(async (tx) => {
+      const turno = await db.$transaction(async (tx) => {
         const { count } = await tx.turno.updateMany({ where: { id: turnoId }, data: coseguros });
         if (count !== 1) throw errorTurnoNoEncontrado();
         await tx.turnoEvento.create({
@@ -304,6 +335,8 @@ export function crearServicioTurnos({ db, reloj }: { db: BaseDeDatos; reloj: Rel
         });
         return aActualizado(await tx.turno.findUniqueOrThrow({ where: { id: turnoId } }));
       });
+      avisar({ turnoId, kinesiologoId: turno.kinesiologoId });
+      return turno;
     },
 
     /**
@@ -314,8 +347,9 @@ export function crearServicioTurnos({ db, reloj }: { db: BaseDeDatos; reloj: Rel
      */
     async corregir(turnoId: number, hacia: EstadoTurno, autorId: number): Promise<TurnoActualizado> {
       const ahora = reloj.ahora();
+      let turno: TurnoActualizado;
       try {
-        return await db.$transaction(async (tx) => {
+        turno = await db.$transaction(async (tx) => {
           const actual = await tx.turno.findUnique({
             where: { id: turnoId },
             select: { estado: true, llegadaEn: true },
@@ -346,6 +380,8 @@ export function crearServicioTurnos({ db, reloj }: { db: BaseDeDatos; reloj: Rel
       } catch (err) {
         return traducirOcupacion(err);
       }
+      avisar({ turnoId, kinesiologoId: turno.kinesiologoId });
+      return turno;
     },
   };
 }
