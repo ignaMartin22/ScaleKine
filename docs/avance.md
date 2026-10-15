@@ -1,6 +1,6 @@
 # Avance de la implementación
 
-Estado al 2026-10-15, con la ola 4 cerrada y la ola 5 en curso. Este documento registra qué está hecho, qué quedó a
+Estado al 2026-10-15, con la ola 5 casi cerrada: falta la parte 3 de T-30. Este documento registra qué está hecho, qué quedó a
 medio camino y cómo retomarlo. No reemplaza a las fuentes de verdad: los requisitos están en
 [`spec.md`](./spec.md), las decisiones de diseño en [`plan.md`](./plan.md) y el orden y los
 criterios de "hecho" en [`tasks.md`](./tasks.md). Se actualiza cada vez que se fusiona un PR.
@@ -38,10 +38,10 @@ criterios de "hecho" en [`tasks.md`](./tasks.md). Se actualiza cada vez que se f
 | T-24 · Reprogramar | Hecha | #45 | Crítica: pasó `revisor-seguridad` y una ronda de correcciones (una carrera no determinista reemplazada por una intercalación forzada). |
 | T-25 · Ticket | Hecha | #38 | PDF con `pdfkit`; la prueba decodifica el QR con `jsqr`. |
 | T-26 · Sin borrado | Hecha | #40 | |
-| T-27 · Agendas | En curso | — | Carril A. Pasa por `revisor-seguridad` (lecturas del kinesiólogo). |
+| T-27 · Agendas | Hecha | #48 | Pasó `revisor-seguridad` y una ronda de correcciones (guardianas nuevas, esquemas compartidos en `comun/esquemas.ts`). |
 | T-28 · Aviso de pendientes | Hecha | #44 | Adelantada a la ola 4 con el carril B libre. |
-| T-29 · Ficha del paciente | Pendiente | — | Carril A, después de T-27. |
-| T-30 · Pantallas de agenda, asignación y ficha | En curso | — | Carril B, en tres PRs: asignación (en curso), agenda de secretaría (tras T-27), ficha y agenda del kinesiólogo (tras T-27 y T-29). |
+| T-29 · Ficha del paciente | Hecha | #50 | Incluye `horaLlegada` en las proyecciones de turno. |
+| T-30 · Pantallas de agenda, asignación y ficha | Partes 1 y 2 hechas | #47 y #51 | Las dos pasaron el recorrido manual del usuario. Falta la parte 3: agenda del kinesiólogo y próximos/historial en la ficha. |
 | T-31 a T-40 | Pendientes | — | Olas 6 y 7 de `tasks.md`. |
 
 Otros PRs fusionados:
@@ -50,6 +50,7 @@ Otros PRs fusionados:
 - #24, #29 y #32 documentan el avance durante la ola 3.
 - #35 y #37 cambian la spec con decisiones del usuario (ver §2c).
 - #42 resuelve deuda de documentación y configuración; #43 centraliza `ingresarComo` en las fábricas de prueba.
+- #46 documenta el cierre de la ola 4; #49 agrega `Cache-Control: no-store` a toda la API (RNF-14, decisión del usuario).
 - #3, #4 y #20 son de Dependabot.
 - El #5 (TypeScript 7 en el frontend) se cerró: Angular 22 exige TypeScript `~6.0`.
 
@@ -196,6 +197,41 @@ primero; para probar un orden concreto hay que forzar la intercalación.
 
 **T-28 (#44):** `GET /api/agenda/pendientes`; compara en hora de pared de la zona del consultorio
 (`Intl.DateTimeFormat`), sin desfases fijos.
+
+---
+
+## 2d. Ola 5: estado al pausar (2026-10-15)
+
+**Fusionado:** T-27 (#48), T-29 (#50), T-30 partes 1 y 2 (#47 y #51) y RNF-14 (#49). Falta la
+**parte 3 de T-30**: agenda del kinesiólogo (`GET /api/mi-agenda`, ya existe) y las listas de
+próximos e historial en la ficha del paciente (`GET /api/pacientes/:id/turnos`, ya existe). El
+usuario lo notó en el recorrido del #51: el kinesiólogo todavía no ve nada.
+
+**Contratos nuevos** (en los comentarios de las rutas):
+- `GET /api/agenda?fecha=&kinesiologoId=` (secretaría y administrador) y `GET /api/mi-agenda?fecha=`
+  (solo kinesiólogo; el kinesiólogo sale de la sesión, un `kinesiologoId` en la query se ignora):
+  `m4-agenda/rutasAgendas.ts`.
+- `GET /api/pacientes/:id/turnos` → `{ proximos, historial }` con el mismo criterio de "franja
+  transcurrida" que el aviso de pendientes (`franjaTranscurrida` en `m4-agenda/pendientes.ts`).
+- Las proyecciones de turno traen `horaLlegada` ('HH:MM' en la zona del consultorio): el frontend
+  no tiene ninguna zona horaria fija.
+
+**Decisiones:**
+- Autorización de la agenda propia: `puedeLeerAgendaPropia` en `comun/autorizacion.ts` y el
+  middleware `autorizarAgendaPropia`. Guardianas nuevas en `rutas.test.ts`: la de agenda propia, su
+  inversa (el middleware solo puede estar bajo `/mi-agenda`) y una de mundo cerrado (todo GET de
+  negocio lleva alguna autorización; la lista blanca está vacía).
+- `comun/esquemas.ts` tiene `fechaCivil` (desde 0001-01-01) e `idDeTexto`, compartidos por todas las
+  rutas.
+- RNF-14 (decisión del usuario): toda respuesta de `/api` lleva `Cache-Control: no-store`.
+- Frontend: `<app-volver-al-inicio>` lleva al inicio del rol de la sesión; `app-dialogo` es un
+  diálogo accesible propio; `nucleo/ui/descargar.ts` descarga archivos.
+- El usuario va a encargar el **diseño visual** al final; hoy no hay una tarea de estilos en
+  `tasks.md`. Hay que agregarla (con su criterio de "hecho") antes de T-33, para que las pruebas de
+  punta a punta corran sobre la interfaz final.
+
+**Recorridos manuales:** #47 y #51 pasaron. En el #51 el turno de ayer sin marcar se cargó por la
+API desde la consola (la asignación por pantalla solo deja fechas desde hoy).
 
 ---
 
@@ -351,5 +387,9 @@ Si un PR se fusiona antes de terminar la revisión, las correcciones van en una 
   faltaban en el plan.
 
 **Para retomar:**
-Ola 5 en curso: T-27 → T-29 en el carril A (T-27 con `revisor-seguridad`); T-30 en el carril B en
-tres PRs (asignación, agenda de secretaría tras T-27, ficha y agenda del kinesiólogo tras T-29).
+1. Encender Docker Desktop y verificar `scalekine-postgres-1`.
+2. Carril B: **T-30 parte 3** (agenda del kinesiólogo y próximos/historial en la ficha); lleva
+   recorrido manual del usuario. Con eso cierra la ola 5.
+3. Carril A: ola 6, **T-31 (difusión en tiempo real)**. Se puede adelantar en paralelo con la
+   parte 3 (solo toca el backend), si el usuario lo aprueba; después T-32 (agenda viva).
+4. Agregar a `tasks.md` la tarea de diseño visual, antes de T-33.
