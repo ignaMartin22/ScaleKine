@@ -1,6 +1,7 @@
 import { Router, type RequestHandler } from 'express';
 import { z } from 'zod';
 import { autorizarEscritura } from '../../comun/autorizarEscritura.js';
+import { fechaCivil, idDeTexto } from '../../comun/esquemas.js';
 import { datosValidados, validar } from '../../comun/validacion.js';
 import type { ServicioDisponibilidad } from './servicioDisponibilidad.js';
 
@@ -22,25 +23,11 @@ import type { ServicioDisponibilidad } from './servicioDisponibilidad.js';
  * Comunes: 400 `datos_invalidos`, 401 sin sesión, 403 `no_autorizado`. La fecha y el paciente viajan
  * por query, que el registro de peticiones descarta (CLAUDE.md).
  */
-export const fechaCivil = z
-  .string()
-  .regex(/^\d{4}-\d{2}-\d{2}$/)
-  .refine((valor) => {
-    const fecha = new Date(`${valor}T00:00:00Z`);
-    return !Number.isNaN(fecha.getTime()) && fecha.toISOString().startsWith(valor);
-  }, 'La fecha no existe en el calendario.');
-
-const idPaciente = z
-  .string()
-  .regex(/^\d{1,10}$/)
-  .transform(Number)
-  .pipe(z.number().int().positive().max(2_147_483_647));
-
 const esquemaConsulta = {
   query: z.object({
     fecha: fechaCivil,
     bloque: z.enum(['manana', 'tarde']),
-    pacienteId: idPaciente.optional(),
+    pacienteId: idDeTexto.optional(),
   }),
 };
 

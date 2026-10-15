@@ -2,9 +2,9 @@ import { Router, type RequestHandler } from 'express';
 import { z } from 'zod';
 import { autorizarAgendaPropia } from '../../comun/autorizarAgendaPropia.js';
 import { autorizarEscritura } from '../../comun/autorizarEscritura.js';
+import { fechaCivil, idDeTexto } from '../../comun/esquemas.js';
 import { datosValidados, validar } from '../../comun/validacion.js';
 import { sesionActual } from '../m1-identidad/index.js';
-import { fechaCivil } from './rutasDisponibilidad.js';
 import type { ServicioAgendas } from './servicioAgendas.js';
 
 /**
@@ -33,14 +33,8 @@ import type { ServicioAgendas } from './servicioAgendas.js';
  *
  * Comunes: 401 sin sesión, 403 `no_autorizado`. No se registra ningún dato del paciente.
  */
-const idKinesiologo = z
-  .string()
-  .regex(/^\d{1,10}$/)
-  .transform(Number)
-  .pipe(z.number().int().positive().max(2_147_483_647));
-
 const esquemaSecretaria = {
-  query: z.object({ fecha: fechaCivil.optional(), kinesiologoId: idKinesiologo.optional() }),
+  query: z.object({ fecha: fechaCivil.optional(), kinesiologoId: idDeTexto.optional() }),
 };
 // Sin `kinesiologoId`: zod descarta las claves desconocidas, así que un identificador de más no llega a la consulta.
 const esquemaPropia = { query: z.object({ fecha: fechaCivil.optional() }) };

@@ -220,6 +220,7 @@ describe('GET /api/disponibilidad (RF-22, RF-15)', () => {
     ['fecha con otro formato', { fecha: '12/10/2026', bloque: 'manana' }],
     ['fecha inexistente', { fecha: '2026-02-30', bloque: 'manana' }],
     ['mes 13', { fecha: '2026-13-01', bloque: 'manana' }],
+    ['año 0000', { fecha: '0000-01-01', bloque: 'manana' }],
     ['bloque desconocido', { fecha: LUNES, bloque: 'noche' }],
     ['paciente no numérico', { fecha: LUNES, bloque: 'manana', pacienteId: 'abc' }],
     ['paciente cero', { fecha: LUNES, bloque: 'manana', pacienteId: '0' }],

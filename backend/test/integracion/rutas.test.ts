@@ -150,6 +150,60 @@ function lecturasDeAgendaPropiaSinAutorizacion(capas: CapaExpress[]): string[] {
   return sinAutorizar;
 }
 
+/**
+ * Inversa de la anterior: una ruta cuyo stack lleva `autorizarAgendaPropia` tiene que estar bajo
+ * `PREFIJOS_DE_AGENDA_PROPIA`; si no, la guardiana directa no la vería y quedaría fuera de la regla.
+ * Límite: se compara el path declarado en la ruta. Una ruta `get('/')` dentro de un sub-router
+ * montado con `router.use('/mi-agenda', sub)` no muestra el prefijo montado y se reportaría como
+ * fuera del prefijo; el proyecto no monta sub-routers así y, si alguna vez lo hiciera, la guardiana
+ * falla cerrada (avisa) en lugar de pasar en silencio.
+ */
+function agendaPropiaFueraDelPrefijo(capas: CapaExpress[]): string[] {
+  const fuera: string[] = [];
+  for (const capa of capas) {
+    if (capa.route) {
+      const { path, methods, stack } = capa.route;
+      if (esRutaDeAgendaPropia(path) || !stack.some((c) => esAutorizacionDeAgendaPropia(c.handle))) continue;
+      for (const metodo of Object.keys(methods).filter((m) => methods[m])) fuera.push(nombreDeRuta(metodo, path));
+      continue;
+    }
+    const hijas = capasDeSubRouter(capa);
+    if (hijas) fuera.push(...agendaPropiaFueraDelPrefijo(hijas));
+  }
+  return fuera;
+}
+
+/**
+ * De mundo cerrado: todo GET con la variante de negocio de `exigirSesion` lleva alguna autorización
+ * reconocida (escritura, lectura o agenda propia) o figura en la lista blanca, con su justificación.
+ * Así una lectura nueva, de un prefijo que nadie declaró, no queda abierta a cualquier rol.
+ */
+const GET_DE_NEGOCIO_SIN_AUTORIZACION_POR_ROL: string[] = [
+  // Ninguno hoy. Toda excepción nueva se agrega acá con su justificación.
+];
+function getDeNegocioSinAutorizacion(capas: CapaExpress[]): string[] {
+  const sin: string[] = [];
+  for (const capa of capas) {
+    if (capa.route) {
+      const { path, methods, stack } = capa.route;
+      if (!(methods.get || methods._all)) continue;
+      if (!stack.some((c) => pasosAdmitidosPor(c.handle)?.join() === 'ninguno')) continue;
+      const autorizada = stack.some(
+        (c) =>
+          esAutorizacionDeEscritura(c.handle) ||
+          esAutorizacionDeLectura(c.handle) ||
+          esAutorizacionDeAgendaPropia(c.handle),
+      );
+      const ruta = `GET ${path}`;
+      if (!autorizada && !GET_DE_NEGOCIO_SIN_AUTORIZACION_POR_ROL.includes(ruta)) sin.push(ruta);
+      continue;
+    }
+    const hijas = capasDeSubRouter(capa);
+    if (hijas) sin.push(...getDeNegocioSinAutorizacion(hijas));
+  }
+  return sin;
+}
+
 /** Identifica una variante de `exigirSesion` por los pasos pendientes que admite. */
 const claveDeVariante = (pasos: readonly string[]) => [...pasos].sort().join('+');
 
@@ -325,7 +379,7 @@ describe('toda lectura de agenda ajena exige autorización (D-16, RF-22)', () =>
 });
 
 describe('toda lectura de agenda propia exige autorización de agenda propia (RF-40, D-15, D-16)', () => {
-  it('GET /mi-agenda está autorizada y GET /agenda exige autorización de secretaría', async () => {
+  it('las lecturas reales de agenda propia y ajena están autorizadas, y la prueba no pasa en vacío', async () => {
     const rutas = await crearRutas({
       db,
       reloj: new RelojFijo('2026-10-07T12:00:00Z'),
@@ -355,6 +409,29 @@ describe('toda lectura de agenda propia exige autorización de agenda propia (RF
     expect(lecturasDeAgendaPropiaSinAutorizacion(comoInspeccionable(anidada).stack)).toEqual(['GET /mi-agenda']);
   });
 
+  it('las rutas reales con autorización de agenda propia están todas bajo su prefijo', async () => {
+    const rutas = await crearRutas({
+      db,
+      reloj: new RelojFijo('2026-10-07T12:00:00Z'),
+      config: cargarConfiguracion(ENTORNO_PRUEBA),
+    });
+
+    expect(agendaPropiaFueraDelPrefijo(pilaDeLaApi(rutas))).toEqual([]);
+  });
+
+  it('la guardiana inversa detecta autorizarAgendaPropia en una ruta fuera del prefijo, también anidada', () => {
+    const mal = Router();
+    mal.get('/turnos/:id', autorizarAgendaPropia(), manejadorCualquiera);
+    const bien = Router();
+    bien.get('/mi-agenda', autorizarAgendaPropia(), manejadorCualquiera);
+    const anidada = Router();
+    anidada.use('/api', mal);
+
+    expect(agendaPropiaFueraDelPrefijo(comoInspeccionable(mal).stack)).toEqual(['GET /turnos/:id']);
+    expect(agendaPropiaFueraDelPrefijo(comoInspeccionable(bien).stack)).toEqual([]);
+    expect(agendaPropiaFueraDelPrefijo(comoInspeccionable(anidada).stack)).toEqual(['GET /turnos/:id']);
+  });
+
   it('la agenda propia no sirve como autorización de una agenda ajena', () => {
     const mal = Router();
     mal.get('/agenda', autorizarAgendaPropia(), manejadorCualquiera);
@@ -365,6 +442,38 @@ describe('toda lectura de agenda propia exige autorización de agenda propia (RF
 
 const sesionFicticia = { sesionVigente: () => Promise.resolve(null) };
 const configCookie = { cookieSegura: false };
+
+describe('todo GET de negocio tiene una autorización reconocida (mundo cerrado)', () => {
+  it('las rutas reales no tienen GET de negocio sin autorizar', async () => {
+    const rutas = await crearRutas({
+      db,
+      reloj: new RelojFijo('2026-10-07T12:00:00Z'),
+      config: cargarConfiguracion(ENTORNO_PRUEBA),
+    });
+
+    expect(getDeNegocioSinAutorizacion(pilaDeLaApi(rutas))).toEqual([]);
+  });
+
+  it('la guardiana detecta un GET de negocio sin autorización, también anidado, y acepta los autorizados', () => {
+    const exigir = crearExigirSesionConPasos(sesionFicticia, configCookie, ['ninguno']);
+    const abierta = Router();
+    abierta.get('/turnos/:id', exigir, manejadorCualquiera);
+    const autorizadas = Router();
+    autorizadas.get('/a', exigir, autorizarEscritura('turnos'), manejadorCualquiera);
+    autorizadas.get('/b', exigir, autorizarLectura('pacientes'), manejadorCualquiera);
+    autorizadas.get('/c', exigir, autorizarAgendaPropia(), manejadorCualquiera);
+    const anidada = Router();
+    anidada.use('/api', abierta);
+    const sinVarianteDeNegocio = Router();
+    sinVarianteDeNegocio.get('/salud', manejadorCualquiera);
+
+    expect(getDeNegocioSinAutorizacion(comoInspeccionable(abierta).stack)).toEqual(['GET /turnos/:id']);
+    expect(getDeNegocioSinAutorizacion(comoInspeccionable(autorizadas).stack)).toEqual([]);
+    expect(getDeNegocioSinAutorizacion(comoInspeccionable(anidada).stack)).toEqual(['GET /turnos/:id']);
+    // Las rutas sin la variante de negocio las cubre otra guardiana (rutasSinVariante).
+    expect(getDeNegocioSinAutorizacion(comoInspeccionable(sinVarianteDeNegocio).stack)).toEqual([]);
+  });
+});
 
 describe('cada variante de exigirSesion aparece solo donde corresponde (RF-06, RNF-04)', () => {
   it('fija en qué rutas aparece cada variante', async () => {

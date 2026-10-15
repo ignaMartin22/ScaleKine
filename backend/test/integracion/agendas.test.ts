@@ -178,6 +178,16 @@ describe('GET /api/agenda (RF-41, RF-34)', () => {
     expect(ids(res.body.turnos)).toEqual([turno.id]);
   });
 
+  it('rechaza el año 0000 con 400 (Postgres no lo admite)', async () => {
+    const { app } = await crearAppDePrueba();
+    const { cookie } = await ingresarComo(app, 'secretaria');
+
+    const res = await agenda(app, '?fecha=0000-01-01', cookie);
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.codigo).toBe('datos_invalidos');
+  });
+
   it('rechaza entradas mal formadas con 400', async () => {
     const { app } = await crearAppDePrueba();
     const { cookie } = await ingresarComo(app, 'secretaria');
@@ -222,12 +232,15 @@ describe('GET /api/agenda (RF-41, RF-34)', () => {
     const { app, texto } = await crearAppDePrueba();
     const { cookie } = await ingresarComo(app, 'secretaria');
     const paciente = await crearPaciente({ dni: '90555666', nombre: 'Paciente Reservado Log' });
-    await crearTurno({ fecha: HOY, pacienteId: paciente.id });
+    const turno = await crearTurno({ fecha: HOY, pacienteId: paciente.id });
+    await db.turno.update({ where: { id: turno.id }, data: { coseguroObraSocial: '7391.37' } });
 
     await agenda(app, `?fecha=${HOY}`, cookie);
 
     expect(texto()).not.toContain('Paciente Reservado Log');
     expect(texto()).not.toContain('90555666');
+    expect(texto()).not.toContain(paciente.telefono);
+    expect(texto()).not.toContain('7391');
   });
 });
 
@@ -359,6 +372,24 @@ describe('GET /api/mi-agenda (RF-40, D-15, D-16)', () => {
     }
   });
 
+  it('secretaría y administrador con un perfil de Kinesiologo propio reciben 403: lo frena el rol, no la falta de perfil', async () => {
+    const { app } = await crearAppDePrueba();
+    const secretaria = await ingresarComo(app, 'secretaria');
+    const administrador = await ingresarComo(app, 'administrador');
+    for (const { usuarioId } of [secretaria, administrador]) {
+      const perfil = await db.kinesiologo.create({ data: { usuarioId, nombre: `Perfil Ficticio ${usuarioId}`, bloque: 'manana' } });
+      await crearTurno({ fecha: HOY, kinesiologoId: perfil.id, estado: 'reservado' });
+    }
+
+    for (const { cookie } of [secretaria, administrador]) {
+      const res = await miAgenda(app, `?fecha=${HOY}`, cookie);
+      expect(res.status).toBe(403);
+      expect(res.body).toEqual(ERROR_NO_AUTORIZADO);
+      expect(res.body.proximos).toBeUndefined();
+      expect(res.body.enEspera).toBeUndefined();
+    }
+  });
+
   it('una cuenta kinesiólogo sin perfil de Kinesiologo recibe 403, no una lista vacía', async () => {
     const { app } = await crearAppDePrueba();
     const { cookie } = await ingresarComo(app, 'kinesiologo'); // sin crear el perfil
@@ -390,6 +421,13 @@ describe('GET /api/mi-agenda (RF-40, D-15, D-16)', () => {
     expect((await miAgenda(app, `?fecha=${HOY}`)).status).toBe(401);
   });
 
+  it('rechaza el año 0000 con 400 (Postgres no lo admite)', async () => {
+    const { app } = await crearAppDePrueba();
+    const { cookie } = await ingresarComoKinesiologo(app);
+
+    expect((await miAgenda(app, '?fecha=0000-01-01', cookie)).status).toBe(400);
+  });
+
   it('rechaza una fecha mal formada con 400', async () => {
     const { app } = await crearAppDePrueba();
     const { cookie } = await ingresarComoKinesiologo(app);
@@ -404,7 +442,8 @@ describe('GET /api/mi-agenda (RF-40, D-15, D-16)', () => {
     const { app, texto } = await crearAppDePrueba();
     const { cookie, kinesiologo } = await ingresarComoKinesiologo(app);
     const paciente = await crearPaciente({ dni: '90777888', nombre: 'Paciente Reservado Log' });
-    await crearTurno({ fecha: HOY, kinesiologoId: kinesiologo.id, pacienteId: paciente.id });
+    const turno = await crearTurno({ fecha: HOY, kinesiologoId: kinesiologo.id, pacienteId: paciente.id });
+    await db.turno.update({ where: { id: turno.id }, data: { coseguroAdicional: '4826.19' } });
     const antes = await db.turno.findMany({ orderBy: { id: 'asc' } });
 
     const res = await miAgenda(app, `?fecha=${HOY}`, cookie);
@@ -414,6 +453,8 @@ describe('GET /api/mi-agenda (RF-40, D-15, D-16)', () => {
     expect(await db.turnoEvento.count()).toBe(0);
     expect(texto()).not.toContain('Paciente Reservado Log');
     expect(texto()).not.toContain('90777888');
+    expect(texto()).not.toContain(paciente.telefono);
+    expect(texto()).not.toContain('4826');
   });
 });
 

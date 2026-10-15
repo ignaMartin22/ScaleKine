@@ -2,7 +2,7 @@
  * Autorización por rol (RF-03, plan.md §4.8, D-3, D-16, D-18). Es el único lugar del backend que
  * declara qué escribe y qué lee cada rol; la regla es global y no se repite endpoint por endpoint.
  * Son funciones puras: no conocen Express ni la base. Los middlewares que las aplican están en
- * `autorizarEscritura.ts` y `autorizarLectura.ts`.
+ * `autorizarEscritura.ts`, `autorizarLectura.ts` y `autorizarAgendaPropia.ts`.
  */
 import type { Rol } from '../generado/prisma/client.js';
 
@@ -30,7 +30,8 @@ export function puedeEscribir(rol: Rol, modulo: ModuloEscritura): boolean {
 
 /**
  * Módulos de lectura de los datos maestros de M2 (consultorio, kinesiólogos, pacientes). Las
- * lecturas de turnos no pasan por acá: el kinesiólogo sí las hace, filtradas por su sesión (M4).
+ * lecturas de turnos no pasan por acá: las de agenda ajena usan `puedeEscribir(rol, 'turnos')` y las
+ * del kinesiólogo, filtradas por su sesión, `puedeLeerAgendaPropia` (M4, al final de este archivo).
  */
 export const MODULOS_DE_LECTURA = ['consultorio', 'kinesiologos', 'pacientes'] as const;
 export type ModuloLectura = (typeof MODULOS_DE_LECTURA)[number];

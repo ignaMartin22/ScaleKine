@@ -1,6 +1,7 @@
 import { Router, type RequestHandler } from 'express';
 import { z } from 'zod';
 import { autorizarEscritura } from '../../comun/autorizarEscritura.js';
+import { idDeTexto } from '../../comun/esquemas.js';
 import { datosValidados, validar } from '../../comun/validacion.js';
 import type { ServicioTicket } from './ticket.js';
 
@@ -16,11 +17,7 @@ import type { ServicioTicket } from './ticket.js';
  */
 const esquemaTicket = {
   params: z.object({
-    id: z
-      .string()
-      .regex(/^\d{1,10}$/)
-      .transform(Number)
-      .pipe(z.number().int().positive().max(2_147_483_647)),
+    id: idDeTexto,
   }),
 };
 
