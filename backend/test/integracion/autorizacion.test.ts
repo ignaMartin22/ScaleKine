@@ -7,19 +7,14 @@ import { autorizarEscritura } from '../../src/comun/autorizarEscritura.js';
 import { cargarConfiguracion } from '../../src/comun/configuracion.js';
 import { RelojFijo } from '../../src/comun/reloj.js';
 import type { Rol } from '../../src/generado/prisma/client.js';
-import { hashearContrasena } from '../../src/modulos/m1-identidad/contrasenas.js';
 import { crearModuloIdentidad } from '../../src/modulos/m1-identidad/index.js';
 import { ENTORNO_PRUEBA, loggerCapturado, ORIGEN_APP } from '../ayudantes.js';
 import { db } from './base.js';
-import { crearPaciente, crearUsuario, ingresarComoAdministradorVerificado } from './fabricas.js';
+import { crearPaciente, ingresarComo } from './fabricas.js';
 
-const CLAVE = 'clave-de-prueba-larga';
 const ERROR_NO_AUTORIZADO = {
   error: { codigo: 'no_autorizado', mensaje: 'No estás autorizado para realizar esta acción.' },
 };
-
-// Argon2 es lento a propósito: se calcula una vez y se reutiliza en todas las pruebas.
-const hashClave = hashearContrasena(CLAVE);
 
 /**
  * App con sesiones reales y una ruta de prueba por módulo. Cada ruta escribe de verdad en la base
@@ -54,22 +49,6 @@ async function appConEscrituras() {
   return { app, ...capturado };
 }
 
-/** Crea una cuenta del rol, ingresa y devuelve el valor de la cookie `sesion`. */
-async function ingresarComo(app: Awaited<ReturnType<typeof appConEscrituras>>['app'], rol: Rol): Promise<string> {
-  // El administrador exige el segundo factor (RNF-04): se usa el ayudante compartido.
-  if (rol === 'administrador') return (await ingresarComoAdministradorVerificado(app)).token;
-  const nombreUsuario = `ficticio-${rol}`;
-  await crearUsuario({ rol, nombreUsuario, hashContrasena: await hashClave });
-  const res = await request(app)
-    .post('/api/sesion')
-    .set('Origin', ORIGEN_APP)
-    .send({ nombreUsuario, contrasena: CLAVE });
-  expect(res.status).toBe(200);
-  const cookie = (res.headers['set-cookie'] as string[] | undefined)?.[0];
-  if (!cookie) throw new Error('El ingreso no trajo cookie.');
-  return /^sesion=([^;]*)/.exec(cookie)![1]!;
-}
-
 describe('matriz de autorización por rol y módulo (RF-03)', () => {
   // El resultado esperado de cada combinación está escrito a mano: no se deriva de la tabla.
   const casos: [Rol, ModuloEscritura, boolean][] = [
@@ -92,7 +71,7 @@ describe('matriz de autorización por rol y módulo (RF-03)', () => {
 
   it.each(casos)('%s escribe en %s: %s', async (rol, modulo, permitido) => {
     const { app } = await appConEscrituras();
-    const token = await ingresarComo(app, rol);
+    const token = (await ingresarComo(app, rol)).token;
 
     const res = await request(app)
       .post(`/api/prueba/${modulo}`)
@@ -114,7 +93,7 @@ describe('matriz de autorización por rol y módulo (RF-03)', () => {
 describe('el rol sale de la sesión (RF-03)', () => {
   it('un kinesiólogo no gana permisos declarando otro rol en el cuerpo o en una cabecera', async () => {
     const { app } = await appConEscrituras();
-    const token = await ingresarComo(app, 'kinesiologo');
+    const token = (await ingresarComo(app, 'kinesiologo')).token;
 
     const res = await request(app)
       .post('/api/prueba/turnos')
@@ -144,7 +123,7 @@ describe('sin sesión (RF-03, RF-11)', () => {
 describe('falla cerrada (plan.md §4.8)', () => {
   it('una ruta con autorizarEscritura pero sin exigirSesion responde 500 y no escribe, aun con una cookie válida', async () => {
     const { app } = await appConEscrituras();
-    const token = await ingresarComo(app, 'administrador');
+    const token = (await ingresarComo(app, 'administrador')).token;
 
     const res = await request(app)
       .post('/api/prueba/sin-sesion')
