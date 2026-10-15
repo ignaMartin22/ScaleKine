@@ -23,23 +23,6 @@ import { fechaLegible } from './asignar-turno';
 import { Dialogo } from './dialogo';
 import { VolverAlInicio } from './volver-al-inicio';
 
-/**
- * Zona horaria del consultorio, solo para mostrar la hora de llegada. Es la misma que
- * `ZONA_HORARIA` del backend (RF-12); la API todavía no la expone.
- */
-const ZONA_DEL_CONSULTORIO = 'America/Argentina/Buenos_Aires';
-const FORMATO_HORA = new Intl.DateTimeFormat('es-AR', {
-  hour: '2-digit',
-  minute: '2-digit',
-  hour12: false,
-  timeZone: ZONA_DEL_CONSULTORIO,
-});
-
-/** Hora 'HH:MM' de un instante ISO en la zona del consultorio. */
-export function horaDeLlegada(iso: string): string {
-  return FORMATO_HORA.format(new Date(iso));
-}
-
 /** Acciones que cierran el turno: piden confirmación antes de aplicarse (RF-32, RF-33). */
 const CIERRAN_EL_TURNO: readonly EstadoTurno[] = ['no_asistio', 'anulado'];
 
@@ -178,8 +161,8 @@ interface FranjaElegida {
                     <td>{{ t.kinesiologo.nombre }}</td>
                     <td>
                       <span [class.estado-cerrado]="cerrado(t.estado)">{{ estado(t.estado) }}</span>
-                      @if (t.llegadaEn; as llegada) {
-                        <br />Llegó a las {{ hora(llegada) }}
+                      @if (t.horaLlegada; as llegada) {
+                        <br />Llegó a las {{ llegada }}
                       }
                       @if (esPendiente(t.id)) {
                         <br /><strong>Pendiente de marcar</strong>
@@ -507,7 +490,6 @@ export class AgendaSecretaria {
   protected readonly legible = fechaLegible;
   protected readonly estados = ESTADOS;
   protected readonly estado = (e: EstadoTurno) => NOMBRE_DEL_ESTADO[e];
-  protected readonly hora = horaDeLlegada;
 
   protected readonly fecha = signal('');
   protected readonly kinesiologoId = signal('');

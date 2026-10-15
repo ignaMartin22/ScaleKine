@@ -41,8 +41,8 @@ export interface TurnoDeAgenda {
   horaInicio: string;
   horaFin: string;
   estado: EstadoTurno;
-  /** Instante ISO de la llegada, o `null`. */
-  llegadaEn: string | null;
+  /** Llegada en hora de pared del consultorio ('HH:MM'), calculada por la API, o `null`. */
+  horaLlegada: string | null;
   coseguroObraSocial: string | null;
   coseguroAdicional: string | null;
   paciente: { id: number; nombre: string; dni: string; telefono: string; obraSocial: string };

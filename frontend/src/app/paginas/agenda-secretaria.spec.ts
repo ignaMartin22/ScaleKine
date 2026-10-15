@@ -8,7 +8,7 @@ import { TestBed, type ComponentFixture } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import type { TurnoDeAgenda, TurnoPendiente } from '../nucleo/agenda/agenda';
 import { erroresDeApi } from '../nucleo/http/interceptores';
-import { AgendaSecretaria, horaDeLlegada } from './agenda-secretaria';
+import { AgendaSecretaria } from './agenda-secretaria';
 
 type Acciones = TurnoDeAgenda['acciones'];
 
@@ -28,7 +28,7 @@ function turno(id: number, cambios: Partial<TurnoDeAgenda> = {}): TurnoDeAgenda 
     horaInicio: '08:00',
     horaFin: '08:45',
     estado: 'reservado',
-    llegadaEn: null,
+    horaLlegada: null,
     coseguroObraSocial: null,
     coseguroAdicional: null,
     paciente: {
@@ -168,7 +168,7 @@ describe('AgendaSecretaria: lista y filtros (RF-41)', () => {
   it('muestra paciente, kinesiólogo, franja, estado, llegada y coseguros', async () => {
     const llegado = turno(1, {
       estado: 'en_espera',
-      llegadaEn: '2026-10-15T13:05:00.000Z',
+      horaLlegada: '10:05',
       coseguroObraSocial: '1500.50',
       acciones: { transiciones: [{ hacia: 'asistio', accion: 'Asistió' }], puedeCorregir: true },
     });
@@ -191,8 +191,16 @@ describe('AgendaSecretaria: lista y filtros (RF-41)', () => {
     expect(q<HTMLInputElement>(fixture, '#agenda-fecha').value).toBe('2026-10-15');
   });
 
-  it('la hora de llegada se muestra en la zona del consultorio', () => {
-    expect(horaDeLlegada('2026-10-15T03:30:00.000Z')).toBe('00:30');
+  it('la hora de llegada que se ve es exactamente horaLlegada, sin recalcularla', async () => {
+    // El instante ISO caería a las 08:05 en Buenos Aires, pero lo que manda la API es lo que se muestra.
+    const llegado = {
+      ...turno(1, { estado: 'en_espera', horaLlegada: '07:41' }),
+      llegadaEn: '2026-10-19T11:05:00.000Z',
+    };
+    const { fixture } = await montar([llegado]);
+    const t = fila(fixture, 1).textContent ?? '';
+    expect(t).toContain('Llegó a las 07:41');
+    expect(t).not.toContain('08:05');
   });
 
   it('sin turnos lo dice', async () => {
@@ -303,7 +311,7 @@ describe('AgendaSecretaria: acciones que manda la API (RF-34)', () => {
     await relectura(servidor, [
       turno(1, {
         estado: 'en_espera',
-        llegadaEn: '2026-10-15T11:00:00.000Z',
+        horaLlegada: '08:00',
         acciones: { transiciones: [{ hacia: 'asistio', accion: 'Asistió' }], puedeCorregir: true },
       }),
     ]);
