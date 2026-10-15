@@ -485,7 +485,7 @@ parte del esquema que no sale de `schema.prisma`.
 - Validación de cada cuerpo, parámetro y consulta con `zod` antes de llegar al servicio. Límite de
   tamaño de petición de 100 kB.
 - CSRF: la cookie es `SameSite=Strict` y, además, toda petición de escritura verifica que el
-  encabezado `Origin` sea el de la aplicación. El handshake de Socket.io verifica lo mismo.
+  encabezado `Origin` sea el de la aplicación. El handshake de Socket.io verifica lo mismo. Solo se admite el transporte websocket: el navegador no manda `Origin` en el GET de polling al mismo origen, pero sí en el upgrade.
 - Sin caché (RNF-14): un middleware fija `Cache-Control: no-store` en toda respuesta de `/api`,
   incluidos los errores 4xx/5xx y el 404 de una ruta inexistente bajo `/api`; se monta antes de los
   routers para cubrirlas. No afecta a los archivos estáticos del frontend, que sirve Caddy. No se

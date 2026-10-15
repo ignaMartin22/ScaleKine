@@ -867,7 +867,7 @@ describe('ganchos de M1 y carreras de la sesión', () => {
 });
 
 describe('Origin en todos los transportes (plan.md §4.15)', () => {
-  it('con polling, un Origin ajeno o ausente se rechaza', async () => {
+  it('solo se admite websocket: el polling se rechaza con o sin Origin, aunque sea el correcto', async () => {
     const e = await armar();
     const { cookie } = await ingresarComo(e.app, 'secretaria');
     const polling = { transports: ['polling'] };
@@ -876,6 +876,15 @@ describe('Origin en todos los transportes (plan.md §4.15)', () => {
     const bueno = await conectarCliente(e.url, { cookie, extra: polling });
     expect(ajeno.conectado).toBe(false);
     expect(sin.conectado).toBe(false);
+    expect(bueno.conectado).toBe(false);
+    const crudo = await pedir(e.url, '/socket.io/?EIO=4&transport=polling', { Origin: ORIGEN_APP });
+    expect(crudo.estado).toBe(400);
+  });
+
+  it('un cliente websocket con el Origin correcto se conecta', async () => {
+    const e = await armar();
+    const { cookie } = await ingresarComo(e.app, 'secretaria');
+    const bueno = await conectarCliente(e.url, { cookie, extra: { transports: ['websocket'] } });
     expect(bueno.conectado).toBe(true);
   });
 
@@ -892,36 +901,28 @@ describe('Origin en todos los transportes (plan.md §4.15)', () => {
     });
   }
 
-  it('una petición con sid pero con Origin ajeno, y un upgrade con Origin ajeno, se rechazan', async () => {
+  it('un upgrade a websocket con Origin ajeno o ausente se rechaza', async () => {
     const e = await armar();
-    const abierto = await pedir(e.url, '/socket.io/?EIO=4&transport=polling', { Origin: ORIGEN_APP });
-    expect(abierto.estado).toBe(200);
-    const sid = /"sid":"([^"]+)"/.exec(abierto.cuerpo)?.[1];
-    expect(sid).toBeDefined();
-
-    const ajena = await pedir(e.url, `/socket.io/?EIO=4&transport=polling&sid=${sid}`, {
-      Origin: 'http://sitio-ajeno.example',
-    });
-    expect(ajena.estado).not.toBe(200);
-
-    const upgrade = await new Promise<'aceptado' | 'rechazado'>((resolver) => {
-      const req = peticionHttp(`${e.url}/socket.io/?EIO=4&transport=websocket&sid=${sid}`, {
-        headers: {
-          Origin: 'http://sitio-ajeno.example',
+    const intentar = (origen: string | null) =>
+      new Promise<'aceptado' | 'rechazado'>((resolver) => {
+        const headers: Record<string, string> = {
           Connection: 'Upgrade',
           Upgrade: 'websocket',
           'Sec-WebSocket-Version': '13',
-          'Sec-WebSocket-Key': Buffer.from('clave-de-prueba-16').toString('base64'),
-        },
+          'Sec-WebSocket-Key': Buffer.from('clave-de-prueba!').toString('base64'),
+        };
+        if (origen !== null) headers.Origin = origen;
+        const req = peticionHttp(`${e.url}/socket.io/?EIO=4&transport=websocket`, { headers });
+        req.on('upgrade', (_res, socket) => {
+          socket.destroy();
+          resolver('aceptado');
+        });
+        req.on('response', () => resolver('rechazado'));
+        req.on('error', () => resolver('rechazado'));
+        req.end();
       });
-      req.on('upgrade', (_res, socket) => {
-        socket.destroy();
-        resolver('aceptado');
-      });
-      req.on('response', () => resolver('rechazado'));
-      req.on('error', () => resolver('rechazado'));
-      req.end();
-    });
-    expect(upgrade).toBe('rechazado');
+    expect(await intentar('http://sitio-ajeno.example')).toBe('rechazado');
+    expect(await intentar(null)).toBe('rechazado');
+    expect(await intentar(ORIGEN_APP)).toBe('aceptado');
   });
 });

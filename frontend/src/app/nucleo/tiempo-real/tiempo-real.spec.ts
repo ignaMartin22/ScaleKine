@@ -5,7 +5,8 @@ import { Router, provideRouter } from '@angular/router';
 import { estadoDePrueba } from '../sesion/estados-de-prueba';
 import { Sesion } from '../sesion/sesion';
 import { SocketDePrueba } from './socket-de-prueba';
-import { FABRICA_SOCKET, TiempoReal } from './tiempo-real';
+import type { io } from 'socket.io-client';
+import { FABRICA_SOCKET, TiempoReal, crearSocketReal } from './tiempo-real';
 
 function preparar() {
   const sockets: SocketDePrueba[] = [];
@@ -136,5 +137,16 @@ describe('TiempoReal: sesión cerrada por el servidor (RF-11)', () => {
     sockets[0].emitir('connect_error', new Error('no_autorizado'));
     expect(sesion.estado()).toBeNull();
     expect(navegar).toHaveBeenCalledWith('/ingresar');
+  });
+});
+
+describe('TiempoReal: socket real', () => {
+  it('se crea solo con el transporte websocket y con credenciales (el polling no manda Origin)', () => {
+    const conectar = vi.fn().mockReturnValue(new SocketDePrueba());
+    crearSocketReal(conectar as unknown as typeof io);
+    expect(conectar).toHaveBeenCalledExactlyOnceWith({
+      withCredentials: true,
+      transports: ['websocket'],
+    });
   });
 });

@@ -15,6 +15,9 @@ import type { EmisorTurnos } from '../m3-turnos/eventos.js';
  * Contrato del socket (Socket.io sobre el mismo servidor HTTP, ruta `/socket.io`):
  *
  * Handshake
+ * - Solo se admite el transporte websocket (el polling se rechaza): el navegador siempre manda
+ *   `Origin` en el upgrade a websocket, pero no en el GET de polling al mismo origen, y sin `Origin`
+ *   no se puede verificar el origen. El cliente tiene que pedir `transports: ['websocket']`.
  * - Se autentica con la cookie de sesión, la misma que usa la API: sesión vigente (no vencida ni
  *   revocada) de una cuenta activa y SIN paso pendiente (cambio de contraseña o segundo factor). Una
  *   sesión con un paso pendiente no se conecta.
@@ -310,6 +313,9 @@ export function crearTiempoReal(opciones: OpcionesTiempoReal): TiempoReal {
         serveClient: false,
         // El cliente no envía datos útiles: un tope bajo corta cualquier carga abusiva.
         maxHttpBufferSize: 1024,
+        // Solo websocket: el navegador no manda `Origin` en un GET al mismo origen, que es como
+        // arranca el polling; en el upgrade a websocket sí lo manda siempre, y es lo que se verifica.
+        transports: ['websocket'],
         // Sin CORS: frontend y API comparten origen. Se exige `Origin` exacto en todo handshake.
         allowRequest: (req, devolver) => {
           devolver(null, req.headers.origin === origenPermitido);

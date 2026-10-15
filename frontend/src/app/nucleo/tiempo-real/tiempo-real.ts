@@ -20,8 +20,19 @@ export interface SocketTiempoReal {
  */
 export const FABRICA_SOCKET = new InjectionToken<() => SocketTiempoReal>('FABRICA_SOCKET', {
   providedIn: 'root',
-  factory: () => () => io({ withCredentials: true }) as unknown as SocketTiempoReal,
+  factory: () => () => crearSocketReal(),
 });
+
+/**
+ * Solo websocket: el polling arranca con un GET sin `Origin` y el servidor lo rechaza; el navegador
+ * siempre manda `Origin` en el upgrade a websocket (plan.md §4.15). `conectar` se inyecta para probarlo.
+ */
+export function crearSocketReal(conectar: typeof io = io): SocketTiempoReal {
+  return conectar({
+    withCredentials: true,
+    transports: ['websocket'],
+  }) as unknown as SocketTiempoReal;
+}
 
 /**
  * Cliente de tiempo real (RF-43, RF-44, RF-45, RF-11). Conecta solo con sesión completa (sin paso
