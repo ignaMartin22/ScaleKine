@@ -97,7 +97,7 @@ describe('Ingresar (RF-01, RF-02)', () => {
   });
 
   it.each([
-    ['secretaria', null, '/secretaria'],
+    ['secretaria', null, '/secretaria/agenda'],
     ['kinesiologo', null, '/kinesiologo'],
     ['administrador', 'verificar_segundo_factor', '/verificar-segundo-factor'],
     ['administrador', 'cambiar_contrasena', '/cambiar-contrasena'],
@@ -239,7 +239,7 @@ describe('ActivarSegundoFactor (RNF-04)', () => {
     await vi.waitFor(() =>
       servidor.expectOne('/api/sesion').flush(estadoDePrueba('administrador')),
     );
-    await vi.waitFor(() => expect(navegar).toHaveBeenCalledWith('/admin'));
+    await vi.waitFor(() => expect(navegar).toHaveBeenCalledWith('/secretaria/agenda'));
   });
 
   it('un código inválido se informa junto al campo y no muestra códigos de recuperación', async () => {
@@ -281,7 +281,7 @@ describe('VerificarSegundoFactor (RNF-04)', () => {
     await vi.waitFor(() =>
       servidor.expectOne('/api/sesion').flush(estadoDePrueba('administrador')),
     );
-    await vi.waitFor(() => expect(navegar).toHaveBeenCalledWith('/admin'));
+    await vi.waitFor(() => expect(navegar).toHaveBeenCalledWith('/secretaria/agenda'));
   });
 
   it('un código rechazado se informa junto al campo', async () => {

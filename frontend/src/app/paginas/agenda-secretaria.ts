@@ -21,6 +21,8 @@ import { Kinesiologos, type Kinesiologo } from '../nucleo/kinesiologos/kinesiolo
 import { IndicadorConexion } from '../nucleo/tiempo-real/indicador-conexion';
 import { TiempoReal } from '../nucleo/tiempo-real/tiempo-real';
 import { descargarArchivo } from '../nucleo/ui/descargar';
+import { EstadoDelTurno, ICONO_DE_LA_ACCION } from '../nucleo/ui/estado-turno';
+import { Icono } from '../nucleo/ui/icono';
 import { enfocar, mensajeDe } from '../nucleo/ui/enfocar';
 import { fechaLegible } from './asignar-turno';
 import { Dialogo } from './dialogo';
@@ -56,14 +58,16 @@ interface FranjaElegida {
  */
 @Component({
   selector: 'app-agenda-secretaria',
-  imports: [VolverAlInicio, Dialogo, IndicadorConexion],
+  imports: [VolverAlInicio, Dialogo, IndicadorConexion, EstadoDelTurno, Icono],
   template: `
     <app-volver-al-inicio />
     <h1>Agenda de turnos</h1>
     <app-indicador-conexion />
 
     @if (errorPendientes(); as mensaje) {
-      <p class="error" id="error-pendientes" role="alert">{{ mensaje }}</p>
+      <p class="error" id="error-pendientes" role="alert">
+        <app-icono nombre="alerta" />{{ mensaje }}
+      </p>
     }
     @if (pendientes().length > 0) {
       <section
@@ -72,6 +76,7 @@ interface FranjaElegida {
         aria-labelledby="titulo-pendientes"
         role="status"
       >
+        <app-icono nombre="alerta" />
         <h2 id="titulo-pendientes">
           @if (pendientes().length === 1) {
             Hay 1 turno pendiente de marcar
@@ -97,7 +102,7 @@ interface FranjaElegida {
       </section>
     }
 
-    <form class="formulario" novalidate (submit)="$event.preventDefault()">
+    <form class="formulario en-linea" novalidate (submit)="$event.preventDefault()">
       <div class="campo">
         <label for="agenda-fecha">Fecha</label>
         <input
@@ -122,7 +127,7 @@ interface FranjaElegida {
     </form>
 
     @if (errorCarga(); as mensaje) {
-      <p class="error" id="error-carga" role="alert">{{ mensaje }}</p>
+      <p class="error" id="error-carga" role="alert"><app-icono nombre="alerta" />{{ mensaje }}</p>
     }
 
     <section aria-labelledby="titulo-turnos" [attr.aria-busy]="cargando()">
@@ -137,7 +142,7 @@ interface FranjaElegida {
           <p id="sin-turnos">No hay turnos para esta fecha con el filtro elegido.</p>
         } @else {
           <div class="tabla-contenedor">
-            <table class="tabla">
+            <table class="tabla apilable">
               <caption class="solo-lectores">
                 Turnos de la fecha elegida
               </caption>
@@ -154,17 +159,17 @@ interface FranjaElegida {
               <tbody>
                 @for (t of lista; track t.id) {
                   <tr [id]="'turno-' + t.id" tabindex="-1" [class.pendiente]="esPendiente(t.id)">
-                    <td>{{ t.horaInicio }} a {{ t.horaFin }}</td>
-                    <td>
+                    <td data-label="Franja">{{ t.horaInicio }} a {{ t.horaFin }}</td>
+                    <td data-label="Paciente">
                       <strong>{{ t.paciente.nombre }}</strong
                       ><br />
                       DNI {{ t.paciente.dni }}<br />
                       Tel. {{ t.paciente.telefono }}<br />
                       {{ t.paciente.obraSocial }}
                     </td>
-                    <td>{{ t.kinesiologo.nombre }}</td>
-                    <td>
-                      <span [class.estado-cerrado]="cerrado(t.estado)">{{ estado(t.estado) }}</span>
+                    <td data-label="Kinesiólogo">{{ t.kinesiologo.nombre }}</td>
+                    <td data-label="Estado">
+                      <app-estado-turno [estado]="t.estado" />
                       @if (t.horaLlegada; as llegada) {
                         <br />Llegó a las {{ llegada }}
                       }
@@ -172,11 +177,11 @@ interface FranjaElegida {
                         <br /><strong>Pendiente de marcar</strong>
                       }
                     </td>
-                    <td>
+                    <td data-label="Coseguros">
                       Obra social: {{ monto(t.coseguroObraSocial) }}<br />
                       Adicional: {{ monto(t.coseguroAdicional) }}
                     </td>
-                    <td>
+                    <td data-label="Acciones">
                       <div class="acciones">
                         @for (a of t.acciones.transiciones; track a.hacia) {
                           <button
@@ -187,18 +192,18 @@ interface FranjaElegida {
                             [attr.aria-label]="a.accion + ', turno de ' + t.paciente.nombre"
                             (click)="accionar(t, a)"
                           >
-                            {{ a.accion }}
+                            <app-icono [nombre]="iconoDeLaAccion[a.hacia]" />{{ a.accion }}
                           </button>
                         }
                         @if (t.estado === 'reservado') {
                           <button
                             type="button"
-                            class="boton secundario"
+                            class="boton advertencia"
                             [disabled]="trabajando()"
                             [attr.aria-label]="'Reprogramar, turno de ' + t.paciente.nombre"
                             (click)="abrir('reprogramar', t)"
                           >
-                            Reprogramar
+                            <app-icono nombre="calendario-reloj" />Reprogramar
                           </button>
                         }
                         <button
@@ -208,7 +213,7 @@ interface FranjaElegida {
                           [attr.aria-label]="'Coseguros, turno de ' + t.paciente.nombre"
                           (click)="abrir('coseguros', t)"
                         >
-                          Coseguros
+                          <app-icono nombre="monedas" />Coseguros
                         </button>
                         <button
                           type="button"
@@ -217,17 +222,17 @@ interface FranjaElegida {
                           [attr.aria-label]="'Descargar ticket, turno de ' + t.paciente.nombre"
                           (click)="descargarTicket(t)"
                         >
-                          Ticket (PDF)
+                          <app-icono nombre="ticket" />Ticket (PDF)
                         </button>
                         @if (t.acciones.puedeCorregir) {
                           <button
                             type="button"
-                            class="enlace"
+                            class="boton advertencia"
                             [disabled]="trabajando()"
                             [attr.aria-label]="'Corregir estado, turno de ' + t.paciente.nombre"
                             (click)="abrir('corregir', t)"
                           >
-                            Corregir estado
+                            <app-icono nombre="lapiz" />Corregir estado
                           </button>
                         }
                       </div>
@@ -236,9 +241,12 @@ interface FranjaElegida {
                           [id]="'mensaje-turno-' + t.id"
                           tabindex="-1"
                           [class.error]="m.tipo === 'error'"
+                          [class.exito]="m.tipo !== 'error'"
                           [attr.role]="m.tipo === 'error' ? 'alert' : 'status'"
                         >
-                          {{ m.texto }}
+                          <app-icono [nombre]="m.tipo === 'error' ? 'alerta' : 'check'" />{{
+                            m.texto
+                          }}
                         </p>
                       }
                     </td>
@@ -256,6 +264,7 @@ interface FranjaElegida {
         @case ('confirmar') {
           <app-dialogo
             [titulo]="'Confirmar: ' + (d.accion?.accion ?? '')"
+            nivel="peligro"
             (cerrar)="cerrarDialogo()"
           >
             <p id="texto-confirmar">
@@ -264,7 +273,9 @@ interface FranjaElegida {
               un error, después hay que corregirlo.
             </p>
             @if (errorDialogo(); as mensaje) {
-              <p class="error" id="error-dialogo" role="alert" tabindex="-1">{{ mensaje }}</p>
+              <p class="error" id="error-dialogo" role="alert" tabindex="-1">
+                <app-icono nombre="alerta" />{{ mensaje }}
+              </p>
             }
             <div class="acciones">
               <button
@@ -275,7 +286,9 @@ interface FranjaElegida {
                 [disabled]="enviando()"
                 (click)="aplicar(d.turno, d.accion!)"
               >
-                {{ enviando() ? 'Aplicando…' : 'Sí, ' + (d.accion?.accion ?? '').toLowerCase() }}
+                <app-icono [nombre]="iconoDeLaAccion[d.accion!.hacia]" />{{
+                  enviando() ? 'Aplicando…' : 'Sí, ' + (d.accion?.accion ?? '').toLowerCase()
+                }}
               </button>
               <button type="button" class="boton secundario" (click)="cerrarDialogo()">
                 Cancelar
@@ -284,8 +297,13 @@ interface FranjaElegida {
           </app-dialogo>
         }
         @case ('corregir') {
-          <app-dialogo titulo="Corregir el estado del turno" (cerrar)="cerrarDialogo()">
+          <app-dialogo
+            titulo="Corregir el estado del turno"
+            nivel="advertencia"
+            (cerrar)="cerrarDialogo()"
+          >
             <p class="aviso">
+              <app-icono nombre="alerta" />
               Esto es una corrección, no el flujo normal: lleva el turno de «{{
                 estado(d.turno.estado)
               }}» al estado que elijas y queda registrada. Turno de {{ d.turno.paciente.nombre }},
@@ -310,16 +328,18 @@ interface FranjaElegida {
                 }
               </fieldset>
               @if (errorDialogo(); as mensaje) {
-                <p class="error" id="error-dialogo" role="alert" tabindex="-1">{{ mensaje }}</p>
+                <p class="error" id="error-dialogo" role="alert" tabindex="-1">
+                  <app-icono nombre="alerta" />{{ mensaje }}
+                </p>
               }
               <div class="acciones">
                 <button
                   type="submit"
-                  class="boton peligro"
+                  class="boton advertencia"
                   id="confirmar-correccion"
                   [disabled]="enviando()"
                 >
-                  {{ enviando() ? 'Corrigiendo…' : 'Corregir estado' }}
+                  <app-icono nombre="lapiz" />{{ enviando() ? 'Corrigiendo…' : 'Corregir estado' }}
                 </button>
                 <button type="button" class="boton secundario" (click)="cerrarDialogo()">
                   Cancelar
@@ -368,7 +388,9 @@ interface FranjaElegida {
                 <p id="ayuda-editar-coseguros">Monto en pesos, con hasta dos decimales.</p>
               </div>
               @if (errorDialogo(); as mensaje) {
-                <p class="error" id="error-dialogo" role="alert" tabindex="-1">{{ mensaje }}</p>
+                <p class="error" id="error-dialogo" role="alert" tabindex="-1">
+                  <app-icono nombre="alerta" />{{ mensaje }}
+                </p>
               }
               <div class="acciones">
                 <button type="submit" class="boton" id="guardar-coseguros" [disabled]="enviando()">
@@ -382,7 +404,7 @@ interface FranjaElegida {
           </app-dialogo>
         }
         @case ('reprogramar') {
-          <app-dialogo titulo="Reprogramar el turno" (cerrar)="cerrarDialogo()">
+          <app-dialogo titulo="Reprogramar el turno" nivel="advertencia" (cerrar)="cerrarDialogo()">
             <p>
               Turno de {{ d.turno.paciente.nombre }}, reservado para el
               {{ legible(d.turno.fecha) }} a las {{ d.turno.horaInicio }} con
@@ -458,19 +480,23 @@ interface FranjaElegida {
                 }
               </div>
               @if (repAviso(); as mensaje) {
-                <p class="aviso" role="status">{{ mensaje }}</p>
+                <p class="aviso" role="status"><app-icono nombre="alerta" />{{ mensaje }}</p>
               }
               @if (errorDialogo(); as mensaje) {
-                <p class="error" id="error-dialogo" role="alert" tabindex="-1">{{ mensaje }}</p>
+                <p class="error" id="error-dialogo" role="alert" tabindex="-1">
+                  <app-icono nombre="alerta" />{{ mensaje }}
+                </p>
               }
               <div class="acciones">
                 <button
                   type="submit"
-                  class="boton"
+                  class="boton advertencia"
                   id="confirmar-reprogramacion"
                   [disabled]="enviando() || repCargando()"
                 >
-                  {{ enviando() ? 'Reprogramando…' : 'Reprogramar turno' }}
+                  <app-icono nombre="calendario-reloj" />{{
+                    enviando() ? 'Reprogramando…' : 'Reprogramar turno'
+                  }}
                 </button>
                 <button type="button" class="boton secundario" (click)="cerrarDialogo()">
                   Cancelar
@@ -493,6 +519,7 @@ export class AgendaSecretaria {
 
   protected readonly legible = fechaLegible;
   protected readonly estados = ESTADOS;
+  protected readonly iconoDeLaAccion = ICONO_DE_LA_ACCION;
   protected readonly estado = (e: EstadoTurno) => NOMBRE_DEL_ESTADO[e];
 
   protected readonly fecha = signal('');
@@ -617,10 +644,6 @@ export class AgendaSecretaria {
 
   protected esPendiente(id: number): boolean {
     return this.pendientes().some((p) => p.id === id);
-  }
-
-  protected cerrado(e: EstadoTurno): boolean {
-    return e === 'asistio' || e === 'no_asistio' || e === 'anulado';
   }
 
   protected cierra(a: AccionTurno): boolean {

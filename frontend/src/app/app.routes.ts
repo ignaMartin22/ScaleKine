@@ -14,9 +14,7 @@ import { AgendaSecretaria } from './paginas/agenda-secretaria';
 import { AsignarTurno } from './paginas/asignar-turno';
 import { CuentasAdmin } from './paginas/cuentas-admin';
 import { Ingresar } from './paginas/ingresar';
-import { InicioAdmin } from './paginas/inicio-admin';
 import { InicioKinesiologo } from './paginas/inicio-kinesiologo';
-import { InicioSecretaria } from './paginas/inicio-secretaria';
 import { KinesiologosAdmin } from './paginas/kinesiologos-admin';
 import { NoEncontrada } from './paginas/no-encontrada';
 import { PacienteFicha } from './paginas/paciente-ficha';
@@ -68,7 +66,7 @@ export const routes: Routes = [
     component: Disposicion,
     data: { seccion: 'Administración' },
     children: [
-      { path: '', component: InicioAdmin },
+      { path: '', pathMatch: 'full', redirectTo: '/secretaria/agenda' },
       { path: 'cuentas', title: 'Cuentas · ScaleKine', component: CuentasAdmin },
       { path: 'kinesiologos', title: 'Kinesiólogos · ScaleKine', component: KinesiologosAdmin },
     ],
@@ -80,7 +78,7 @@ export const routes: Routes = [
     component: Disposicion,
     data: { seccion: 'Agenda' },
     children: [
-      { path: '', component: InicioSecretaria },
+      { path: '', pathMatch: 'full', redirectTo: 'agenda' },
       { path: 'agenda', title: 'Agenda de turnos · ScaleKine', component: AgendaSecretaria },
       { path: 'asignar', title: 'Asignar turno · ScaleKine', component: AsignarTurno },
       { path: 'consultorio', title: 'Consultorio · ScaleKine', component: ConsultorioPagina },

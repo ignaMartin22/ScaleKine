@@ -17,6 +17,8 @@ import {
   ID_CAMPO,
   type ErroresPaciente,
 } from './formulario-paciente';
+import { EstadoDelTurno } from '../nucleo/ui/estado-turno';
+import { Icono } from '../nucleo/ui/icono';
 
 /**
  * Ficha del paciente (RF-20, RF-21, RF-47): datos de M2, edición y listas de turnos próximos (del
@@ -25,16 +27,22 @@ import {
  */
 @Component({
   selector: 'app-paciente-ficha',
-  imports: [RouterLink, FormularioPaciente],
+  imports: [RouterLink, FormularioPaciente, EstadoDelTurno, Icono],
   template: `
-    <p><a routerLink="/secretaria/pacientes">Volver a pacientes</a></p>
+    <p>
+      <a routerLink="/secretaria/pacientes" class="enlace-icono"
+        ><app-icono nombre="volver" />Volver a pacientes</a
+      >
+    </p>
     <h1 id="titulo-ficha" tabindex="-1">Ficha del paciente</h1>
 
     @if (aviso(); as mensaje) {
-      <p class="aviso" role="status">{{ mensaje }}</p>
+      <p class="info" role="status"><app-icono nombre="info" />{{ mensaje }}</p>
     }
     @if (errorGeneral(); as mensaje) {
-      <p class="error" id="error-ficha" role="alert" tabindex="-1">{{ mensaje }}</p>
+      <p class="error" id="error-ficha" role="alert" tabindex="-1">
+        <app-icono nombre="alerta" />{{ mensaje }}
+      </p>
     }
 
     @if (cargando()) {
@@ -67,7 +75,7 @@ import {
             <dd id="ficha-obra-social">{{ p.obraSocial }}</dd>
           </dl>
           <button type="button" class="boton" id="editar" (click)="abrirEdicion()">
-            Editar datos
+            <app-icono nombre="lapiz" />Editar datos
           </button>
         </section>
       }
@@ -84,7 +92,7 @@ import {
             <p id="sin-proximos">El paciente no tiene turnos próximos.</p>
           } @else {
             <div class="tabla-contenedor">
-              <table class="tabla" id="tabla-proximos">
+              <table class="tabla apilable" id="tabla-proximos">
                 <caption class="solo-lectores">
                   Próximos turnos del paciente, del más cercano al más lejano
                 </caption>
@@ -100,11 +108,11 @@ import {
                 <tbody>
                   @for (x of t.proximos; track x.id) {
                     <tr>
-                      <td>{{ legible(x.fecha) }}</td>
-                      <td>{{ x.horaInicio }} a {{ x.horaFin }}</td>
-                      <td>{{ x.kinesiologo.nombre }}</td>
-                      <td>{{ estado(x.estado) }}</td>
-                      <td>
+                      <td data-label="Fecha">{{ legible(x.fecha) }}</td>
+                      <td data-label="Franja">{{ x.horaInicio }} a {{ x.horaFin }}</td>
+                      <td data-label="Kinesiólogo">{{ x.kinesiologo.nombre }}</td>
+                      <td data-label="Estado"><app-estado-turno [estado]="x.estado" /></td>
+                      <td data-label="Coseguros">
                         Obra social: {{ monto(x.coseguroObraSocial) }}<br />
                         Adicional: {{ monto(x.coseguroAdicional) }}
                       </td>
@@ -115,7 +123,9 @@ import {
             </div>
           }
         } @else if (errorTurnos(); as mensaje) {
-          <p class="error" id="error-turnos" role="alert">{{ mensaje }}</p>
+          <p class="error" id="error-turnos" role="alert">
+            <app-icono nombre="alerta" />{{ mensaje }}
+          </p>
         } @else {
           <p role="status">Cargando los turnos…</p>
         }
@@ -132,7 +142,7 @@ import {
             <p id="sin-historial">El paciente no tiene turnos en su historial.</p>
           } @else {
             <div class="tabla-contenedor">
-              <table class="tabla" id="tabla-historial">
+              <table class="tabla apilable" id="tabla-historial">
                 <caption class="solo-lectores">
                   Historial de turnos del paciente, del más reciente al más antiguo
                 </caption>
@@ -148,11 +158,11 @@ import {
                 <tbody>
                   @for (x of t.historial; track x.id) {
                     <tr>
-                      <td>{{ legible(x.fecha) }}</td>
-                      <td>{{ x.horaInicio }} a {{ x.horaFin }}</td>
-                      <td>{{ x.kinesiologo.nombre }}</td>
-                      <td>{{ estado(x.estado) }}</td>
-                      <td>
+                      <td data-label="Fecha">{{ legible(x.fecha) }}</td>
+                      <td data-label="Franja">{{ x.horaInicio }} a {{ x.horaFin }}</td>
+                      <td data-label="Kinesiólogo">{{ x.kinesiologo.nombre }}</td>
+                      <td data-label="Estado"><app-estado-turno [estado]="x.estado" /></td>
+                      <td data-label="Coseguros">
                         Obra social: {{ monto(x.coseguroObraSocial) }}<br />
                         Adicional: {{ monto(x.coseguroAdicional) }}
                       </td>
@@ -163,7 +173,9 @@ import {
             </div>
           }
         } @else if (errorTurnos(); as mensaje) {
-          <p class="error" id="error-turnos" role="alert">{{ mensaje }}</p>
+          <p class="error" id="error-turnos" role="alert">
+            <app-icono nombre="alerta" />{{ mensaje }}
+          </p>
         } @else {
           <p role="status">Cargando los turnos…</p>
         }

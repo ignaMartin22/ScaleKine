@@ -8,6 +8,8 @@ import {
   type Kinesiologo,
 } from '../nucleo/kinesiologos/kinesiologos';
 import { enfocar, mensajeDe } from '../nucleo/ui/enfocar';
+import { Icono } from '../nucleo/ui/icono';
+import { VolverAlInicio } from './volver-al-inicio';
 
 /** Mismo mínimo que la política del backend (RNF-03). */
 const LARGO_MINIMO = 12;
@@ -28,16 +30,18 @@ const esBloque = (valor: string): valor is Bloque => valor === 'manana' || valor
  */
 @Component({
   selector: 'app-kinesiologos-admin',
-  imports: [RouterLink],
+  imports: [RouterLink, Icono, VolverAlInicio],
   template: `
-    <p><a routerLink="/admin">Volver a administración</a></p>
+    <app-volver-al-inicio />
     <h1>Kinesiólogos</h1>
 
     @if (aviso(); as mensaje) {
-      <p class="aviso" role="status">{{ mensaje }}</p>
+      <p class="info" role="status"><app-icono nombre="info" />{{ mensaje }}</p>
     }
     @if (errorGeneral(); as mensaje) {
-      <p class="error" id="error-kinesiologos" role="alert" tabindex="-1">{{ mensaje }}</p>
+      <p class="error" id="error-kinesiologos" role="alert" tabindex="-1">
+        <app-icono nombre="alerta" />{{ mensaje }}
+      </p>
     }
 
     <section class="tarjeta ancha" aria-labelledby="titulo-alta">
@@ -65,7 +69,7 @@ const esBloque = (valor: string): valor is Bloque => valor === 'manana' || valor
             [attr.aria-describedby]="erroresAlta().nombre ? 'error-nombre' : null"
           />
           @if (erroresAlta().nombre; as mensaje) {
-            <p class="error" id="error-nombre">{{ mensaje }}</p>
+            <p class="error" id="error-nombre"><app-icono nombre="alerta" />{{ mensaje }}</p>
           }
         </div>
         <div class="campo">
@@ -82,7 +86,7 @@ const esBloque = (valor: string): valor is Bloque => valor === 'manana' || valor
             <option value="tarde">Tarde</option>
           </select>
           @if (erroresAlta().bloque; as mensaje) {
-            <p class="error" id="error-bloque">{{ mensaje }}</p>
+            <p class="error" id="error-bloque"><app-icono nombre="alerta" />{{ mensaje }}</p>
           }
         </div>
         <div class="campo">
@@ -99,7 +103,7 @@ const esBloque = (valor: string): valor is Bloque => valor === 'manana' || valor
             [attr.aria-describedby]="erroresAlta().usuario ? 'error-usuario' : null"
           />
           @if (erroresAlta().usuario; as mensaje) {
-            <p class="error" id="error-usuario">{{ mensaje }}</p>
+            <p class="error" id="error-usuario"><app-icono nombre="alerta" />{{ mensaje }}</p>
           }
         </div>
         <div class="campo">
@@ -116,7 +120,7 @@ const esBloque = (valor: string): valor is Bloque => valor === 'manana' || valor
             "
           />
           @if (erroresAlta().temporal; as mensaje) {
-            <p class="error" id="error-temporal">{{ mensaje }}</p>
+            <p class="error" id="error-temporal"><app-icono nombre="alerta" />{{ mensaje }}</p>
           }
         </div>
         <button type="submit" class="boton" [disabled]="creando()">
@@ -145,7 +149,9 @@ const esBloque = (valor: string): valor is Bloque => valor === 'manana' || valor
             </select>
           </div>
           @if (errorPanel(); as mensaje) {
-            <p class="error" id="error-panel" role="alert">{{ mensaje }}</p>
+            <p class="error" id="error-panel" role="alert">
+              <app-icono nombre="alerta" />{{ mensaje }}
+            </p>
           }
           <div class="acciones">
             <button type="submit" class="boton" [disabled]="trabajando()">
@@ -198,7 +204,7 @@ const esBloque = (valor: string): valor is Bloque => valor === 'manana' || valor
                       [attr.id]="'bloque-' + k.id"
                       (click)="abrirPanel(k)"
                     >
-                      Cambiar bloque
+                      <app-icono nombre="lapiz" />Cambiar bloque
                       <span class="solo-lectores"> de {{ k.nombre }}</span>
                     </button>
                   </td>

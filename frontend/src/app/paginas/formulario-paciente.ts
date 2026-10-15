@@ -3,6 +3,7 @@ import { ErrorApi } from '../nucleo/http/error-api';
 import { normalizarDni } from '../nucleo/pacientes/dni';
 import type { DatosPaciente } from '../nucleo/pacientes/pacientes';
 import { enfocar } from '../nucleo/ui/enfocar';
+import { Icono } from '../nucleo/ui/icono';
 
 export type CampoPaciente = 'dni' | 'nombre' | 'telefono' | 'obraSocial';
 export type ErroresPaciente = Partial<Record<CampoPaciente, string>>;
@@ -51,6 +52,7 @@ export function erroresDeCampo(error: unknown): ErroresPaciente | null {
  * decide el backend llegan por `erroresServidor`. "Particular" se sugiere pero no se completa solo.
  */
 @Component({
+  imports: [Icono],
   selector: 'app-formulario-paciente',
   template: `
     <form
@@ -72,7 +74,7 @@ export function erroresDeCampo(error: unknown): ErroresPaciente | null {
           [attr.aria-describedby]="error('dni') ? 'error-paciente-dni' : null"
         />
         @if (error('dni'); as mensaje) {
-          <p class="error" id="error-paciente-dni">{{ mensaje }}</p>
+          <p class="error" id="error-paciente-dni"><app-icono nombre="alerta" />{{ mensaje }}</p>
         }
       </div>
       <div class="campo">
@@ -88,7 +90,7 @@ export function erroresDeCampo(error: unknown): ErroresPaciente | null {
           [attr.aria-describedby]="error('nombre') ? 'error-paciente-nombre' : null"
         />
         @if (error('nombre'); as mensaje) {
-          <p class="error" id="error-paciente-nombre">{{ mensaje }}</p>
+          <p class="error" id="error-paciente-nombre"><app-icono nombre="alerta" />{{ mensaje }}</p>
         }
       </div>
       <div class="campo">
@@ -104,7 +106,9 @@ export function erroresDeCampo(error: unknown): ErroresPaciente | null {
           [attr.aria-describedby]="error('telefono') ? 'error-paciente-telefono' : null"
         />
         @if (error('telefono'); as mensaje) {
-          <p class="error" id="error-paciente-telefono">{{ mensaje }}</p>
+          <p class="error" id="error-paciente-telefono">
+            <app-icono nombre="alerta" />{{ mensaje }}
+          </p>
         }
       </div>
       <div class="campo">
@@ -127,7 +131,9 @@ export function erroresDeCampo(error: unknown): ErroresPaciente | null {
           Escribila o elegí «Particular» si no tiene. No se completa sola.
         </p>
         @if (error('obraSocial'); as mensaje) {
-          <p class="error" id="error-paciente-obra-social">{{ mensaje }}</p>
+          <p class="error" id="error-paciente-obra-social">
+            <app-icono nombre="alerta" />{{ mensaje }}
+          </p>
         }
       </div>
       <div class="acciones">

@@ -24,6 +24,7 @@ const FOCALIZABLES =
         role="dialog"
         aria-modal="true"
         [attr.aria-labelledby]="idTitulo()"
+        [attr.data-nivel]="nivel()"
         (keydown)="teclado($event)"
       >
         <h2 [id]="idTitulo()" tabindex="-1">{{ titulo() }}</h2>
@@ -35,6 +36,8 @@ const FOCALIZABLES =
 export class Dialogo implements OnDestroy {
   readonly titulo = input.required<string>();
   readonly idTitulo = input('titulo-dialogo');
+  /** Color de la acción que se confirma: `peligro` (anular) o `advertencia` (corregir, reprogramar). */
+  readonly nivel = input<'normal' | 'advertencia' | 'peligro'>('normal');
   readonly cerrar = output();
 
   private readonly elemento = inject<ElementRef<HTMLElement>>(ElementRef);

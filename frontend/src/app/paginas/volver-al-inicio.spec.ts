@@ -27,13 +27,13 @@ const PANTALLAS = [
 ] as const;
 
 describe.each(PANTALLAS)('enlace de volver en %s (RF-01)', (_nombre, pantalla) => {
-  it('el administrador vuelve a /admin', () => {
+  it('el administrador vuelve a la agenda', () => {
     const enlace = enlaceDeVolver(pantalla, 'administrador');
-    expect(enlace.getAttribute('href')).toBe('/admin');
+    expect(enlace.getAttribute('href')).toBe('/secretaria/agenda');
     expect(enlace.textContent).toContain('Volver al inicio');
   });
 
-  it('la secretaria vuelve a /secretaria', () => {
-    expect(enlaceDeVolver(pantalla, 'secretaria').getAttribute('href')).toBe('/secretaria');
+  it('la secretaria vuelve a la agenda', () => {
+    expect(enlaceDeVolver(pantalla, 'secretaria').getAttribute('href')).toBe('/secretaria/agenda');
   });
 });

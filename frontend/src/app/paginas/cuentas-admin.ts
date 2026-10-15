@@ -1,8 +1,9 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
-import { RouterLink } from '@angular/router';
 import { Cuentas, type CuentaListada } from '../nucleo/cuentas/cuentas';
 import { ErrorApi } from '../nucleo/http/error-api';
 import { enfocar, mensajeDe } from '../nucleo/ui/enfocar';
+import { Icono } from '../nucleo/ui/icono';
+import { VolverAlInicio } from './volver-al-inicio';
 
 /** Mismo mínimo que la política del backend (RNF-03). */
 const LARGO_MINIMO = 12;
@@ -39,16 +40,18 @@ interface Panel {
  */
 @Component({
   selector: 'app-cuentas-admin',
-  imports: [RouterLink],
+  imports: [Icono, VolverAlInicio],
   template: `
-    <p><a routerLink="/admin">Volver a administración</a></p>
+    <app-volver-al-inicio />
     <h1>Cuentas</h1>
 
     @if (aviso(); as mensaje) {
-      <p class="aviso" role="status">{{ mensaje }}</p>
+      <p class="info" role="status"><app-icono nombre="info" />{{ mensaje }}</p>
     }
     @if (errorGeneral(); as mensaje) {
-      <p class="error" id="error-cuentas" role="alert" tabindex="-1">{{ mensaje }}</p>
+      <p class="error" id="error-cuentas" role="alert" tabindex="-1">
+        <app-icono nombre="alerta" />{{ mensaje }}
+      </p>
     }
 
     <section class="tarjeta ancha" aria-labelledby="titulo-alta">
@@ -73,7 +76,7 @@ interface Panel {
             [attr.aria-describedby]="erroresAlta().usuario ? 'error-usuario' : null"
           />
           @if (erroresAlta().usuario; as mensaje) {
-            <p class="error" id="error-usuario">{{ mensaje }}</p>
+            <p class="error" id="error-usuario"><app-icono nombre="alerta" />{{ mensaje }}</p>
           }
         </div>
         <div class="campo">
@@ -90,7 +93,7 @@ interface Panel {
             "
           />
           @if (erroresAlta().temporal; as mensaje) {
-            <p class="error" id="error-temporal">{{ mensaje }}</p>
+            <p class="error" id="error-temporal"><app-icono nombre="alerta" />{{ mensaje }}</p>
           }
         </div>
         <button type="submit" class="boton" [disabled]="creando()">
@@ -123,12 +126,16 @@ interface Panel {
                 "
               />
               @if (errorPanel(); as mensaje) {
-                <p class="error" id="error-nueva-temporal">{{ mensaje }}</p>
+                <p class="error" id="error-nueva-temporal">
+                  <app-icono nombre="alerta" />{{ mensaje }}
+                </p>
               }
             </div>
             <div class="acciones">
-              <button type="submit" class="boton" [disabled]="trabajando()">
-                {{ trabajando() ? 'Restableciendo…' : 'Restablecer contraseña' }}
+              <button type="submit" class="boton peligro" [disabled]="trabajando()">
+                <app-icono nombre="contrasena" />{{
+                  trabajando() ? 'Restableciendo…' : 'Restablecer contraseña'
+                }}
               </button>
               <button type="button" class="boton secundario" (click)="cerrarPanel()">
                 Cancelar
@@ -142,7 +149,9 @@ interface Panel {
             se puede deshacer: las cuentas no se reactivan ni se borran.
           </p>
           @if (errorPanel(); as mensaje) {
-            <p class="error" id="error-desactivar" role="alert">{{ mensaje }}</p>
+            <p class="error" id="error-desactivar" role="alert">
+              <app-icono nombre="alerta" />{{ mensaje }}
+            </p>
           }
           <div class="acciones">
             <button
@@ -151,7 +160,9 @@ interface Panel {
               [disabled]="trabajando()"
               (click)="desactivar(p.cuenta)"
             >
-              {{ trabajando() ? 'Desactivando…' : 'Sí, desactivar la cuenta' }}
+              <app-icono nombre="usuario-baja" />{{
+                trabajando() ? 'Desactivando…' : 'Sí, desactivar la cuenta'
+              }}
             </button>
             <button type="button" class="boton secundario" (click)="cerrarPanel()">
               No, cancelar
@@ -198,20 +209,20 @@ interface Panel {
                       <div class="acciones">
                         <button
                           type="button"
-                          class="boton secundario"
+                          class="boton peligro"
                           [attr.id]="'restablecer-' + c.id"
                           (click)="abrirPanel('restablecer', c)"
                         >
-                          Restablecer contraseña
+                          <app-icono nombre="contrasena" />Restablecer contraseña
                           <span class="solo-lectores"> de {{ c.nombreUsuario }}</span>
                         </button>
                         <button
                           type="button"
-                          class="boton secundario"
+                          class="boton peligro"
                           [attr.id]="'desactivar-' + c.id"
                           (click)="abrirPanel('desactivar', c)"
                         >
-                          Desactivar
+                          <app-icono nombre="usuario-baja" />Desactivar
                           <span class="solo-lectores"> la cuenta de {{ c.nombreUsuario }}</span>
                         </button>
                       </div>

@@ -4,6 +4,7 @@ import { ErrorApi } from '../nucleo/http/error-api';
 import { destinoDeSesion } from '../nucleo/sesion/modelo';
 import { Sesion } from '../nucleo/sesion/sesion';
 import { enfocar, mensajeDe } from '../nucleo/ui/enfocar';
+import { Icono } from '../nucleo/ui/icono';
 
 /**
  * Activación del segundo factor del administrador (RNF-04): QR para la aplicación autenticadora,
@@ -11,6 +12,7 @@ import { enfocar, mensajeDe } from '../nucleo/ui/enfocar';
  * en la memoria de este componente: nunca en el almacenamiento del navegador ni en la consola.
  */
 @Component({
+  imports: [Icono],
   selector: 'app-activar-segundo-factor',
   template: `
     <section class="tarjeta">
@@ -24,6 +26,7 @@ import { enfocar, mensajeDe } from '../nucleo/ui/enfocar';
             sola vez.
           </p>
           <p class="aviso" role="status">
+            <app-icono nombre="alerta" />
             Es la única vez que se muestran. Guardalos ahora en un lugar seguro.
           </p>
         </div>
@@ -78,7 +81,7 @@ import { enfocar, mensajeDe } from '../nucleo/ui/enfocar';
           <p role="status">Generando el código QR…</p>
         }
         @if (errorQr(); as mensaje) {
-          <p class="error" role="alert">{{ mensaje }}</p>
+          <p class="error" role="alert"><app-icono nombre="alerta" />{{ mensaje }}</p>
           <button type="button" class="boton secundario" (click)="generarQr()">Reintentar</button>
         }
 
@@ -98,7 +101,7 @@ import { enfocar, mensajeDe } from '../nucleo/ui/enfocar';
                 [attr.aria-describedby]="errorCodigo() ? 'error-codigo' : null"
               />
               @if (errorCodigo(); as mensaje) {
-                <p class="error" id="error-codigo">{{ mensaje }}</p>
+                <p class="error" id="error-codigo"><app-icono nombre="alerta" />{{ mensaje }}</p>
               }
             </div>
             <button type="submit" class="boton" [disabled]="enviando()">
@@ -108,7 +111,9 @@ import { enfocar, mensajeDe } from '../nucleo/ui/enfocar';
         }
       }
       @if (errorGeneral(); as mensaje) {
-        <p class="error" id="error-formulario" role="alert" tabindex="-1">{{ mensaje }}</p>
+        <p class="error" id="error-formulario" role="alert" tabindex="-1">
+          <app-icono nombre="alerta" />{{ mensaje }}
+        </p>
       }
     </section>
   `,

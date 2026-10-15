@@ -36,7 +36,7 @@ const routes: Routes = [
   {
     path: 'secretaria',
     canActivate: [guardaDeRol(['secretaria', 'administrador'])],
-    component: Vacia,
+    children: [{ path: 'agenda', component: Vacia }],
   },
 ];
 
@@ -104,8 +104,12 @@ describe('guardas según el paso pendiente (RF-06, RNF-04)', () => {
         paso: 'activar_segundo_factor',
       }),
     ).toBe('/activar-segundo-factor');
-    expect(await navegar('/verificar-segundo-factor', { rol: 'administrador' })).toBe('/admin');
-    expect(await navegar('/activar-segundo-factor', { rol: 'secretaria' })).toBe('/secretaria');
+    expect(await navegar('/verificar-segundo-factor', { rol: 'administrador' })).toBe(
+      '/secretaria/agenda',
+    );
+    expect(await navegar('/activar-segundo-factor', { rol: 'secretaria' })).toBe(
+      '/secretaria/agenda',
+    );
     expect(
       await navegar('/activar-segundo-factor', {
         rol: 'administrador',
@@ -121,7 +125,7 @@ describe('guardas según el paso pendiente (RF-06, RNF-04)', () => {
   });
 
   it('sin paso pendiente, cada rol va a su pantalla', async () => {
-    expect(await navegar('/', { rol: 'administrador' })).toBe('/admin');
-    expect(await navegar('/ingresar', { rol: 'secretaria' })).toBe('/secretaria');
+    expect(await navegar('/', { rol: 'administrador' })).toBe('/secretaria/agenda');
+    expect(await navegar('/ingresar', { rol: 'secretaria' })).toBe('/secretaria/agenda');
   });
 });
