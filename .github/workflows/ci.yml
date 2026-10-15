@@ -84,3 +84,64 @@ jobs:
         run: npm run verificar-csp
         env:
           NAVEGADOR: chrome
+
+  # Pruebas de punta a punta (T-33): backend y frontend reales, Chromium y dos contextos. Usa la base
+  # scalekine_pruebas de su propio servicio de PostgreSQL, que vive solo dentro del job.
+  e2e:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: scalekine
+          POSTGRES_PASSWORD: ci-solo-pruebas
+          POSTGRES_DB: scalekine_desarrollo
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U scalekine -d scalekine_desarrollo"
+          --health-interval 5s --health-timeout 3s --health-retries 12
+    env:
+      PGHOST: localhost
+      PGPASSWORD: ci-solo-pruebas
+      POSTGRES_USER: scalekine
+      SCALEKINE_CLAVE_MIGRACIONES: ci-migraciones
+      SCALEKINE_CLAVE_APP: ci-app
+      SCALEKINE_CLAVE_RESPALDO: ci-respaldo
+      E2E_DATABASE_URL: postgresql://scalekine_app:ci-app@127.0.0.1:5432/scalekine_pruebas
+      E2E_DATABASE_URL_MIGRACIONES: postgresql://scalekine_migraciones:ci-migraciones@127.0.0.1:5432/scalekine_pruebas
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
+            e2e/package-lock.json
+      - run: npm ci
+        working-directory: backend
+      - run: npm ci
+        working-directory: frontend
+      - run: npm ci
+        working-directory: e2e
+      - name: Auditoría de dependencias (falla con vulnerabilidades altas o críticas)
+        run: npm audit --audit-level=high
+        working-directory: e2e
+      - name: Tipos de la suite
+        run: npm run typecheck
+        working-directory: e2e
+      - name: Preparar bases y usuarios, igual que en Docker
+        run: |
+          psql -v ON_ERROR_STOP=1 -U scalekine -d scalekine_desarrollo -f infra/postgres/init/01-bases.sql
+          sh infra/postgres/init/02-usuarios.sh
+      - name: Aplicar migraciones
+        working-directory: backend
+        run: npm run db:migrar
+        env:
+          DATABASE_URL_MIGRACIONES: ${{ env.E2E_DATABASE_URL_MIGRACIONES }}
+      - run: npm run instalar-navegador -- --with-deps
+        working-directory: e2e
+      - name: Suite E2E
+        run: npm test
+        working-directory: e2e
