@@ -453,6 +453,12 @@ exigido; el cómo está en `plan.md` y `despliegue.md`.
   *Por qué:* Son las defensas básicas contra inyección, robo de sesión y suplantación de la
   interfaz.
 
+- **RNF-14** — *Restricción:* Toda respuesta de la API, también las de error, indica al navegador y
+  a los intermediarios que no la guarden en caché.
+  *Por qué:* Las respuestas contienen datos de salud y la PC de recepción es compartida: sin esta
+  instrucción el navegador puede dejar agendas y fichas en su caché de disco aun después de cerrar
+  la sesión.
+
 - **RNF-11** — *Restricción:* No se despliega una versión cuyas dependencias tengan vulnerabilidades
   conocidas de severidad alta o crítica.
   *Por qué:* La mayoría de los ataques a aplicaciones chicas explotan dependencias desactualizadas.
@@ -676,6 +682,8 @@ El MVP se considera terminado cuando **todos** los puntos siguientes son verific
       esquema, y el servidor solo expone el puerto 443 (y 80 para redirigir) (RNF-09).
 - [ ] Una entrada inválida se rechaza con un error sin detalles internos, y las cabeceras de
       seguridad impiden incrustar la aplicación (RNF-10).
+- [ ] Toda respuesta de la API (datos, 400, 401, 404 y salud) lleva `Cache-Control: no-store`
+      (RNF-14).
 - [ ] La auditoría de dependencias no informa vulnerabilidades altas ni críticas (RNF-11).
 - [ ] Detener la aplicación, o hacer fallar un backup, genera una alerta al administrador
       (RNF-12).

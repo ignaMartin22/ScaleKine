@@ -1,7 +1,7 @@
 # Despliegue y operación — Producción
 
 Deriva de [`plan.md`](./plan.md) §4.16 y cumple los requisitos de seguridad y operación de
-[`spec.md`](./spec.md) §3.9 (RNF-01 … RNF-13). Describe **dónde** corre el sistema, **cómo** se
+[`spec.md`](./spec.md) §3.9 (RNF-01 … RNF-14). Describe **dónde** corre el sistema, **cómo** se
 protege y **cómo** se opera. Cada sección indica los RNF que satisface.
 
 > **Marco legal.** El sistema trata datos de salud, que la Ley 25.326 considera sensibles. La
@@ -247,7 +247,9 @@ volumes: { caddy_data: {}, caddy_config: {} }
   estilos de componentes que Angular inyecta en tiempo de ejecución requieren `'unsafe-inline'` en
   `style-src`. Es un riesgo aceptado: afecta estilos, no ejecución de código.
 - La API agrega sus propias cabeceras con `helmet` (plan §4.15), así que las respuestas JSON quedan
-  protegidas aunque se acceda sin pasar por las reglas estáticas.
+  protegidas aunque se acceda sin pasar por las reglas estáticas. Entre ellas, `Cache-Control:
+  no-store` en toda respuesta de `/api`, errores incluidos (RNF-14); Caddy no la modifica, y los
+  archivos estáticos del frontend conservan su caché normal.
 
 ---
 
@@ -466,7 +468,7 @@ ellas (Res. AAIP 47/2018).
 - [ ] La base rechaza conexiones desde fuera del Droplet (RNF-09).
 - [ ] `scalekine_app` no puede ejecutar `DROP`, `ALTER` ni `DELETE` sobre `Turno` (RNF-09, RF-39).
 - [ ] `ssh` con contraseña rechazado; `unattended-upgrades` activo (RNF-13).
-- [ ] HTTPS con certificado válido, redirección desde HTTP, HSTS y CSP presentes (RNF-01, RNF-10).
+- [ ] HTTPS con certificado válido, redirección desde HTTP, HSTS y CSP presentes (RNF-01, RNF-10), y las respuestas de `/api` con `Cache-Control: no-store` (RNF-14).
 - [ ] Primera copia externa subida y **restaurada con éxito** (RNF-07).
 - [ ] Object Lock activo: un intento de borrar una copia, incluso con la clave del administrador,
       falla (RNF-07).

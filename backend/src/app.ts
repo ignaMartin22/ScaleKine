@@ -4,7 +4,7 @@ import type { Configuracion } from './comun/configuracion.js';
 import type { Reloj } from './comun/reloj.js';
 import { manejadorErrores, rutaNoEncontrada } from './comun/errores.js';
 import { registroDePeticiones } from './comun/logger.js';
-import { cabecerasDeSeguridad, verificarOrigen } from './comun/seguridad.js';
+import { cabecerasDeSeguridad, sinCache, verificarOrigen } from './comun/seguridad.js';
 
 export interface Dependencias {
   config: Configuracion;
@@ -23,6 +23,7 @@ export function crearApp({ config, logger, reloj, rutas = [] }: Dependencias): E
 
   app.use(registroDePeticiones(logger, reloj));
   app.use(cabecerasDeSeguridad());
+  app.use('/api', sinCache());
   app.use(verificarOrigen(config.origenFrontend));
   app.use(express.json({ limit: '100kb' }));
 
