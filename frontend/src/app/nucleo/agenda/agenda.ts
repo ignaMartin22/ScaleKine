@@ -73,7 +73,48 @@ export interface Pendientes {
 }
 
 /**
- * Agenda de secretaría y aviso de pendientes (RF-41, RF-42). Solo lectura. Fecha y kinesiólogo
+ * Turno de la agenda del kinesiólogo (RF-40), tal como lo devuelve `GET /api/mi-agenda`: sin
+ * `kinesiologo` ni `acciones` (no escribe, D-15) y con el paciente sin `id` (D-16).
+ */
+export interface TurnoPropio {
+  id: number;
+  fecha: string;
+  horaInicio: string;
+  horaFin: string;
+  estado: EstadoTurno;
+  /** Llegada en hora de pared del consultorio ('HH:MM'), calculada por la API, o `null`. */
+  horaLlegada: string | null;
+  coseguroObraSocial: string | null;
+  coseguroAdicional: string | null;
+  paciente: { nombre: string; dni: string; telefono: string; obraSocial: string };
+}
+
+export interface AgendaPropia {
+  fecha: string;
+  enEspera: TurnoPropio[];
+  proximos: TurnoPropio[];
+}
+
+/** Turno en la ficha del paciente (RF-47), tal como lo devuelve `GET /api/pacientes/:id/turnos`. */
+export interface TurnoDePaciente {
+  id: number;
+  fecha: string;
+  horaInicio: string;
+  horaFin: string;
+  estado: EstadoTurno;
+  coseguroObraSocial: string | null;
+  coseguroAdicional: string | null;
+  kinesiologo: { id: number; nombre: string };
+}
+
+export interface TurnosDelPaciente {
+  proximos: TurnoDePaciente[];
+  historial: TurnoDePaciente[];
+}
+
+/**
+ * Agenda de secretaría, agenda propia del kinesiólogo, turnos del paciente y aviso de pendientes
+ * (RF-40 a RF-42, RF-47). Solo lectura. Fecha y kinesiólogo
  * viajan por query, que el registro de peticiones del backend descarta. Errores como `ErrorApi`.
  */
 @Injectable({ providedIn: 'root' })
@@ -86,6 +127,21 @@ export class Agenda {
     if (fecha) params = params.set('fecha', fecha);
     if (kinesiologoId !== undefined) params = params.set('kinesiologoId', String(kinesiologoId));
     return firstValueFrom(this.http.get<AgendaDelDia>('/api/agenda', { params }));
+  }
+
+  /**
+   * Agenda del kinesiólogo de la sesión (RF-40). Nunca manda `kinesiologoId`: lo define la sesión
+   * (D-15). Sin `fecha`, la API usa hoy.
+   */
+  async miAgenda(fecha?: string): Promise<AgendaPropia> {
+    let params = new HttpParams();
+    if (fecha) params = params.set('fecha', fecha);
+    return firstValueFrom(this.http.get<AgendaPropia>('/api/mi-agenda', { params }));
+  }
+
+  /** Próximos e historial de un paciente (RF-47). El id viaja en la ruta de la API, no en la URL de la pantalla. */
+  async delPaciente(pacienteId: number): Promise<TurnosDelPaciente> {
+    return firstValueFrom(this.http.get<TurnosDelPaciente>(`/api/pacientes/${pacienteId}/turnos`));
   }
 
   async pendientes(): Promise<Pendientes> {

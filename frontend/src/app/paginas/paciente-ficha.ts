@@ -1,8 +1,15 @@
 import { Component, OnInit, inject, input, signal } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
+import {
+  Agenda,
+  NOMBRE_DEL_ESTADO,
+  type EstadoTurno,
+  type TurnoDePaciente,
+} from '../nucleo/agenda/agenda';
 import { ErrorApi } from '../nucleo/http/error-api';
 import { Pacientes, type DatosPaciente, type Paciente } from '../nucleo/pacientes/pacientes';
 import { enfocar, mensajeDe } from '../nucleo/ui/enfocar';
+import { fechaLegible } from './asignar-turno';
 import {
   FormularioPaciente,
   enfocarPrimerError,
@@ -12,8 +19,9 @@ import {
 } from './formulario-paciente';
 
 /**
- * Ficha del paciente (RF-20, RF-21): datos de M2 y edición. El PUT reemplaza todos los datos. Las
- * listas de turnos de la ficha llegan en T-30. El id viene de la ruta (no es un dato personal).
+ * Ficha del paciente (RF-20, RF-21, RF-47): datos de M2, edición y listas de turnos próximos (del
+ * más cercano al más lejano) e historial (del más reciente al más antiguo), solo de lectura. El PUT
+ * reemplaza todos los datos. El id viene de la ruta (no es un dato personal).
  */
 @Component({
   selector: 'app-paciente-ficha',
@@ -63,17 +71,122 @@ import {
           </button>
         </section>
       }
+
+      <section class="tarjeta ancha" aria-labelledby="titulo-proximos">
+        <h2 id="titulo-proximos">
+          Próximos turnos
+          @if (turnos(); as t) {
+            <span>({{ t.proximos.length }})</span>
+          }
+        </h2>
+        @if (turnos(); as t) {
+          @if (t.proximos.length === 0) {
+            <p id="sin-proximos">El paciente no tiene turnos próximos.</p>
+          } @else {
+            <div class="tabla-contenedor">
+              <table class="tabla" id="tabla-proximos">
+                <caption class="solo-lectores">
+                  Próximos turnos del paciente, del más cercano al más lejano
+                </caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Fecha</th>
+                    <th scope="col">Franja</th>
+                    <th scope="col">Kinesiólogo</th>
+                    <th scope="col">Estado</th>
+                    <th scope="col">Coseguros</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (x of t.proximos; track x.id) {
+                    <tr>
+                      <td>{{ legible(x.fecha) }}</td>
+                      <td>{{ x.horaInicio }} a {{ x.horaFin }}</td>
+                      <td>{{ x.kinesiologo.nombre }}</td>
+                      <td>{{ estado(x.estado) }}</td>
+                      <td>
+                        Obra social: {{ monto(x.coseguroObraSocial) }}<br />
+                        Adicional: {{ monto(x.coseguroAdicional) }}
+                      </td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          }
+        } @else if (errorTurnos(); as mensaje) {
+          <p class="error" id="error-turnos" role="alert">{{ mensaje }}</p>
+        } @else {
+          <p role="status">Cargando los turnos…</p>
+        }
+      </section>
+      <section class="tarjeta ancha" aria-labelledby="titulo-historial">
+        <h2 id="titulo-historial">
+          Historial
+          @if (turnos(); as t) {
+            <span>({{ t.historial.length }})</span>
+          }
+        </h2>
+        @if (turnos(); as t) {
+          @if (t.historial.length === 0) {
+            <p id="sin-historial">El paciente no tiene turnos en su historial.</p>
+          } @else {
+            <div class="tabla-contenedor">
+              <table class="tabla" id="tabla-historial">
+                <caption class="solo-lectores">
+                  Historial de turnos del paciente, del más reciente al más antiguo
+                </caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Fecha</th>
+                    <th scope="col">Franja</th>
+                    <th scope="col">Kinesiólogo</th>
+                    <th scope="col">Estado</th>
+                    <th scope="col">Coseguros</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (x of t.historial; track x.id) {
+                    <tr>
+                      <td>{{ legible(x.fecha) }}</td>
+                      <td>{{ x.horaInicio }} a {{ x.horaFin }}</td>
+                      <td>{{ x.kinesiologo.nombre }}</td>
+                      <td>{{ estado(x.estado) }}</td>
+                      <td>
+                        Obra social: {{ monto(x.coseguroObraSocial) }}<br />
+                        Adicional: {{ monto(x.coseguroAdicional) }}
+                      </td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          }
+        } @else if (errorTurnos(); as mensaje) {
+          <p class="error" id="error-turnos" role="alert">{{ mensaje }}</p>
+        } @else {
+          <p role="status">Cargando los turnos…</p>
+        }
+      </section>
     }
   `,
 })
 export class PacienteFicha implements OnInit {
   private readonly servicio = inject(Pacientes);
+  private readonly agenda = inject(Agenda);
   private readonly router = inject(Router);
 
   /** Parámetro `:id` de la ruta. */
   readonly id = input<string>();
 
+  protected readonly legible = fechaLegible;
+  protected readonly estado = (e: EstadoTurno) => NOMBRE_DEL_ESTADO[e];
   protected readonly paciente = signal<Paciente | null>(null);
+  protected readonly turnos = signal<{
+    proximos: TurnoDePaciente[];
+    historial: TurnoDePaciente[];
+  } | null>(null);
+  protected readonly errorTurnos = signal<string | null>(null);
   protected readonly cargando = signal(true);
   protected readonly editando = signal(false);
   protected readonly guardando = signal(false);
@@ -86,6 +199,10 @@ export class PacienteFicha implements OnInit {
       this.aviso.set('Se creó el paciente.');
     }
     void this.cargar();
+  }
+
+  protected monto(valor: string | null): string {
+    return valor === null ? 'sin cargar' : '$ ' + valor;
   }
 
   protected abrirEdicion(): void {
@@ -132,12 +249,30 @@ export class PacienteFicha implements OnInit {
       this.mostrarError(new ErrorApi(404, 'paciente_no_encontrado', ''));
       return;
     }
+    void this.cargarTurnos(numero);
     try {
       this.paciente.set(await this.servicio.obtener(numero));
     } catch (error) {
       this.mostrarError(error);
     } finally {
       this.cargando.set(false);
+    }
+  }
+
+  /** Las listas fallan por separado: un error acá no oculta los datos del paciente. */
+  private async cargarTurnos(id: number): Promise<void> {
+    try {
+      const { proximos, historial } = await this.agenda.delPaciente(id);
+      this.turnos.set({
+        proximos: [...proximos].sort(
+          (a, b) => a.fecha.localeCompare(b.fecha) || a.horaInicio.localeCompare(b.horaInicio),
+        ),
+        historial: [...historial].sort(
+          (a, b) => b.fecha.localeCompare(a.fecha) || b.horaInicio.localeCompare(a.horaInicio),
+        ),
+      });
+    } catch (error) {
+      this.errorTurnos.set('No se pudieron cargar los turnos del paciente. ' + mensajeDe(error));
     }
   }
 
