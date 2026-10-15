@@ -1,6 +1,6 @@
 # Avance de la implementación
 
-Estado al 2026-10-15, con la ola 5 casi cerrada: falta la parte 3 de T-30. Este documento registra qué está hecho, qué quedó a
+Estado al 2026-10-15, con la ola 6 en curso: T-31 fusionada, T-32 y T-41 en revisión. Este documento registra qué está hecho, qué quedó a
 medio camino y cómo retomarlo. No reemplaza a las fuentes de verdad: los requisitos están en
 [`spec.md`](./spec.md), las decisiones de diseño en [`plan.md`](./plan.md) y el orden y los
 criterios de "hecho" en [`tasks.md`](./tasks.md). Se actualiza cada vez que se fusiona un PR.
@@ -41,8 +41,11 @@ criterios de "hecho" en [`tasks.md`](./tasks.md). Se actualiza cada vez que se f
 | T-27 · Agendas | Hecha | #48 | Pasó `revisor-seguridad` y una ronda de correcciones (guardianas nuevas, esquemas compartidos en `comun/esquemas.ts`). |
 | T-28 · Aviso de pendientes | Hecha | #44 | Adelantada a la ola 4 con el carril B libre. |
 | T-29 · Ficha del paciente | Hecha | #50 | Incluye `horaLlegada` en las proyecciones de turno. |
-| T-30 · Pantallas de agenda, asignación y ficha | Partes 1 y 2 hechas | #47 y #51 | Las dos pasaron el recorrido manual del usuario. Falta la parte 3: agenda del kinesiólogo y próximos/historial en la ficha. |
-| T-31 a T-40 | Pendientes | — | Olas 6 y 7 de `tasks.md`. |
+| T-30 · Pantallas de agenda, asignación y ficha | Hecha | #47, #51 y #53 | Las tres partes pasaron el recorrido manual del usuario. #53: agenda del kinesiólogo y próximos/historial en la ficha. |
+| T-31 · Difusión | Hecha | #54 | Crítica: `revisor-seguridad` encontró un bloqueante (ver §2e) y pasó dos rondas de correcciones. |
+| T-32 · Agenda viva | PR abierto | #56 | CI en verde; falta el recorrido manual del usuario con dos navegadores. |
+| T-41 · Diseño visual | En curso | — | Carril B. Implementa `DESIGN.md` (RNF-15, #55). Va antes de T-35 por decisión del usuario. |
+| T-33 a T-40 | Pendientes | — | Ola 6 (T-35, T-37) y ola 7 de `tasks.md`. |
 
 Otros PRs fusionados:
 - #10 vuelve `@types/node` a la versión 24 y limita los saltos de versión que propone Dependabot.
@@ -51,6 +54,7 @@ Otros PRs fusionados:
 - #35 y #37 cambian la spec con decisiones del usuario (ver §2c).
 - #42 resuelve deuda de documentación y configuración; #43 centraliza `ingresarComo` en las fábricas de prueba.
 - #46 documenta el cierre de la ola 4; #49 agrega `Cache-Control: no-store` a toda la API (RNF-14, decisión del usuario).
+- #52 documenta la pausa de la ola 5; #55 define el sistema visual (`DESIGN.md`, RNF-15, T-41).
 - #3, #4 y #20 son de Dependabot.
 - El #5 (TypeScript 7 en el frontend) se cerró: Angular 22 exige TypeScript `~6.0`.
 
@@ -235,6 +239,35 @@ API desde la consola (la asignación por pantalla solo deja fechas desde hoy).
 
 ---
 
+## 2e. Ola 6: tiempo real y diseño visual (2026-10-15)
+
+**T-31 (#54), difusión con Socket.io** (contrato en `m5-tiempo-real/tiempoReal.ts`):
+- Handshake con la cookie de sesión y la misma validación que `exigirSesion` (sin paso pendiente),
+  `Origin` exacto verificado en todos los transportes (`allowRequest` y `io.engine.use`). Rechazo
+  `no_autorizado` sin detalle.
+- Salas `kinesiologo:<id>` y `secretaria`; el cliente no elige sala.
+- Eventos: `turno:cambio { turno }` (la secretaría recibe la proyección de `/api/agenda`, el
+  kinesiólogo la de `/api/mi-agenda`), `turno:quitado { turnoId }` y `sesion:cerrada { motivo }`.
+- M3 avisa por un `EmisorTurnos` inyectado, después del commit; M5 relee el turno y difunde.
+- **Bloqueante encontrado por la revisión:** el cambio se mandaba a la sala del kinesiólogo del
+  aviso y no al actual, así que en una reprogramación cruzada el kinesiólogo anterior recibía los
+  datos del paciente. Se corrigió: el cambio va al kinesiólogo actual y los demás reciben solo
+  `turno:quitado`. La cola agrupa por turno y tiene un tiempo límite de 5 s; una difusión vencida
+  se cancela y no emite.
+- Desconexión al vencer la sesión, al cerrar sesión, desactivar, restablecer o cambiar la
+  contraseña (ganchos en `m1-identidad/revocaciones.ts`), y revalidación cada 60 s para las
+  revocaciones desde la CLI.
+
+**T-32 (#56, abierto), agenda viva:** servicio `nucleo/tiempo-real/`, indicador
+`app-indicador-conexion` y suscripción en las dos agendas. Al reconectar se vuelve a pedir la
+agenda completa. Ante `sesion:cerrada`, el cierre por el servidor o un `no_autorizado` en el
+handshake, se vuelve al ingreso. Dependencia nueva: `socket.io-client` 4.8.4.
+
+**Sistema visual (#55):** `DESIGN.md` en la raíz, aprobado por el usuario con una página de
+muestra. RNF-15 en la spec y T-41 en `tasks.md`, en el carril B antes de T-35.
+
+---
+
 ## 3. Decisiones tomadas durante la implementación
 
 Las que cambian requisitos o diseño ya están en la spec o el plan. Esta lista sirve para encontrarlas.
@@ -290,6 +323,7 @@ Las que cambian requisitos o diseño ya están en la spec o el plan. Esta lista 
 | `prettier --check` marca casi todos los archivos (CRLF de Windows y sin configuración de Prettier en el backend). | Decidir si se agrega una configuración de Prettier o se deja de mencionar en los encargos. | Decidido: el backend no usa Prettier (su código no sigue ese formato y agregarlo reformatearía todo). El estilo lo dan ESLint y el código vecino; los encargos dejan de pedir `prettier --check` en el backend. El frontend sí tiene `.prettierrc`. |
 | Las pruebas de la ola 4 copian en cada archivo el ayudante `ingresarComo`. | Centralizarlo en `test/integracion/fabricas.ts`. | Sin tarea asignada |
 | Un PUT de coseguros exige las dos claves: el frontend de T-30 tiene que mandarlas siempre. | Tenerlo en cuenta en T-30. | Anotado |
+| Socket.io no limita conexiones por sesión ni por IP (cada handshake cuesta una consulta). | Limitarlo en Caddy. | Pendiente de T-36 |
 
 ---
 
@@ -388,8 +422,7 @@ Si un PR se fusiona antes de terminar la revisión, las correcciones van en una 
 
 **Para retomar:**
 1. Encender Docker Desktop y verificar `scalekine-postgres-1`.
-2. Carril B: **T-30 parte 3** (agenda del kinesiólogo y próximos/historial en la ficha); lleva
-   recorrido manual del usuario. Con eso cierra la ola 5.
-3. Carril A: ola 6, **T-31 (difusión en tiempo real)**. Se puede adelantar en paralelo con la
-   parte 3 (solo toca el backend), si el usuario lo aprueba; después T-32 (agenda viva).
-4. Agregar a `tasks.md` la tarea de diseño visual, antes de T-33.
+2. Recorrido manual del #56 (T-32) con dos navegadores y fusionarlo.
+3. T-41 (diseño visual) en el carril B: revisión y recorrido manual en claro, oscuro y ventana
+   angosta. El que se fusione segundo entre T-32 y T-41 hace rebase.
+4. Después: T-35 → T-37 (infraestructura, necesitan permiso para usar Docker) y la ola 7.
