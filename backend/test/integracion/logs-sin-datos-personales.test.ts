@@ -343,12 +343,13 @@ describe('los logs no contienen datos personales ni secretos (RNF-08)', () => {
     // La prueba no pasa en vacío: el log tiene las peticiones del flujo y los eventos de tiempo real.
     expect(registros.filter((r) => r.msg === 'petición').length).toBeGreaterThanOrEqual(Object.keys(estados).length);
     expect([...mensajes]).toEqual(expect.arrayContaining(['petición', 'socket conectado', 'conexión de socket rechazada', 'socket cerrado por la sesión']));
+    expect(sensibles.size).toBeGreaterThan(40);
+    expect(filtraciones(entorno.lineas, sensibles)).toEqual([]);
+    // Además, cada línea de petición tiene solo los campos previstos: nada de cuerpos ni cabeceras.
     for (const registro of registros.filter((r) => r.msg === 'petición')) {
       expect(String(registro.ruta), 'ruta registrada sin parámetros de consulta').not.toContain('?');
       expect(Object.keys(registro).sort()).toEqual(['duracionMs', 'estado', 'level', 'metodo', 'msg', 'ruta', 'time']);
     }
-    expect(sensibles.size).toBeGreaterThan(40);
-    expect(filtraciones(entorno.lineas, sensibles)).toEqual([]);
   }, 180_000);
 
   it('un error interno cuyo mensaje copia datos personales no los deja en el log', async () => {
