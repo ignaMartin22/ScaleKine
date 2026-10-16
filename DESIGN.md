@@ -189,6 +189,8 @@ Nunca menos de 13 px. Mayúsculas solo al inicio de la oración.
 | `volver` | `arrow-left` | Volver al inicio |
 | `escudo` | `shield-check` | Segundo factor |
 | `usuario-baja` | `user-minus` | Desactivar cuenta |
+| `usuario` | `user` | Tarjeta de paciente (§6.2) |
+| `siguiente` | `chevron-right` | "Siguiente" del asistente y filas de resultados (§6.1, §6.2) |
 
 ---
 
@@ -231,6 +233,61 @@ Nunca menos de 13 px. Mayúsculas solo al inicio de la oración.
   lateral, una tarjeta centrada de 400 px sobre `--fondo`, con la marca arriba.
 - **Impresión:** `@media print` oculta la barra y los botones; se imprime en blanco y negro.
 
+### 6.1 Asistente por pasos (asignar turno)
+
+Asignar un turno es una secuencia de pantallas, no un formulario largo: **se ve un solo paso por
+vez y no hace falta desplazarse** en una pantalla de 1280 × 720. Lo ya elegido queda a la vista en
+un resumen (decisión del usuario, 2026-10-15).
+
+```
+┌──────────────┬──────────────────────────────────────────────────────────┐
+│              │  Asignar turno                                           │
+│  (barra      │  ① Paciente ─ ② Fecha y bloque ─ ❸ Kinesiólogo ─ ④ Abono  │
+│   lateral)   │  ┌───────────────────────────────┐  ┌─────────────────┐  │
+│              │  │ Kinesiólogo y franja          │  │ Tu turno        │  │
+│              │  │                               │  │ ☺ Ana Pérez     │  │
+│              │  │ ( ) Lic. Gómez  08:00 08:45 … │  │   DNI 30.123.456│  │
+│              │  │ ( ) Lic. Ruiz   09:30 10:15 … │  │   Cambiar       │  │
+│              │  │                               │  │ ▣ lun 19/10     │  │
+│              │  │                               │  │   Mañana        │  │
+│              │  │ [← Atrás]       [Siguiente →] │  │   Cambiar       │  │
+│              │  └───────────────────────────────┘  └─────────────────┘  │
+└──────────────┴──────────────────────────────────────────────────────────┘
+```
+
+- **Pasos, en este orden:** 1. Paciente (DNI; si no existe, el alta en el mismo paso) → 2. Fecha y
+  bloque → 3. Kinesiólogo y franja → 4. Coseguro abonado y confirmación → pantalla "Turno asignado"
+  con la descarga del ticket y "Asignar otro turno".
+- **Indicador de pasos** (`pasos`), arriba: lista numerada en una línea. El paso actual va en
+  `--primario` con `aria-current="step"`; los completos llevan el ícono `check` y se pueden
+  tocar para volver; los siguientes van en `--texto-2` y no se pueden tocar. Por debajo de 600 px
+  se reduce a "Paso 3 de 4 · Kinesiólogo y franja".
+- **Resumen** (`resumen`, título "Tu turno"): columna derecha de 280 px con lo elegido en los pasos
+  anteriores (paciente con DNI y obra social, fecha y bloque, kinesiólogo y franja), cada dato con
+  su ícono y un enlace "Cambiar" que vuelve a ese paso. Por debajo de 900 px pasa arriba del paso,
+  como una franja compacta de una o dos líneas.
+- **Botones:** "Siguiente" (`boton`, ícono `siguiente` a la derecha) abajo a la derecha, habilitado
+  solo con el paso completo; "Atrás" (`boton secundario`, ícono `volver`) abajo a la izquierda. El
+  último paso dice "Confirmar turno". Enter envía el paso.
+- **Volver atrás no pierde lo elegido**, salvo lo que deja de valer: si cambia el paciente, la
+  fecha o el bloque, la franja elegida se descarta y se avisa con un `aviso` en el paso 3.
+- **Foco:** al cambiar de paso, el foco va al título del paso nuevo (`h2` con `tabindex="-1"`).
+- Sin animación entre pasos (§8): el paso nuevo reemplaza al anterior.
+
+### 6.2 Paciente encontrado y resultados de búsqueda
+
+Un paciente nunca se muestra como texto suelto ni como lista sin estilo.
+
+- **Tarjeta de paciente** (`paciente-tarjeta`): ícono `usuario` en un círculo de 40 px en
+  `--acento-suave`; nombre y apellido en `--texto-subtitulo` y peso 600; debajo, en `--texto-2`,
+  "DNI 30.123.456 · OSDE · 11 5555-0000" (DNI con puntos solo al mostrarlo). Las acciones van a la
+  derecha (en el asistente: "Cambiar paciente", `boton secundario`). Se usa en el paso 1 del
+  asistente cuando el DNI existe, y en el resumen en versión compacta.
+- **Lista de resultados** (`lista-pacientes`, en Pacientes): cada resultado es una fila con el
+  mismo contenido de la tarjeta, separada por un borde `--borde`, con hover en `--acento-suave` y el
+  ícono `siguiente` a la derecha. Toda la fila es el enlace a la ficha (RF-21). Arriba, la
+  cantidad: "3 pacientes". Sin resultados, un `info` con la acción de alta.
+
 ---
 
 ## 7. Componentes
@@ -248,6 +305,8 @@ que faltan.
 | Pastilla de estado | `estado estado-<nombre>` | §2.4. |
 | Mensaje | `error`, `aviso`, `info`, `exito` | §2.5. Borde izquierdo de 4 px. |
 | Diálogo | `dialogo-fondo`, `dialogo` | Fondo `rgb(0 0 0 / 0.45)` sin desenfoque; diálogo con `--radio-grande` y `--sombra-2`. Foco atrapado; Esc cierra. |
+| Asistente por pasos | `pasos`, `resumen` | §6.1. |
+| Tarjeta de paciente | `paciente-tarjeta`, `lista-pacientes` | §6.2. |
 | Indicador de conexión | `conexion` | Barra ámbar fija arriba del contenido con `sin-conexion` y "Sin conexión: la agenda puede estar desactualizada" (RF-45, T-32). |
 
 ---
@@ -287,3 +346,4 @@ que faltan.
    CSS global por debajo de 25 KB.
 7. Sin animaciones fuera de §8.
 8. Recorrido manual del usuario en los dos modos y en una pantalla chica.
+9. Asignar un turno no requiere desplazarse en 1280 × 720, y el resumen muestra lo elegido (§6.1).
