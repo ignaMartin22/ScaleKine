@@ -173,6 +173,13 @@ administrador (D-18). Las acciones sobre cuentas y kinesiólogos son exclusivas 
   *Por qué:* Son los datos fijos del paciente. Se cargan una sola vez, la primera vez que se
   acerca al consultorio. Un paciente sin obra social se registra como "Particular".
 
+- **RF-49** — *Evento:* Cuando la secretaría carga la obra social de un paciente, entonces el
+  sistema le sugiere "Particular" y las obras sociales ya registradas en otros pacientes, sin
+  repetidas, y le permite escribir una nueva.
+  *Por qué:* El consultorio trabaja con un puñado de obras sociales. Elegirlas de la lista evita
+  variantes del mismo nombre, y la lista crece sola a medida que se cargan pacientes, sin un
+  catálogo que mantener (sección 4; decisión del usuario).
+
 - **RF-18** — *Comportamiento no deseado:* Si el DNI no tiene un formato válido, o ya está
   registrado en otro paciente, o falta alguno de los datos de RF-17, entonces el sistema impide el
   alta o la edición e informa el motivo. Un DNI válido tiene 7 u 8 dígitos; al ingresarlo se
@@ -209,11 +216,10 @@ administrador (D-18). Las acciones sobre cuentas y kinesiólogos son exclusivas 
 - **RF-23** — *Evento:* Cuando la secretaría asigna un turno con paciente, kinesiólogo, fecha y
   franja válidos —la franja dentro del bloque de ese kinesiólogo, y el kinesiólogo con la cuenta
   activa—, y la franja está libre para el kinesiólogo y para el paciente, entonces el sistema
-  registra el turno en estado `reservado` junto con el coseguro según obra social y el coseguro
-  adicional.
-  *Por qué:* La reserva es el punto de partida del ciclo de vida. Los coseguros son del turno, no
-  del paciente, porque cambian de una vez a otra (D-5). Se admiten fechas ya vencidas para permitir
-  carga retroactiva (D-13).
+  registra el turno en estado `reservado` y, si ya se conoce, el coseguro abonado.
+  *Por qué:* La reserva es el punto de partida del ciclo de vida. El coseguro abonado es del turno,
+  no del paciente, porque cambia de una vez a otra (D-5). Se admiten fechas ya vencidas para
+  permitir carga retroactiva (D-13).
 
 - **RF-24** — *Comportamiento no deseado:* Si la franja ya tiene un turno activo de ese
   kinesiólogo, entonces el sistema impide asignar el turno e informa que la franja está ocupada.
@@ -230,10 +236,12 @@ administrador (D-18). Las acciones sobre cuentas y kinesiólogos son exclusivas 
   franja válidos, entonces el sistema impide la asignación e informa qué dato falta.
   *Por qué:* Un turno incompleto no es agendable.
 
-- **RF-27** — *Evento:* Cuando la secretaría modifica los coseguros de un turno, entonces el sistema
-  guarda los nuevos montos sin alterar su estado ni su franja.
-  *Por qué:* El monto puede no conocerse al asignar o cambiar antes de la sesión. Los coseguros son
-  informativos: el sistema no registra si se cobraron (sección 4).
+- **RF-27** — *Evento:* Cuando la secretaría registra, corrige o quita el coseguro abonado de un
+  turno que no está `anulado`, entonces el sistema guarda el monto sin alterar su estado ni su
+  franja. Un turno sin monto cargado figura como "sin abonar".
+  *Por qué:* Lo que el paciente debe pagar ya lo sabe el consultorio por su obra social; lo que le
+  interesa registrar es cuánto pagó, en el momento en que paga (decisión del usuario). Se puede
+  corregir porque un monto mal tipeado no debe quedar fijo.
 
 - **RF-28** — *Evento:* Cuando se asigna un turno, entonces el sistema genera un ticket descargable
   en PDF con un código QR que contiene la información del turno —número de turno, paciente,
@@ -326,17 +334,23 @@ cualquier otro (RF-35), como acción explícita y registrada.
   sistema le muestra únicamente sus propios turnos de la fecha elegida —por defecto, hoy—
   separados en **en espera**, ordenados por hora de llegada, y **próximos** (`reservado`), ordenados
   por franja. De cada turno ve nombre y apellido del paciente, franja, estado y, si está en espera,
-  la hora de llegada, además de todos los datos del paciente y los coseguros del turno. No puede
+  la hora de llegada, además de todos los datos del paciente. No ve el coseguro abonado. No puede
   ver turnos de otros kinesiólogos, ni consultar pacientes por fuera de sus propios turnos.
   *Por qué:* Es el monitor de agenda del kinesiólogo: a quién atiende ahora y a quién después.
   Dentro de sus turnos ve la misma información del paciente que la secretaría (D-15); fuera de su
-  agenda no tiene nada que ver (D-16).
+  agenda no tiene nada que ver (D-16). El cobro es tarea de la secretaría (decisión del usuario).
 
 - **RF-41** — *Evento:* Cuando la secretaría solicita la agenda, entonces el sistema le muestra los
   turnos de todos los kinesiólogos, filtrables por fecha y por kinesiólogo, con paciente (nombre y
   apellido, DNI, teléfono, obra social), kinesiólogo, fecha, franja, estado, hora de llegada si
-  corresponde, y coseguros.
+  corresponde, y coseguro abonado.
   *Por qué:* La secretaría coordina el día completo y es quien llama o cobra.
+
+- **RF-48** — *Restricción:* Mientras la secretaría ve la agenda de una fecha, entonces el sistema
+  muestra al pie lo recaudado: la suma de los coseguros abonados de los turnos listados, con el
+  filtro de kinesiólogo aplicado y sin contar los turnos `anulado`.
+  *Por qué:* Al cerrar el día el consultorio necesita saber cuánto entró en coseguros, sin sumarlo a
+  mano. Sigue al filtro para poder ver lo recaudado por cada kinesiólogo (decisión del usuario).
 
 - **RF-42** — *Evento:* Cuando la secretaría abre la agenda y existen turnos pendientes de marcar,
   de cualquier fecha, entonces el sistema muestra un aviso con su cantidad y permite ir a cada uno.
@@ -362,11 +376,11 @@ cualquier otro (RF-35), como acción explícita y registrada.
 ### 3.8 Auditoría e historial
 
 - **RF-46** — *Evento:* Cuando un turno se asigna, cambia de estado, se corrige, se reprograma o
-  cambian sus coseguros, entonces el sistema registra qué tipo de cambio fue, quién lo hizo y
+  cambia su coseguro abonado, entonces el sistema registra qué tipo de cambio fue, quién lo hizo y
   cuándo; en los cambios de estado registra además el estado anterior y el nuevo.
   *Por qué:* Ante un reclamo, el consultorio tiene que poder reconstruir quién hizo qué. En la
-  reprogramación no se guarda la ubicación anterior (D-9), pero sí el hecho. En el cambio de
-  coseguros tampoco se guardan los montos anteriores: el registro dice quién los cambió y cuándo
+  reprogramación no se guarda la ubicación anterior (D-9), pero sí el hecho. En el cambio del
+  coseguro abonado tampoco se guarda el monto anterior: el registro dice quién lo cambió y cuándo
   (decisión del usuario).
 
 - **RF-47** — *Evento:* Cuando la secretaría abre la ficha de un paciente, entonces el sistema
@@ -492,9 +506,11 @@ constitución.
 - **Acciones del kinesiólogo.** Su rol es de solo lectura.
 - **Recordatorios o avisos al paciente** por cualquier canal: email, SMS, WhatsApp o push. El
   contacto es telefónico y lo maneja la secretaría.
-- **Cobro, facturación y liquidación a obras sociales.** Los coseguros se registran a título
-  informativo; el sistema no sabe si se cobraron.
-- **Catálogo de obras sociales o validación de cobertura.** La obra social es un dato de texto.
+- **Facturación, comprobantes, liquidación a obras sociales y control de deudas.** El sistema
+  registra cuánto abonó el paciente de coseguro y lo suma por día (RF-27, RF-48), pero no calcula
+  cuánto debía pagar, no emite comprobantes ni lleva cuentas por paciente.
+- **Catálogo administrable de obras sociales o validación de cobertura.** La obra social es un dato
+  de texto; las sugerencias salen de los pacientes ya cargados (RF-49).
 - **Historia clínica, evolución del paciente o notas de la sesión.**
 - **Historial de ubicaciones de un turno reprogramado.**
 - **Lectura del QR por el sistema** (por ejemplo, escanear el ticket para marcar la llegada). El QR
@@ -524,7 +540,7 @@ constitución.
 | D-2 | Cada kinesiólogo atiende en un único bloque; varios kinesiólogos pueden compartir franja. | Hoy hay dos a la mañana y uno a la tarde. |
 | D-3 | El kinesiólogo es de solo lectura. | Todas las acciones las registra la secretaría, que es quien está en contacto con el paciente. |
 | D-4 | Los datos fijos del paciente se cargan una vez; los turnos siguientes se asignan con el DNI. | Evita recargar datos y duplicar pacientes. |
-| D-5 | Coseguro según obra social y coseguro adicional son datos del turno, informativos. | Cambian de un turno a otro. Registrar cobros sería facturación. |
+| D-5 | El turno registra el coseguro abonado, un solo monto, y la agenda lo suma por día. No se registra cuánto debía pagar. | Lo que corresponde pagar ya lo sabe el consultorio por la obra social; lo que necesita es saber cuánto entró (decisión del usuario, 2026-10-15). Comprobantes y deudas serían facturación. |
 | D-6 | El contacto del paciente es solo telefónico y no hay recordatorio automático. | Sin email no hay canal automatizable dentro del alcance. |
 | D-7 | `en_espera` y `asistio` son estados distintos; la secretaría cierra el turno al terminar la sesión. | El kinesiólogo necesita distinguir quién espera de quién ya pasó, y no puede cerrar turnos él mismo. |
 | D-8 | La inasistencia la marca la secretaría a mano, con un aviso de turnos pendientes de marcar. | Solo la secretaría sabe si el paciente avisó o llegó tarde. El aviso evita turnos activos olvidados. |
@@ -611,6 +627,8 @@ El MVP se considera terminado cuando **todos** los puntos siguientes son verific
 ### 7.3 Pacientes
 
 - [ ] Un paciente nuevo se registra con DNI, nombre y apellido, teléfono y obra social (RF-17).
+- [ ] Al cargar la obra social se sugieren "Particular" y las ya registradas en otros pacientes,
+      sin repetidas (RF-49).
 - [ ] Un DNI inválido o repetido, o un dato faltante, impide el alta y la edición (RF-18).
 - [ ] Al ingresar un DNI existente se recuperan sus datos; uno inexistente ofrece el alta (RF-19).
 - [ ] Los datos de un paciente se pueden editar y el DNI se revalida (RF-20).
@@ -623,12 +641,14 @@ El MVP se considera terminado cuando **todos** los puntos siguientes son verific
       excluyen las ocupadas por cada kinesiólogo y por el paciente (RF-22).
 - [ ] Un kinesiólogo con la cuenta desactivada no aparece en la disponibilidad y no se le asignan
       turnos (RF-22, RF-23).
-- [ ] Un turno se asigna en `reservado` con sus coseguros, y admite fecha vencida (RF-23).
+- [ ] Un turno se asigna en `reservado`, con o sin coseguro abonado, y admite fecha vencida
+      (RF-23).
 - [ ] No se asigna un turno en una franja ocupada por el mismo kinesiólogo; sí con otro
       kinesiólogo (RF-24).
 - [ ] No se asigna un turno a un paciente que ya tiene uno activo en esa franja (RF-25).
 - [ ] Un turno con datos faltantes no se asigna, y el mensaje indica cuál falta (RF-26).
-- [ ] Los coseguros de un turno se pueden modificar sin alterar estado ni franja (RF-27).
+- [ ] El coseguro abonado de un turno se puede registrar, corregir o quitar sin alterar estado ni
+      franja, salvo en un turno `anulado` (RF-27).
 - [ ] Al asignar un turno se puede descargar su ticket PDF con QR y los datos del consultorio, y
       vuelve a descargarse con los datos vigentes tras una reprogramación (RF-28).
 
@@ -652,10 +672,12 @@ El MVP se considera terminado cuando **todos** los puntos siguientes son verific
 ### 7.6 Agenda y tiempo real
 
 - [ ] El kinesiólogo ve solo sus turnos, separados en espera (por llegada) y próximos (por
-      franja), con todos los datos del paciente y los coseguros; no puede consultar agendas ajenas,
-      buscar pacientes ni ver historiales (RF-40).
+      franja), con todos los datos del paciente y sin el coseguro abonado; no puede consultar
+      agendas ajenas, buscar pacientes ni ver historiales (RF-40).
 - [ ] La secretaría ve todos los turnos filtrables por fecha y kinesiólogo, con todos los datos
       (RF-41).
+- [ ] Al pie de la agenda de la secretaría figura lo recaudado: la suma de los coseguros abonados
+      de los turnos listados, según el filtro y sin anulados (RF-48).
 - [ ] La agenda de la secretaría avisa de los turnos pendientes de marcar (RF-42).
 - [ ] El kinesiólogo ve un turno pasar a `en_espera` sin recargar (RF-43).
 - [ ] Asignaciones, cambios, correcciones y reprogramaciones se propagan a todas las agendas
@@ -664,7 +686,7 @@ El MVP se considera terminado cuando **todos** los puntos siguientes son verific
 
 ### 7.7 Auditoría e historial
 
-- [ ] Cada asignación, cambio de estado, corrección, reprogramación y cambio de coseguros registra
+- [ ] Cada asignación, cambio de estado, corrección, reprogramación y cambio del coseguro abonado registra
       tipo, autor y momento, y los cambios de estado registran estado anterior y nuevo (RF-46).
 - [ ] La ficha del paciente muestra sus próximos turnos (del más cercano al más lejano) y su
       historial (del más reciente al más antiguo); el kinesiólogo no puede consultarla (RF-47).
