@@ -1,0 +1,24 @@
+# Complemento SOLO para pruebas locales (T-37): agrega un S3 compatible con Object Lock (MinIO) y apunta
+# `respaldo` y `db` a él. Sin puertos publicados. Nunca se usa en producción.
+#   docker compose -p scalekine-t37-a -f docker-compose.prod.yml -f infra/prueba/docker-compose.s3.yml ...
+services:
+  s3:
+    image: scalekine-prueba-s3:t37
+    build: { context: infra/prueba/s3 }
+    env_file: [{ path: "${DIR_ENV:?Falta DIR_ENV}/.env.s3" }]
+    volumes: [s3_datos:/datos, s3_certs:/certs]
+    networks: [salida]
+    healthcheck:
+      test: ["CMD", "curl", "-ksf", "https://localhost/minio/health/live"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+  respaldo:
+    volumes: [s3_certs:/certs:ro]
+  db:
+    volumes: [s3_certs:/certs:ro]
+    depends_on:
+      s3: { condition: service_healthy }
+volumes:
+  s3_datos: {}
+  s3_certs: {}

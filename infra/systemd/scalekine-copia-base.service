@@ -1,0 +1,12 @@
+# Copia base semanal de pgBackRest. SOLO perfil económico (docs/despliegue.md §8.1).
+[Unit]
+Description=Scalekine - copia base semanal del archivo continuo (pgBackRest)
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+User=deploy
+WorkingDirectory=/opt/scalekine
+ExecStart=/usr/bin/docker compose -f docker-compose.prod.yml exec -T -u postgres db pgbackrest --type=full backup
+TimeoutStartSec=4h

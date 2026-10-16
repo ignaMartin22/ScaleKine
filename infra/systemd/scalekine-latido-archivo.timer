@@ -1,0 +1,11 @@
+# Cada hora. Si el archivo está atrasado el servicio falla y no envía el latido; healthchecks.io avisa
+# al administrador si pasan 2 horas sin latido (docs/despliegue.md §11). SOLO perfil económico.
+[Unit]
+Description=Scalekine - latido horario del archivo continuo
+
+[Timer]
+OnCalendar=hourly
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,11 @@
+# Todos los días a las 03:30 hora argentina. Persistent=true: si el servidor estaba apagado a esa hora,
+# corre al encender (docs/despliegue.md §8.2).
+[Unit]
+Description=Scalekine - copia externa diaria, 03:30 hora argentina
+
+[Timer]
+OnCalendar=*-*-* 03:30 America/Argentina/Buenos_Aires
+Persistent=true
+
+[Install]
+WantedBy=timers.target
