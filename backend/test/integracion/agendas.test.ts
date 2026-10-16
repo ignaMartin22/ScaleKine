@@ -50,7 +50,7 @@ describe('GET /api/agenda (RF-41, RF-34)', () => {
     const k2 = await crearKinesiologo();
     const paciente = await crearPaciente({ dni: '90111222', nombre: 'Paciente Ficticio Uno' });
     const turno = await crearTurno({ fecha: HOY, horaInicio: '08:45', kinesiologoId: k1.id, pacienteId: paciente.id });
-    await db.turno.update({ where: { id: turno.id }, data: { coseguroObraSocial: '1500.5', coseguroAdicional: '200' } });
+    await db.turno.update({ where: { id: turno.id }, data: { coseguroAbonado: '1500.5' } });
     const otro = await crearTurno({ fecha: HOY, horaInicio: '08:00', kinesiologoId: k2.id });
     await crearTurno({ fecha: OTRO_DIA, kinesiologoId: k1.id });
 
@@ -67,8 +67,7 @@ describe('GET /api/agenda (RF-41, RF-34)', () => {
       estado: 'reservado',
       llegadaEn: null,
       horaLlegada: null,
-      coseguroObraSocial: '1500.50',
-      coseguroAdicional: '200.00',
+      coseguroAbonado: '1500.50',
       paciente: {
         id: paciente.id,
         nombre: 'Paciente Ficticio Uno',
@@ -235,7 +234,7 @@ describe('GET /api/agenda (RF-41, RF-34)', () => {
     const { cookie } = await ingresarComo(app, 'secretaria');
     const paciente = await crearPaciente({ dni: '90555666', nombre: 'Paciente Reservado Log' });
     const turno = await crearTurno({ fecha: HOY, pacienteId: paciente.id });
-    await db.turno.update({ where: { id: turno.id }, data: { coseguroObraSocial: '7391.37' } });
+    await db.turno.update({ where: { id: turno.id }, data: { coseguroAbonado: '7391.37' } });
 
     await agenda(app, `?fecha=${HOY}`, cookie);
 
@@ -246,12 +245,98 @@ describe('GET /api/agenda (RF-41, RF-34)', () => {
   });
 });
 
+describe('recaudado de GET /api/agenda (RF-48)', () => {
+  const abonar = (id: number, monto: string | null) =>
+    db.turno.update({ where: { id }, data: { coseguroAbonado: monto } });
+
+  it('suma los abonos con decimales exactos, sin coma flotante (0.10 + 0.20 = 0.30)', async () => {
+    const { app } = await crearAppDePrueba();
+    const { cookie } = await ingresarComo(app, 'secretaria');
+    const k = await crearKinesiologo();
+    await abonar((await crearTurno({ fecha: HOY, horaInicio: '08:00', kinesiologoId: k.id })).id, '0.10');
+    await abonar((await crearTurno({ fecha: HOY, horaInicio: '08:45', kinesiologoId: k.id })).id, '0.20');
+
+    const res = await agenda(app, `?fecha=${HOY}`, cookie);
+
+    expect(res.status).toBe(200);
+    expect(res.body.recaudado).toBe('0.30');
+  });
+
+  it('no cuenta los turnos anulados, aunque tengan monto, y sí los demás estados', async () => {
+    const { app } = await crearAppDePrueba();
+    const { cookie } = await ingresarComo(app, 'secretaria');
+    const k = await crearKinesiologo();
+    const horas = ['08:00', '08:45', '09:30', '10:15', '11:00'] as const;
+    const estados = ['reservado', 'en_espera', 'asistio', 'no_asistio', 'anulado'] as const;
+    for (const [i, estado] of estados.entries()) {
+      const t = await crearTurno({ fecha: HOY, horaInicio: horas[i]!, kinesiologoId: k.id, estado });
+      await abonar(t.id, '100.50');
+    }
+
+    const res = await agenda(app, `?fecha=${HOY}`, cookie);
+
+    expect(res.body.turnos).toHaveLength(5);
+    expect(res.body.recaudado).toBe('402.00');
+  });
+
+  it('sigue el filtro de kinesiólogo y la fecha', async () => {
+    const { app } = await crearAppDePrueba();
+    const { cookie } = await ingresarComo(app, 'secretaria');
+    const k1 = await crearKinesiologo();
+    const k2 = await crearKinesiologo();
+    await abonar((await crearTurno({ fecha: HOY, horaInicio: '08:00', kinesiologoId: k1.id })).id, '1500.25');
+    await abonar((await crearTurno({ fecha: HOY, horaInicio: '08:00', kinesiologoId: k2.id })).id, '300');
+    await abonar((await crearTurno({ fecha: OTRO_DIA, horaInicio: '08:00', kinesiologoId: k1.id })).id, '9999');
+
+    const todos = await agenda(app, `?fecha=${HOY}`, cookie);
+    const deUno = await agenda(app, `?fecha=${HOY}&kinesiologoId=${k1.id}`, cookie);
+    const deOtro = await agenda(app, `?fecha=${HOY}&kinesiologoId=${k2.id}`, cookie);
+
+    expect(todos.body.recaudado).toBe('1800.25');
+    expect(deUno.body.recaudado).toBe('1500.25');
+    expect(deOtro.body.recaudado).toBe('300.00');
+  });
+
+  it('sin abonos, o sin turnos, es 0.00; un turno sin abonar figura con null', async () => {
+    const { app } = await crearAppDePrueba();
+    const { cookie } = await ingresarComo(app, 'secretaria');
+    await crearTurno({ fecha: HOY });
+
+    const conTurno = await agenda(app, `?fecha=${HOY}`, cookie);
+    const vacio = await agenda(app, `?fecha=${OTRO_DIA}`, cookie);
+
+    expect(conTurno.body.turnos[0].coseguroAbonado).toBeNull();
+    expect(conTurno.body.recaudado).toBe('0.00');
+    expect(vacio.body).toEqual({ fecha: OTRO_DIA, turnos: [], recaudado: '0.00' });
+  });
+
+  it('el administrador también lo recibe y el kinesiólogo sigue con 403', async () => {
+    const { app } = await crearAppDePrueba();
+    const admin = await ingresarComo(app, 'administrador');
+    const kin = await ingresarComoKinesiologo(app);
+    await abonar((await crearTurno({ fecha: HOY })).id, '12.34');
+
+    expect((await agenda(app, `?fecha=${HOY}`, admin.cookie)).body.recaudado).toBe('12.34');
+    expect((await agenda(app, `?fecha=${HOY}`, kin.cookie)).status).toBe(403);
+  });
+
+  it('no registra el total en los logs', async () => {
+    const { app, texto } = await crearAppDePrueba();
+    const { cookie } = await ingresarComo(app, 'secretaria');
+    await abonar((await crearTurno({ fecha: HOY })).id, '8642.97');
+
+    await agenda(app, `?fecha=${HOY}`, cookie);
+
+    expect(texto()).not.toContain('8642');
+  });
+});
+
 describe('GET /api/mi-agenda (RF-40, D-15, D-16)', () => {
   /** Pone al turno `en_espera` con la hora de llegada indicada (UTC). */
   const enEspera = (id: number, llegada: string) =>
     db.turno.update({ where: { id }, data: { estado: 'en_espera', llegadaEn: new Date(llegada) } });
 
-  it('separa en espera (por hora de llegada) y próximos (por franja), con los datos del paciente y los coseguros', async () => {
+  it('separa en espera (por hora de llegada) y próximos (por franja), con los datos del paciente y sin el monto abonado', async () => {
     const { app } = await crearAppDePrueba();
     const { cookie, kinesiologo } = await ingresarComoKinesiologo(app);
     const paciente = await crearPaciente({ dni: '90333444', nombre: 'Paciente Ficticio Dos' });
@@ -261,7 +346,7 @@ describe('GET /api/mi-agenda (RF-40, D-15, D-16)', () => {
     await enEspera(llegoSegundo.id, '2026-10-14T11:20:00Z');
     await enEspera(llegoPrimero.id, '2026-10-14T11:05:00Z');
     const tarde = await crearTurno({ fecha: HOY, horaInicio: '11:00', kinesiologoId: kinesiologo.id, pacienteId: paciente.id });
-    await db.turno.update({ where: { id: tarde.id }, data: { coseguroObraSocial: '800', coseguroAdicional: '50.25' } });
+    await db.turno.update({ where: { id: tarde.id }, data: { coseguroAbonado: '800' } });
     const temprano = await crearTurno({ fecha: HOY, horaInicio: '10:15', kinesiologoId: kinesiologo.id });
     // Cerrados: no aparecen en ninguna lista.
     await crearTurno({ fecha: HOY, horaInicio: '08:45', kinesiologoId: kinesiologo.id, estado: 'asistio' });
@@ -286,10 +371,24 @@ describe('GET /api/mi-agenda (RF-40, D-15, D-16)', () => {
       estado: 'reservado',
       llegadaEn: null,
       horaLlegada: null,
-      coseguroObraSocial: '800.00',
-      coseguroAdicional: '50.25',
       paciente: { nombre: 'Paciente Ficticio Dos', dni: '90333444', telefono: paciente.telefono, obraSocial: 'Particular' },
     });
+  });
+
+  it('no incluye el monto abonado en ningún lugar del cuerpo (RF-40)', async () => {
+    const { app } = await crearAppDePrueba();
+    const { cookie, kinesiologo } = await ingresarComoKinesiologo(app);
+    const espera = await crearTurno({ fecha: HOY, horaInicio: '08:00', kinesiologoId: kinesiologo.id });
+    await enEspera(espera.id, '2026-10-14T11:00:00Z');
+    const proximo = await crearTurno({ fecha: HOY, horaInicio: '08:45', kinesiologoId: kinesiologo.id });
+    await db.turno.updateMany({ where: { id: { in: [espera.id, proximo.id] } }, data: { coseguroAbonado: '4321.09' } });
+
+    const res = await miAgenda(app, `?fecha=${HOY}`, cookie);
+
+    expect(res.status).toBe(200);
+    expect(res.body.enEspera).toHaveLength(1);
+    expect(res.body.proximos).toHaveLength(1);
+    expect(JSON.stringify(res.body)).not.toMatch(/coseguro|abono|abonad|recaudado|4321/i);
   });
 
   it('no trae acciones: ni en la proyección ni en ningún lugar del cuerpo', async () => {
@@ -450,7 +549,7 @@ describe('GET /api/mi-agenda (RF-40, D-15, D-16)', () => {
     const { cookie, kinesiologo } = await ingresarComoKinesiologo(app);
     const paciente = await crearPaciente({ dni: '90777888', nombre: 'Paciente Reservado Log' });
     const turno = await crearTurno({ fecha: HOY, kinesiologoId: kinesiologo.id, pacienteId: paciente.id });
-    await db.turno.update({ where: { id: turno.id }, data: { coseguroAdicional: '4826.19' } });
+    await db.turno.update({ where: { id: turno.id }, data: { coseguroAbonado: '4826.19' } });
     const antes = await db.turno.findMany({ orderBy: { id: 'asc' } });
 
     const res = await miAgenda(app, `?fecha=${HOY}`, cookie);

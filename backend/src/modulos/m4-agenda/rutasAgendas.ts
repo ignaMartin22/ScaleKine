@@ -16,17 +16,19 @@ import type { ServicioAgendas } from './servicioAgendas.js';
  * - `GET /api/agenda?[fecha=AAAA-MM-DD][&kinesiologoId=N]` es la agenda de la secretaría (RF-41,
  *   RF-34). Exige sesión y `autorizarEscritura('turnos')`: secretaría y administrador; el kinesiólogo
  *   recibe 403 (D-16). 200 `{ fecha, turnos: [{ id, fecha, horaInicio, horaFin, estado, llegadaEn
- *   (ISO o null), coseguroObraSocial, coseguroAdicional (texto con dos decimales o null), paciente:
+ *   (ISO o null), coseguroAbonado (texto con dos decimales o null = sin abonar), paciente:
  *   { id, nombre, dni, telefono, obraSocial }, kinesiologo: { id, nombre }, acciones: {
- *   transiciones: [{ hacia, accion }], puedeCorregir } }] }` con todos los turnos de la fecha en
+ *   transiciones: [{ hacia, accion }], puedeCorregir } }], recaudado }` con todos los turnos de la fecha en
  *   cualquier estado, por franja, kinesiólogo e id. `acciones` sale de `accionesDisponibles` (la
  *   tabla de transiciones de M3) para el rol de la sesión. `kinesiologoId` filtra a uno; si no
- *   existe, la lista es vacía. 400 `datos_invalidos` ante una fecha o un identificador mal formados.
+ *   existe, la lista es vacía. `recaudado` (RF-48) es la suma de los `coseguroAbonado` de los turnos
+ *   devueltos (con el filtro aplicado, sin contar los `anulado`), como texto con dos decimales
+ *   ('0.00' si no hay ninguno), calculada con enteros de centavos y no con coma flotante. 400 `datos_invalidos` ante una fecha o un identificador mal formados.
  * - `GET /api/mi-agenda?[fecha=AAAA-MM-DD]` es la agenda del kinesiólogo (RF-40, D-15). Exige
  *   sesión y `autorizarAgendaPropia()`: solo el rol kinesiólogo; secretaría y administrador reciben
  *   403 (usan `/api/agenda`). El kinesiólogo sale de la sesión (el `Kinesiologo` cuya cuenta es la
  *   de la sesión), nunca de la petición: cualquier `kinesiologoId` u otro parámetro de más se
- *   ignora. 200 `{ fecha, enEspera: [turno], proximos: [turno] }`, con `enEspera` (estado
+ *   ignora. Sin `coseguroAbonado`: el kinesiólogo no ve el monto (RF-40). 200 `{ fecha, enEspera: [turno], proximos: [turno] }`, con `enEspera` (estado
  *   `en_espera`) por hora de llegada y `proximos` (`reservado`) por franja; los turnos cerrados no
  *   aparecen. Cada turno trae la misma proyección que en la agenda de secretaría sin `kinesiologo`
  *   ni `acciones` (el kinesiólogo no escribe) y con el paciente sin `id` (D-16: no consulta
@@ -35,8 +37,8 @@ import type { ServicioAgendas } from './servicioAgendas.js';
  *   `autorizarLectura('pacientes')`, como el resto de la ficha: secretaría y administrador; el
  *   kinesiólogo recibe 403 aunque el paciente tenga turnos con él (D-16). 200 `{ proximos: [turno],
  *   historial: [turno] }` con todos los turnos del paciente, en cualquier estado y con cualquier
- *   kinesiólogo. Cada turno es `{ id, fecha, horaInicio, horaFin, estado, llegadaEn, coseguroObraSocial,
- *   coseguroAdicional, kinesiologo: { id, nombre } }` (sin `paciente` ni `acciones`). Criterio: un turno
+ *   kinesiólogo. Cada turno es `{ id, fecha, horaInicio, horaFin, estado, llegadaEn,
+ *   coseguroAbonado, kinesiologo: { id, nombre } }` (sin `paciente` ni `acciones`). Criterio: un turno
  *   es del `historial` si su franja ya transcurrió (`fecha + horaInicio + 45 min` anterior al
  *   "ahora" del reloj inyectable, en hora de pared de la zona del consultorio, al minuto), el mismo
  *   criterio que el aviso de pendientes (`franjaTranscurrida`); en el minuto exacto de fin y durante
@@ -76,7 +78,7 @@ export function crearRutasAgendas({
         const { query } = datosValidados(res.locals, esquemaSecretaria);
         const fecha = query.fecha ?? servicio.hoy();
         const { usuario } = sesionActual(res);
-        res.json({ fecha, turnos: await servicio.deSecretaria(usuario.rol, fecha, query.kinesiologoId) });
+        res.json({ fecha, ...(await servicio.deSecretaria(usuario.rol, fecha, query.kinesiologoId)) });
       } catch (err) {
         next(err);
       }

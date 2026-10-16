@@ -13,9 +13,8 @@ export interface DatosAsignacion {
   fecha: string;
   /** Hora de inicio de la franja, 'HH:MM'. */
   horaInicio: string;
-  /** Montos decimales en pesos, como texto ('1500.50'); ausente o null = sin cargar (RF-27). */
-  coseguroObraSocial?: string | null | undefined;
-  coseguroAdicional?: string | null | undefined;
+  /** Monto decimal en pesos, como texto ('1500.50'); ausente o null = sin abonar (RF-27). */
+  coseguroAbonado?: string | null | undefined;
 }
 
 /** Nueva ubicación que la secretaría elige al reprogramar (RF-36). El autor sale de la sesión. */
@@ -35,8 +34,7 @@ export interface TurnoAsignado {
   fecha: string;
   horaInicio: string;
   estado: 'reservado';
-  coseguroObraSocial: string | null;
-  coseguroAdicional: string | null;
+  coseguroAbonado: string | null;
 }
 
 /** Turno tras una transición o una corrección. `llegadaEn` es ISO 8601 en UTC, o null (RF-30). */
@@ -48,8 +46,7 @@ export interface TurnoActualizado {
   horaInicio: string;
   estado: EstadoTurno;
   llegadaEn: string | null;
-  coseguroObraSocial: string | null;
-  coseguroAdicional: string | null;
+  coseguroAbonado: string | null;
 }
 
 /** Índices únicos parciales de la migración `restricciones_manuales` (plan.md §2.3). */
@@ -86,6 +83,8 @@ const errorPacienteOcupado = () =>
   new ErrorNegocio('paciente_con_turno_en_franja', 'El paciente ya tiene un turno activo en esa franja.', 409);
 
 const errorTurnoNoEncontrado = () => new ErrorNegocio('turno_no_encontrado', 'El turno no existe.', 404);
+const errorAbonoEnAnulado = () =>
+  new ErrorNegocio('turno_anulado', 'Un turno anulado no admite registrar el coseguro abonado.', 409);
 const errorTurnoModificado = () =>
   new ErrorNegocio(
     'turno_modificado',
@@ -119,8 +118,7 @@ interface FilaTurno {
   horaInicio: string;
   estado: EstadoTurno;
   llegadaEn: Date | null;
-  coseguroObraSocial: { toFixed(n: number): string } | null;
-  coseguroAdicional: { toFixed(n: number): string } | null;
+  coseguroAbonado: { toFixed(n: number): string } | null;
 }
 
 function aActualizado(t: FilaTurno): TurnoActualizado {
@@ -132,8 +130,7 @@ function aActualizado(t: FilaTurno): TurnoActualizado {
     horaInicio: t.horaInicio,
     estado: t.estado,
     llegadaEn: t.llegadaEn?.toISOString() ?? null,
-    coseguroObraSocial: t.coseguroObraSocial?.toFixed(2) ?? null,
-    coseguroAdicional: t.coseguroAdicional?.toFixed(2) ?? null,
+    coseguroAbonado: t.coseguroAbonado?.toFixed(2) ?? null,
   };
 }
 
@@ -190,8 +187,7 @@ export function crearServicioTurnos({
               fecha: new Date(`${datos.fecha}T00:00:00Z`),
               horaInicio: datos.horaInicio,
               estado: 'reservado',
-              coseguroObraSocial: datos.coseguroObraSocial ?? null,
-              coseguroAdicional: datos.coseguroAdicional ?? null,
+              coseguroAbonado: datos.coseguroAbonado ?? null,
               creadoPorId: autorId,
               creadoEn: ahora,
             },
@@ -209,8 +205,7 @@ export function crearServicioTurnos({
           fecha: datos.fecha,
           horaInicio: turno.horaInicio,
           estado: 'reservado',
-          coseguroObraSocial: turno.coseguroObraSocial?.toFixed(2) ?? null,
-          coseguroAdicional: turno.coseguroAdicional?.toFixed(2) ?? null,
+          coseguroAbonado: turno.coseguroAbonado?.toFixed(2) ?? null,
         };
       } catch (err) {
         return traducirOcupacion(err);
@@ -252,7 +247,7 @@ export function crearServicioTurnos({
 
     /**
      * Reprograma (RF-36): mueve el mismo turno `reservado` a otra fecha, franja o kinesiólogo; conserva
-     * estado, paciente y coseguros, y no guarda la ubicación anterior (D-9): el evento `reprogramacion`
+     * estado, paciente y abono, y no guarda la ubicación anterior (D-9): el evento `reprogramacion`
      * no lleva datos de ella (RF-46). Con un kinesiólogo inexistente o de cuenta desactivada, 404 (como
      * al asignar); la franja se valida contra la grilla del bloque del kinesiólogo de destino (RF-15).
      * Reprogramar a la misma ubicación exacta se rechaza (409), sin evento. La actualización está
@@ -317,21 +312,24 @@ export function crearServicioTurnos({
     },
 
     /**
-     * Cambia los coseguros (RF-27) sin tocar estado ni franja. `null` deja el monto sin cargar. Registra
-     * un evento `modificacion_coseguros` en la misma transacción (RF-46), sin estados ni montos
-     * anteriores.
+     * Registra, corrige o quita el coseguro abonado (RF-27) sin tocar estado ni franja. `null` deja
+     * el turno sin abonar. Un turno `anulado` no admite abono (409, sin evento). La condición de
+     * estado va en la misma escritura, así una anulación concurrente no deja pasar el abono. Registra
+     * un evento `modificacion_abono` en la misma transacción (RF-46), sin el monto anterior.
      */
-    async modificarCoseguros(
-      turnoId: number,
-      coseguros: { coseguroObraSocial: string | null; coseguroAdicional: string | null },
-      autorId: number,
-    ): Promise<TurnoActualizado> {
+    async registrarAbono(turnoId: number, monto: string | null, autorId: number): Promise<TurnoActualizado> {
       const ahora = reloj.ahora();
       const turno = await db.$transaction(async (tx) => {
-        const { count } = await tx.turno.updateMany({ where: { id: turnoId }, data: coseguros });
-        if (count !== 1) throw errorTurnoNoEncontrado();
+        const { count } = await tx.turno.updateMany({
+          where: { id: turnoId, estado: { not: 'anulado' } },
+          data: { coseguroAbonado: monto },
+        });
+        if (count !== 1) {
+          const existe = await tx.turno.findUnique({ where: { id: turnoId }, select: { id: true } });
+          throw existe ? errorAbonoEnAnulado() : errorTurnoNoEncontrado();
+        }
         await tx.turnoEvento.create({
-          data: { turnoId, tipo: 'modificacion_coseguros', autorId, ocurridoEn: ahora },
+          data: { turnoId, tipo: 'modificacion_abono', autorId, ocurridoEn: ahora },
         });
         return aActualizado(await tx.turno.findUniqueOrThrow({ where: { id: turnoId } }));
       });

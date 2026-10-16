@@ -33,6 +33,11 @@ import { MINIMO_BUSQUEDA_NOMBRE, type ServicioPacientes } from './pacientes.js';
  *   pacientes ordenados por nombre. 200 `{ pacientes: [...] }`.
  *   Exactamente uno de `dni` y `nombre`; ninguno o ambos es 400.
  *
+ * - `GET /api/obras-sociales` (RF-49): las obras sociales distintas ya guardadas en pacientes más
+ *   "Particular", sin repetidas y ordenadas. Misma autorización de lectura que el resto (secretaría
+ *   y administrador; el kinesiólogo recibe 403). 200 `{ obrasSociales: string[] }`: solo nombres de
+ *   obras sociales, ningún otro dato.
+ *
  * Por qué query y no `GET /pacientes/dni/:dni`: el registro de peticiones descarta la query string
  * (`logger.ts`), mientras que un DNI en la ruta quedaría en los logs (CLAUDE.md). Y un solo
  * recurso con filtros sirve a la vez a la asignación de turnos (RF-19) y a la sección Pacientes
@@ -101,6 +106,14 @@ export function crearRutasPacientes({
           ? await servicio.buscarPorDni(query.dni)
           : await servicio.buscarPorNombre(query.nombre ?? '');
       res.json({ pacientes });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  router.get('/obras-sociales', exigirSesion, leer, async (_req, res, next) => {
+    try {
+      res.json({ obrasSociales: await servicio.obrasSociales() });
     } catch (err) {
       next(err);
     }

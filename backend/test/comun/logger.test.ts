@@ -28,7 +28,7 @@ describe('logger con redacción (RNF-08)', () => {
           telefono: '1155550000',
           obraSocial: 'Obra Social Ficticia',
         },
-        turno: { coseguroObraSocial: 1234.5, coseguroAdicional: 678.9 },
+        turno: { coseguroAbonado: 1234.5, monto: 678.9, recaudado: '99.5' },
         credenciales: { contrasena: 'clave-ficticia-123', token: 'token-ficticio-abc' },
       },
       'prueba',
@@ -40,6 +40,7 @@ describe('logger con redacción (RNF-08)', () => {
       'Obra Social Ficticia',
       '1234.5',
       '678.9',
+      '99.5',
       'clave-ficticia-123',
       'token-ficticio-abc',
     ]) {

@@ -12,14 +12,13 @@ import type { ServicioTurnos } from './turnos.js';
  * Turnos (M3), montados bajo `/api`. Exigen sesión y `autorizarEscritura('turnos')` (secretaría y
  * administrador; el kinesiólogo recibe 403, RF-03).
  *
- * - `POST /api/turnos` `{ pacienteId, kinesiologoId, fecha, horaInicio, coseguroObraSocial?,
- *   coseguroAdicional? }` asigna un turno en `reservado` (RF-23). `fecha` es 'AAAA-MM-DD' y admite
+ * - `POST /api/turnos` `{ pacienteId, kinesiologoId, fecha, horaInicio, coseguroAbonado? }` asigna un turno en `reservado` (RF-23). `fecha` es 'AAAA-MM-DD' y admite
  *   fechas pasadas; `horaInicio` es 'HH:MM' y debe ser una franja de la grilla del bloque del
- *   kinesiólogo, de lunes a viernes (RF-15). Los coseguros son montos en pesos, como número o texto
- *   decimal con hasta dos decimales, no negativos; ausentes, null o texto vacío quedan sin cargar. El autor del
+ *   kinesiólogo, de lunes a viernes (RF-15). El coseguro abonado es un monto en pesos, como número o texto
+ *   decimal con hasta dos decimales, no negativo; ausente, null o texto vacío queda sin abonar. El autor del
  *   evento sale de la sesión: un `autorId` o `estado` en el cuerpo se ignora.
  *   201 `{ turno: { id, pacienteId, kinesiologoId, fecha, horaInicio, estado: 'reservado',
- *   coseguroObraSocial, coseguroAdicional } }` (los montos, texto con dos decimales o null). El
+ *   coseguroAbonado } }` (el monto, texto con dos decimales o null). El
  *   `id` es el número de turno del ticket (RF-28).
  *   400 `dato_faltante` (RF-26: el mensaje nombra lo que falta: paciente, kinesiólogo, fecha o
  *   franja), 400 `datos_invalidos` (con `campos`), 400 `franja_invalida`, 404
@@ -29,8 +28,8 @@ import type { ServicioTurnos } from './turnos.js';
  * - `POST /api/turnos/:id/transicion` `{ hacia }` aplica una acción del flujo normal (RF-30 a
  *   RF-33): `hacia` es uno de los cinco estados y el cambio debe ser una fila de la tabla de
  *   `transiciones.ts`. Al pasar a `en_espera` registra `llegadaEn`. 200 `{ turno: { id, pacienteId,
- *   kinesiologoId, fecha, horaInicio, estado, llegadaEn (ISO o null), coseguroObraSocial,
- *   coseguroAdicional } }`. 404 `turno_no_encontrado`, 409 `transicion_no_permitida` (la acción no
+ *   kinesiologoId, fecha, horaInicio, estado, llegadaEn (ISO o null),
+ *   coseguroAbonado } }`. 404 `turno_no_encontrado`, 409 `transicion_no_permitida` (la acción no
  *   sale del estado actual, o ya está en ese estado), 409 `turno_modificado` (otro pedido cambió el
  *   estado en el medio; sin evento).
  * - `POST /api/turnos/:id/correccion` `{ estado }` lleva el turno a cualquier otro estado (RF-35),
@@ -39,15 +38,16 @@ import type { ServicioTurnos } from './turnos.js';
  *   se conserva. Misma respuesta 200. 404, 409 `correccion_sin_cambio` (mismo estado), 409
  *   `turno_modificado`, 409 `franja_ocupada` / `paciente_con_turno_en_franja` (RF-37: hacia un
  *   estado activo sobre una franja ocupada; no modifica el turno ni escribe evento).
- * - `PUT /api/turnos/:id/coseguros` `{ coseguroObraSocial, coseguroAdicional }` reemplaza ambos
- *   montos (RF-27), con el mismo formato que al asignar. Las dos claves son obligatorias (una
- *   ausente da 400, para no borrar un monto sin querer); `null` o texto vacío = sin cargar.
- *   No altera estado ni franja. Registra un evento `modificacion_coseguros` (RF-46). 200 con el
- *   mismo `{ turno }`; 400 `datos_invalidos`; 404 `turno_no_encontrado`.
+ * - `PUT /api/turnos/:id/abono` `{ monto }` registra, corrige o quita el coseguro abonado (RF-27),
+ *   con el mismo formato que al asignar. La clave es obligatoria (ausente da 400, para no borrar un
+ *   monto sin querer); `null` o texto vacío = sin abonar. No altera estado ni franja. Registra un
+ *   evento `modificacion_abono`, sin el monto anterior (RF-46). 200 con el mismo `{ turno }`; 400
+ *   `datos_invalidos` (negativo, más de 2 decimales o mayor que 9.999.999,99); 404
+ *   `turno_no_encontrado`; 409 `turno_anulado` (un turno anulado no admite abono; sin evento).
  * - `PUT /api/turnos/:id/ubicacion` `{ kinesiologoId, fecha, horaInicio }` reprograma (RF-36): mueve
  *   el mismo turno `reservado` a la ubicación indicada. Los tres datos son obligatorios (los que no
  *   cambian se repiten) y con el mismo formato que al asignar; `fecha` admite fechas pasadas. El
- *   estado, el paciente y los coseguros no cambian. Si cambia el kinesiólogo, la franja se valida
+ *   estado, el paciente y el abono no cambian. Si cambia el kinesiólogo, la franja se valida
  *   contra el bloque del nuevo (RF-15). Registra un evento `reprogramacion` sin la ubicación
  *   anterior (D-9, RF-46). 200 con el mismo `{ turno }`. 400 `datos_invalidos`, 400 `franja_invalida`,
  *   404 `turno_no_encontrado`, 404 `kinesiologo_no_encontrado` (inexistente o con la cuenta
@@ -62,11 +62,11 @@ const id = z.number().int().positive().max(2_147_483_647);
 
 const horaInicio = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
 
-/** Monto en pesos, hasta dos decimales y 10 enteros (Decimal(12,2)); se normaliza a texto. */
+/** Monto en pesos, hasta dos decimales y 7 enteros (máximo razonable: 9.999.999,99); se normaliza a texto. */
 const montoBase = z
-  .union([z.number().min(0).max(9_999_999_999.99), z.string().trim().max(16).refine(sinNul)])
+  .union([z.number().min(0).max(9_999_999.99), z.string().trim().max(16).refine(sinNul)])
   .transform((v) => (typeof v === 'number' ? String(v) : v))
-  .pipe(z.string().regex(/^\d{1,10}(\.\d{1,2})?$/));
+  .pipe(z.string().regex(/^\d{1,7}(\.\d{1,2})?$/));
 const monto = z.preprocess((v) => (typeof v === 'string' && v.trim() === '' ? null : v), montoBase.nullish());
 
 /** Como `monto`, pero la clave es obligatoria: `null` o texto vacío = sin cargar. */
@@ -82,8 +82,7 @@ const esquemaAsignar = {
     kinesiologoId: id,
     fecha,
     horaInicio,
-    coseguroObraSocial: monto,
-    coseguroAdicional: monto,
+    coseguroAbonado: monto,
   }),
 };
 
@@ -119,9 +118,9 @@ const estado = z.enum(ESTADOS as [EstadoTurno, ...EstadoTurno[]]);
 const esquemaTransicion = { params: z.object({ id: idTurno }), body: z.object({ hacia: estado }) };
 const esquemaCorreccion = { params: z.object({ id: idTurno }), body: z.object({ estado }) };
 
-const esquemaCoseguros = {
+const esquemaAbono = {
   params: z.object({ id: idTurno }),
-  body: z.object({ coseguroObraSocial: montoExplicito, coseguroAdicional: montoExplicito }),
+  body: z.object({ monto: montoExplicito }),
 };
 
 const esquemaReprogramar = {
@@ -187,18 +186,14 @@ export function crearRutasTurnos({
   );
 
   router.put(
-    '/turnos/:id/coseguros',
+    '/turnos/:id/abono',
     exigirSesion,
     autorizarEscritura('turnos'),
-    validar(esquemaCoseguros),
+    validar(esquemaAbono),
     async (_req, res, next) => {
       try {
-        const { params, body } = datosValidados(res.locals, esquemaCoseguros);
-        const montos = {
-          coseguroObraSocial: body.coseguroObraSocial ?? null,
-          coseguroAdicional: body.coseguroAdicional ?? null,
-        };
-        res.json({ turno: await servicio.modificarCoseguros(params.id, montos, sesionActual(res).usuario.id) });
+        const { params, body } = datosValidados(res.locals, esquemaAbono);
+        res.json({ turno: await servicio.registrarAbono(params.id, body.monto ?? null, sesionActual(res).usuario.id) });
       } catch (err) {
         next(err);
       }

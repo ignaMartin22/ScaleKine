@@ -46,20 +46,18 @@ describe('Turnos: acciones sobre un turno (RF-27, RF-30 a RF-36)', () => {
     await resultado;
   });
 
-  it('coseguros: manda siempre las dos claves, con null para sin cargar', async () => {
+  it('abono: manda siempre la clave monto, con null para sin abonar', async () => {
     const { servidor } = preparar();
-    const resultado = TestBed.inject(Turnos).modificarCoseguros(12, {
-      coseguroObraSocial: '1500.50',
-      coseguroAdicional: null,
-    });
-    const p = servidor.expectOne({ method: 'PUT', url: '/api/turnos/12/coseguros' });
-    expect(Object.keys(p.request.body as object).sort()).toEqual([
-      'coseguroAdicional',
-      'coseguroObraSocial',
-    ]);
-    expect(p.request.body).toEqual({ coseguroObraSocial: '1500.50', coseguroAdicional: null });
+    const resultado = TestBed.inject(Turnos).registrarAbono(12, '1500.50');
+    const p = servidor.expectOne({ method: 'PUT', url: '/api/turnos/12/abono' });
+    expect(p.request.body).toEqual({ monto: '1500.50' });
     p.flush({ turno });
     await resultado;
+    const quitar = TestBed.inject(Turnos).registrarAbono(12, null);
+    const q = servidor.expectOne({ method: 'PUT', url: '/api/turnos/12/abono' });
+    expect(q.request.body).toEqual({ monto: null });
+    q.flush({ turno });
+    await quitar;
   });
 });
 
@@ -108,8 +106,8 @@ describe('traducirErrorAccion (RF-35 a RF-37)', () => {
     });
   });
 
-  it('datos inválidos en coseguros dice qué formato se espera', () => {
-    expect(traducirErrorAccion(api('datos_invalidos'), 'coseguros').mensaje).toContain('pesos');
+  it('datos inválidos en el abono dice qué formato se espera', () => {
+    expect(traducirErrorAccion(api('datos_invalidos'), 'abono').mensaje).toContain('pesos');
   });
 
   it('un error desconocido conserva su mensaje', () => {

@@ -31,7 +31,7 @@ import { VolverAlInicio } from './volver-al-inicio';
 /** Acciones que cierran el turno: piden confirmación antes de aplicarse (RF-32, RF-33). */
 const CIERRAN_EL_TURNO: readonly EstadoTurno[] = ['no_asistio', 'anulado'];
 
-type TipoDialogo = 'confirmar' | 'corregir' | 'reprogramar' | 'coseguros';
+type TipoDialogo = 'confirmar' | 'corregir' | 'reprogramar' | 'abono';
 
 interface DialogoAbierto {
   tipo: TipoDialogo;
@@ -152,7 +152,7 @@ interface FranjaElegida {
                   <th scope="col">Paciente</th>
                   <th scope="col">Kinesiólogo</th>
                   <th scope="col">Estado</th>
-                  <th scope="col">Coseguros</th>
+                  <th scope="col">Coseguro abonado</th>
                   <th scope="col">Acciones</th>
                 </tr>
               </thead>
@@ -177,10 +177,7 @@ interface FranjaElegida {
                         <br /><strong>Pendiente de marcar</strong>
                       }
                     </td>
-                    <td data-label="Coseguros">
-                      Obra social: {{ monto(t.coseguroObraSocial) }}<br />
-                      Adicional: {{ monto(t.coseguroAdicional) }}
-                    </td>
+                    <td data-label="Coseguro abonado">{{ monto(t.coseguroAbonado) }}</td>
                     <td data-label="Acciones">
                       <div class="acciones">
                         @for (a of t.acciones.transiciones; track a.hacia) {
@@ -210,10 +207,10 @@ interface FranjaElegida {
                           type="button"
                           class="boton secundario"
                           [disabled]="trabajando()"
-                          [attr.aria-label]="'Coseguros, turno de ' + t.paciente.nombre"
-                          (click)="abrir('coseguros', t)"
+                          [attr.aria-label]="'Coseguro abonado, turno de ' + t.paciente.nombre"
+                          (click)="abrir('abono', t)"
                         >
-                          <app-icono nombre="monedas" />Coseguros
+                          <app-icono nombre="monedas" />Coseguro abonado
                         </button>
                         <button
                           type="button"
@@ -348,44 +345,27 @@ interface FranjaElegida {
             </form>
           </app-dialogo>
         }
-        @case ('coseguros') {
-          <app-dialogo titulo="Coseguros del turno" (cerrar)="cerrarDialogo()">
+        @case ('abono') {
+          <app-dialogo titulo="Coseguro abonado" (cerrar)="cerrarDialogo()">
             <p>
               Turno de {{ d.turno.paciente.nombre }}, el {{ legible(d.turno.fecha) }} a las
-              {{ d.turno.horaInicio }}. Dejar un monto vacío lo deja sin cargar.
+              {{ d.turno.horaInicio }}. Dejar el monto vacío lo deja sin abonar.
             </p>
-            <form
-              class="formulario"
-              novalidate
-              (submit)="guardarCoseguros($event, d.turno, os, ad)"
-            >
+            <form class="formulario" novalidate (submit)="guardarAbono($event, d.turno, monto)">
               <div class="campo">
-                <label for="editar-coseguro-obra-social">Coseguro según obra social</label>
+                <label for="editar-coseguro-abonado">Coseguro abonado</label>
                 <input
-                  #os
-                  id="editar-coseguro-obra-social"
+                  #monto
+                  id="editar-coseguro-abonado"
                   type="text"
                   inputmode="decimal"
                   autocomplete="off"
                   data-foco-inicial
-                  aria-describedby="ayuda-editar-coseguros"
-                  [value]="d.turno.coseguroObraSocial ?? ''"
+                  aria-describedby="ayuda-editar-abono"
+                  [value]="d.turno.coseguroAbonado ?? ''"
                   [attr.aria-invalid]="errorDialogo() ? 'true' : null"
                 />
-              </div>
-              <div class="campo">
-                <label for="editar-coseguro-adicional">Coseguro adicional</label>
-                <input
-                  #ad
-                  id="editar-coseguro-adicional"
-                  type="text"
-                  inputmode="decimal"
-                  autocomplete="off"
-                  aria-describedby="ayuda-editar-coseguros"
-                  [value]="d.turno.coseguroAdicional ?? ''"
-                  [attr.aria-invalid]="errorDialogo() ? 'true' : null"
-                />
-                <p id="ayuda-editar-coseguros">Monto en pesos, con hasta dos decimales.</p>
+                <p id="ayuda-editar-abono">Monto en pesos, con hasta dos decimales.</p>
               </div>
               @if (errorDialogo(); as mensaje) {
                 <p class="error" id="error-dialogo" role="alert" tabindex="-1">
@@ -393,8 +373,8 @@ interface FranjaElegida {
                 </p>
               }
               <div class="acciones">
-                <button type="submit" class="boton" id="guardar-coseguros" [disabled]="enviando()">
-                  {{ enviando() ? 'Guardando…' : 'Guardar coseguros' }}
+                <button type="submit" class="boton" id="guardar-abono" [disabled]="enviando()">
+                  {{ enviando() ? 'Guardando…' : 'Guardar coseguro abonado' }}
                 </button>
                 <button type="button" class="boton secundario" (click)="cerrarDialogo()">
                   Cancelar
@@ -408,8 +388,8 @@ interface FranjaElegida {
             <p>
               Turno de {{ d.turno.paciente.nombre }}, reservado para el
               {{ legible(d.turno.fecha) }} a las {{ d.turno.horaInicio }} con
-              {{ d.turno.kinesiologo.nombre }}. Se mueve el mismo turno: no cambian su estado ni sus
-              coseguros.
+              {{ d.turno.kinesiologo.nombre }}. Se mueve el mismo turno: no cambian su estado ni su
+              coseguro abonado.
             </p>
             <form class="formulario" novalidate (submit)="reprogramar($event, d.turno)">
               <div class="campo">
@@ -651,7 +631,7 @@ export class AgendaSecretaria {
   }
 
   protected monto(valor: string | null): string {
-    return valor === null ? 'sin cargar' : '$ ' + valor;
+    return valor === null ? 'Sin abonar' : '$ ' + valor;
   }
 
   protected async cambiarFecha(evento: Event): Promise<void> {
@@ -714,31 +694,25 @@ export class AgendaSecretaria {
     return ESTADOS.find((e) => e !== turno.estado) ?? 'reservado';
   }
 
-  protected async guardarCoseguros(
+  protected async guardarAbono(
     evento: Event,
     turno: TurnoDeAgenda,
-    obraSocial: HTMLInputElement,
-    adicional: HTMLInputElement,
+    campo: HTMLInputElement,
   ): Promise<void> {
     evento.preventDefault();
-    const montoOS = normalizarMonto(obraSocial.value);
-    const montoAd = normalizarMonto(adicional.value);
-    if (montoOS === null || montoAd === null) {
+    const monto = normalizarMonto(campo.value);
+    if (monto === null) {
       this.errorDialogo.set(
-        'Los coseguros deben ser montos en pesos, con hasta dos decimales (por ejemplo 1500 o 1500,50).',
+        'El coseguro abonado debe ser un monto en pesos, con hasta dos decimales (por ejemplo 1500 o 1500,50).',
       );
       enfocar('error-dialogo');
       return;
     }
     await this.escribir(
       turno,
-      'coseguros',
-      () =>
-        this.turnosApi.modificarCoseguros(turno.id, {
-          coseguroObraSocial: montoOS ?? null,
-          coseguroAdicional: montoAd ?? null,
-        }),
-      'Coseguros guardados.',
+      'abono',
+      () => this.turnosApi.registrarAbono(turno.id, monto ?? null),
+      'Coseguro abonado guardado.',
     );
   }
 

@@ -14,8 +14,6 @@ function turno(id: number, cambios: Partial<TurnoPropio> = {}): TurnoPropio {
     horaFin: '08:45',
     estado: 'reservado',
     horaLlegada: null,
-    coseguroObraSocial: null,
-    coseguroAdicional: null,
     paciente: {
       nombre: `Paciente Ficticio ${id}`,
       dni: '30123456',
@@ -87,29 +85,19 @@ describe('Agenda del kinesiólogo (RF-40, D-15)', () => {
     ]);
   });
 
-  it('muestra los próximos por franja con paciente, estado y coseguros', async () => {
+  it('muestra los próximos por franja con paciente y estado, sin el monto abonado', async () => {
     const { fixture } = await montar({
-      proximos: [
-        turno(1, { horaInicio: '09:00', horaFin: '09:45' }),
-        turno(2, { coseguroObraSocial: '1500.50' }),
-      ],
+      proximos: [turno(1, { horaInicio: '09:00', horaFin: '09:45' }), turno(2)],
     });
     expect(nombres(fixture, '#tabla-proximos')).toEqual([
       'Paciente Ficticio 2',
       'Paciente Ficticio 1',
     ]);
     const t = q(fixture, '#tabla-proximos')?.textContent ?? '';
-    for (const dato of [
-      'DNI 30123456',
-      '1100000000',
-      'Particular',
-      '08:00 a 08:45',
-      'Reservado',
-      '$ 1500.50',
-      'sin cargar',
-    ]) {
+    for (const dato of ['DNI 30123456', '1100000000', 'Particular', '08:00 a 08:45', 'Reservado']) {
       expect(t).toContain(dato);
     }
+    expect(t).not.toMatch(/coseguro|abonar|\$/i);
   });
 
   it('muestra la hora de llegada que da la API', async () => {

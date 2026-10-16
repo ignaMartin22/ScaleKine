@@ -3,14 +3,13 @@ import { Injectable, inject } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import type { EstadoTurno } from '../agenda/agenda';
 
-/** Datos para asignar un turno (RF-23). Los coseguros son montos en texto, con hasta dos decimales. */
+/** Datos para asignar un turno (RF-23). El coseguro abonado es un monto en texto, con hasta dos decimales. */
 export interface DatosAsignacion {
   pacienteId: number;
   kinesiologoId: number;
   fecha: string;
   horaInicio: string;
-  coseguroObraSocial?: string;
-  coseguroAdicional?: string;
+  coseguroAbonado?: string;
 }
 
 /** Turno recién asignado; `id` es el número de turno del ticket (RF-28). */
@@ -21,14 +20,7 @@ export interface TurnoAsignado {
   fecha: string;
   horaInicio: string;
   estado: string;
-  coseguroObraSocial: string | null;
-  coseguroAdicional: string | null;
-}
-
-/** Coseguros de un turno: las dos claves siempre viajan; `null` es "sin cargar" (RF-27). */
-export interface Coseguros {
-  coseguroObraSocial: string | null;
-  coseguroAdicional: string | null;
+  coseguroAbonado: string | null;
 }
 
 /** Destino de una reprogramación (RF-36): los tres datos son obligatorios. */
@@ -83,13 +75,10 @@ export class Turnos {
     return turno;
   }
 
-  /** Reemplaza los dos montos (RF-27): el backend exige las dos claves, así que siempre se mandan. */
-  async modificarCoseguros(id: number, coseguros: Coseguros): Promise<TurnoAsignado> {
+  /** Registra, corrige o quita el coseguro abonado (RF-27): `null` lo deja sin abonar; la clave siempre viaja. */
+  async registrarAbono(id: number, monto: string | null): Promise<TurnoAsignado> {
     const { turno } = await firstValueFrom(
-      this.http.put<{ turno: TurnoAsignado }>(`/api/turnos/${id}/coseguros`, {
-        coseguroObraSocial: coseguros.coseguroObraSocial,
-        coseguroAdicional: coseguros.coseguroAdicional,
-      }),
+      this.http.put<{ turno: TurnoAsignado }>(`/api/turnos/${id}/abono`, { monto }),
     );
     return turno;
   }

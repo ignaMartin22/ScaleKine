@@ -47,7 +47,7 @@ describe('Turnos (RF-23, RF-28)', () => {
     kinesiologoId: 3,
     fecha: '2026-10-14',
     horaInicio: '08:00',
-    coseguroObraSocial: '1500.50',
+    coseguroAbonado: '1500.50',
   };
 
   it('asigna con POST y devuelve el turno', async () => {
@@ -55,7 +55,7 @@ describe('Turnos (RF-23, RF-28)', () => {
     const resultado = TestBed.inject(Turnos).asignar(datos);
     const p = servidor.expectOne({ method: 'POST', url: '/api/turnos' });
     expect(p.request.body).toEqual(datos);
-    const turno = { id: 12, ...datos, estado: 'reservado', coseguroAdicional: null };
+    const turno = { id: 12, ...datos, estado: 'reservado' };
     p.flush({ turno }, { status: 201, statusText: 'Created' });
     expect((await resultado).id).toBe(12);
   });
@@ -104,8 +104,8 @@ describe('traducirErrorAsignacion (RF-24 a RF-26)', () => {
     expect(t).toMatchObject({ paso: 'confirmar', mensaje: 'Mensaje del servidor.' });
   });
 
-  it('datos inválidos en un coseguro: paso coseguros', () => {
-    expect(traducirErrorAsignacion(api('datos_invalidos', ['body.coseguroAdicional'])).paso).toBe(
+  it('datos inválidos en el coseguro abonado: paso coseguros', () => {
+    expect(traducirErrorAsignacion(api('datos_invalidos', ['body.coseguroAbonado'])).paso).toBe(
       'coseguros',
     );
   });

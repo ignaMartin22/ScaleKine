@@ -18,8 +18,9 @@ const CAMPOS_SENSIBLES = [
   'obraSocial',
   // Coseguros
   'coseguro',
-  'coseguroObraSocial',
-  'coseguroAdicional',
+  'coseguroAbonado',
+  'monto',
+  'recaudado',
   // Credenciales y secretos
   'nombreUsuario',
   'contrasena',

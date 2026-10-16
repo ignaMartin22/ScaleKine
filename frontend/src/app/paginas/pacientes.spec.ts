@@ -373,8 +373,7 @@ describe('PacienteFicha: próximos e historial (RF-47)', () => {
     horaInicio: '08:00',
     horaFin: '08:45',
     estado: 'reservado',
-    coseguroObraSocial: null,
-    coseguroAdicional: null,
+    coseguroAbonado: null,
     kinesiologo: { id: 3, nombre: 'Kine Ficticio' },
     ...cambios,
   });
@@ -399,9 +398,9 @@ describe('PacienteFicha: próximos e historial (RF-47)', () => {
       e.textContent?.trim(),
     );
 
-  it('muestra fecha, franja, kinesiólogo, estado y coseguros', async () => {
+  it('muestra fecha, franja, kinesiólogo, estado y coseguro abonado', async () => {
     const { fixture } = await conTurnos(
-      [turnoDe(1, { coseguroObraSocial: '1500.50' })],
+      [turnoDe(1, { coseguroAbonado: '1500.50' })],
       [
         turnoDe(2, {
           fecha: '2026-10-01',
@@ -416,7 +415,7 @@ describe('PacienteFicha: próximos e historial (RF-47)', () => {
       expect(proximos).toContain(dato);
     }
     const historial = raiz(fixture).querySelector('#tabla-historial')?.textContent ?? '';
-    for (const dato of ['01/10/2026', '09:00 a 09:45', 'Asistió', 'sin cargar']) {
+    for (const dato of ['01/10/2026', '09:00 a 09:45', 'Asistió', 'Sin abonar']) {
       expect(historial).toContain(dato);
     }
   });

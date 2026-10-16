@@ -29,8 +29,7 @@ function turno(id: number, cambios: Partial<TurnoDeAgenda> = {}): TurnoDeAgenda 
     horaFin: '08:45',
     estado: 'reservado',
     horaLlegada: null,
-    coseguroObraSocial: null,
-    coseguroAdicional: null,
+    coseguroAbonado: null,
     paciente: {
       id: 7,
       nombre: 'Ana Ficticia',
@@ -165,11 +164,11 @@ async function relectura(
 }
 
 describe('AgendaSecretaria: lista y filtros (RF-41)', () => {
-  it('muestra paciente, kinesiólogo, franja, estado, llegada y coseguros', async () => {
+  it('muestra paciente, kinesiólogo, franja, estado, llegada y coseguro abonado', async () => {
     const llegado = turno(1, {
       estado: 'en_espera',
       horaLlegada: '10:05',
-      coseguroObraSocial: '1500.50',
+      coseguroAbonado: '1500.50',
       acciones: { transiciones: [{ hacia: 'asistio', accion: 'Asistió' }], puedeCorregir: true },
     });
     const { fixture } = await montar([llegado]);
@@ -184,7 +183,6 @@ describe('AgendaSecretaria: lista y filtros (RF-41)', () => {
       'En espera',
       'Llegó a las 10:05',
       '$ 1500.50',
-      'sin cargar',
     ]) {
       expect(t).toContain(dato);
     }
@@ -278,14 +276,14 @@ describe('AgendaSecretaria: acciones que manda la API (RF-34)', () => {
       'No asistió',
       'Anular',
       'Reprogramar',
-      'Coseguros',
+      'Coseguro abonado',
       'Ticket (PDF)',
       'Corregir estado',
     ]);
     // En espera: solo lo que la API ofrece; sin reprogramar (solo reservados) ni corregir.
-    expect(de(2)).toEqual(['Asistió', 'Coseguros', 'Ticket (PDF)']);
+    expect(de(2)).toEqual(['Asistió', 'Coseguro abonado', 'Ticket (PDF)']);
     // Un turno cerrado no recibe acciones de flujo, y nunca se calcula "Anular" en el cliente.
-    expect(de(3)).toEqual(['Coseguros', 'Ticket (PDF)', 'Corregir estado']);
+    expect(de(3)).toEqual(['Coseguro abonado', 'Ticket (PDF)', 'Corregir estado']);
   });
 
   it('usa el texto de la acción tal como llega', async () => {
@@ -629,51 +627,50 @@ describe('AgendaSecretaria: reprogramación (RF-36, RF-37)', () => {
   });
 });
 
-describe('AgendaSecretaria: coseguros (RF-27)', () => {
-  it('precarga los montos y manda siempre las dos claves', async () => {
-    const { fixture, servidor } = await montar([turno(1, { coseguroObraSocial: '1500.50' })]);
-    boton(fixture, 'Coseguros').click();
-    await aparece(fixture, '#editar-coseguro-obra-social');
-    const os = q<HTMLInputElement>(fixture, '#editar-coseguro-obra-social');
-    const ad = q<HTMLInputElement>(fixture, '#editar-coseguro-adicional');
-    expect(os.value).toBe('1500.50');
-    expect(ad.value).toBe('');
+describe('AgendaSecretaria: coseguro abonado (RF-27)', () => {
+  it('muestra Sin abonar cuando no hay monto', async () => {
+    const { fixture } = await montar([turno(1)]);
+    expect(fila(fixture, 1).textContent).toContain('Sin abonar');
+  });
 
-    ad.value = '300,5';
-    q(fixture, '#guardar-coseguros').click();
-    const p = await peticion(servidor, '/api/turnos/1/coseguros', 'PUT');
-    expect(p.request.body).toEqual({ coseguroObraSocial: '1500.50', coseguroAdicional: '300.5' });
+  it('precarga el monto y manda la clave monto', async () => {
+    const { fixture, servidor } = await montar([turno(1, { coseguroAbonado: '1500.50' })]);
+    boton(fixture, 'Coseguro abonado').click();
+    await aparece(fixture, '#editar-coseguro-abonado');
+    const campo = q<HTMLInputElement>(fixture, '#editar-coseguro-abonado');
+    expect(campo.value).toBe('1500.50');
+
+    campo.value = '300,5';
+    q(fixture, '#guardar-abono').click();
+    const p = await peticion(servidor, '/api/turnos/1/abono', 'PUT');
+    expect(p.request.body).toEqual({ monto: '300.5' });
     p.flush({ turno: { id: 1 } });
-    await relectura(servidor, [
-      turno(1, { coseguroObraSocial: '1500.50', coseguroAdicional: '300.50' }),
-    ]);
+    await relectura(servidor, [turno(1, { coseguroAbonado: '300.50' })]);
     await desaparece(fixture, '[role="dialog"]');
     expect(fila(fixture, 1).textContent).toContain('$ 300.50');
   });
 
-  it('vaciar un monto manda null en esa clave y no omite la otra', async () => {
-    const { fixture, servidor } = await montar([turno(1, { coseguroObraSocial: '1500.50' })]);
-    boton(fixture, 'Coseguros').click();
-    await aparece(fixture, '#editar-coseguro-obra-social');
-    q<HTMLInputElement>(fixture, '#editar-coseguro-obra-social').value = '';
-    q(fixture, '#guardar-coseguros').click();
-    const p = await peticion(servidor, '/api/turnos/1/coseguros', 'PUT');
-    const cuerpo = p.request.body as Record<string, unknown>;
-    expect(Object.keys(cuerpo).sort()).toEqual(['coseguroAdicional', 'coseguroObraSocial']);
-    expect(cuerpo).toEqual({ coseguroObraSocial: null, coseguroAdicional: null });
+  it('vaciar el monto manda null y no omite la clave', async () => {
+    const { fixture, servidor } = await montar([turno(1, { coseguroAbonado: '1500.50' })]);
+    boton(fixture, 'Coseguro abonado').click();
+    await aparece(fixture, '#editar-coseguro-abonado');
+    q<HTMLInputElement>(fixture, '#editar-coseguro-abonado').value = '';
+    q(fixture, '#guardar-abono').click();
+    const p = await peticion(servidor, '/api/turnos/1/abono', 'PUT');
+    expect(p.request.body).toEqual({ monto: null });
     p.flush({ turno: { id: 1 } });
     await relectura(servidor, [turno(1)]);
   });
 
   it('un monto inválido avisa y no escribe', async () => {
     const { fixture, servidor } = await montar();
-    boton(fixture, 'Coseguros').click();
-    await aparece(fixture, '#editar-coseguro-adicional');
-    q<HTMLInputElement>(fixture, '#editar-coseguro-adicional').value = '1.234';
-    q(fixture, '#guardar-coseguros').click();
+    boton(fixture, 'Coseguro abonado').click();
+    await aparece(fixture, '#editar-coseguro-abonado');
+    q<HTMLInputElement>(fixture, '#editar-coseguro-abonado').value = '1.234';
+    q(fixture, '#guardar-abono').click();
     await aparece(fixture, '#error-dialogo');
     expect(q(fixture, '#error-dialogo').textContent).toContain('hasta dos decimales');
-    servidor.expectNone((r) => r.url.includes('/coseguros'));
+    servidor.expectNone((r) => r.url.includes('/abono'));
   });
 });
 

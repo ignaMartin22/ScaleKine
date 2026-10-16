@@ -33,12 +33,13 @@ import type { EmisorTurnos } from '../m3-turnos/eventos.js';
  * - `secretaria`: secretaría y administrador.
  *
  * Eventos del servidor al cliente (el cliente no envía ninguno; cualquiera se ignora)
- * - `turno:cambio` `{ turno }`: el turno se asignó, cambió de estado, se corrigió, cambió sus coseguros
+ * - `turno:cambio` `{ turno }`: el turno se asignó, cambió de estado, se corrigió, cambió su abono
  *   o se reprogramó; `turno` es el turno completo y actual, para reemplazarlo en la agenda por `id`
  *   (si no estaba, agregarlo; si ya no corresponde a la fecha o a los estados que muestra, quitarlo).
  *   Va a la sala del kinesiólogo del turno y a la de secretaría, con la proyección de M4 de cada agenda:
- *   - sala `secretaria`: la de `GET /api/agenda` (con `paciente.id`, `kinesiologo` y `acciones`);
- *   - sala del kinesiólogo: la de `GET /api/mi-agenda`, sin `acciones` (D-15) ni id de paciente.
+ *   - sala `secretaria`: la de `GET /api/agenda` (con `paciente.id`, `kinesiologo`, `acciones` y `coseguroAbonado`);
+ *   - sala del kinesiólogo: la de `GET /api/mi-agenda`, sin `acciones` (D-15), sin id de paciente y
+ *     sin `coseguroAbonado` (RF-40).
  *   El destino sale del kinesiólogo ACTUAL del turno, tal como se lo relee al difundir, no del que
  *   tenía al operar: si otra operación lo movió entre tanto, el anterior no recibe sus datos (D-16).
  * - `turno:quitado` `{ turnoId }`: a cada kinesiólogo que tuvo el turno según los avisos pendientes y
