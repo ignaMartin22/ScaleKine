@@ -17,6 +17,7 @@ import {
 } from './formulario-paciente';
 import { VolverAlInicio } from './volver-al-inicio';
 import { Icono } from '../nucleo/ui/icono';
+import { PacienteTarjeta } from '../nucleo/ui/paciente-tarjeta';
 
 type Modo = 'dni' | 'nombre';
 
@@ -27,7 +28,7 @@ type Modo = 'dni' | 'nombre';
  */
 @Component({
   selector: 'app-pacientes',
-  imports: [RouterLink, VolverAlInicio, FormularioPaciente, Icono],
+  imports: [RouterLink, VolverAlInicio, FormularioPaciente, Icono, PacienteTarjeta],
   template: `
     <app-volver-al-inicio />
     <h1>Pacientes</h1>
@@ -88,23 +89,28 @@ type Modo = 'dni' | 'nombre';
       @if (resultados(); as lista) {
         <div id="resultados" tabindex="-1" role="status">
           @if (lista.length > 0) {
-            <h3>Resultados ({{ lista.length }})</h3>
-            <ul>
+            <h3>{{ lista.length === 1 ? '1 paciente' : lista.length + ' pacientes' }}</h3>
+            <ul class="lista-pacientes">
               @for (p of lista; track p.id) {
                 <li>
                   <a [routerLink]="['/secretaria/pacientes', p.id]">
-                    {{ p.nombre }}, DNI {{ p.dni }}
+                    <app-paciente-tarjeta [paciente]="p" />
+                    <app-icono nombre="siguiente" />
                   </a>
                 </li>
               }
             </ul>
           } @else if (dniSinResultados(); as dni) {
-            <p>No hay ningún paciente con el DNI {{ dni }}.</p>
+            <p class="info">
+              <app-icono nombre="info" />No hay ningún paciente con el DNI {{ dni }}.
+            </p>
             <button type="button" class="boton" id="ofrecer-alta" (click)="abrirAlta(dni)">
-              Dar de alta con este DNI
+              <app-icono nombre="usuario" />Dar de alta con este DNI
             </button>
           } @else {
-            <p>No hay pacientes que coincidan con la búsqueda.</p>
+            <p class="info">
+              <app-icono nombre="info" />No hay pacientes que coincidan con la búsqueda.
+            </p>
           }
         </div>
       }

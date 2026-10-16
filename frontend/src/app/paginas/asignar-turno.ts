@@ -1,4 +1,4 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
 import { normalizarDni } from '../nucleo/pacientes/dni';
 import { Pacientes, type DatosPaciente, type Paciente } from '../nucleo/pacientes/pacientes';
 import {
@@ -18,6 +18,7 @@ import {
 } from './formulario-paciente';
 import { VolverAlInicio } from './volver-al-inicio';
 import { Icono } from '../nucleo/ui/icono';
+import { PacienteTarjeta } from '../nucleo/ui/paciente-tarjeta';
 
 interface Consulta {
   fecha: string;
@@ -37,6 +38,18 @@ interface Asignado {
   paciente: string;
 }
 
+type Paso = 1 | 2 | 3 | 4;
+
+/** Los cuatro pasos del asistente, en orden (DESIGN.md §6.1). */
+const PASOS: readonly { numero: Paso; titulo: string }[] = [
+  { numero: 1, titulo: 'Paciente' },
+  { numero: 2, titulo: 'Fecha y bloque' },
+  { numero: 3, titulo: 'Kinesiólogo y franja' },
+  { numero: 4, titulo: 'Coseguro abonado y confirmación' },
+];
+
+const FORMATO_FECHA = /^\d{4}-\d{2}-\d{2}$/;
+
 /** 'AAAA-MM-DD' a 'DD/MM/AAAA'. */
 export function fechaLegible(fecha: string): string {
   const [anio, mes, dia] = fecha.split('-');
@@ -50,15 +63,16 @@ export function esFinDeSemana(fecha: string): boolean {
 }
 
 /**
- * Asignación de turnos (RF-22 a RF-28) para secretaría y administrador. Orden: fecha y bloque, luego
- * el paciente por DNI (o su alta en el mismo flujo), la franja libre, los coseguros y la
- * confirmación. La disponibilidad se muestra apenas hay fecha y bloque, y se vuelve a pedir con
- * `pacienteId` al elegir el paciente, para no ofrecer una franja que el paciente ya tiene ocupada
- * (RF-25). Ningún dato personal va a la URL ni al almacenamiento del navegador.
+ * Asignación de turnos (RF-19, RF-22 a RF-28) para secretaría y administrador, como asistente por
+ * pasos (DESIGN.md §6.1): 1. paciente por DNI (o su alta en el mismo paso), 2. fecha y bloque,
+ * 3. kinesiólogo y franja libre, 4. coseguro abonado y confirmación. Con el paciente ya elegido, la
+ * disponibilidad se pide con su `pacienteId` para no ofrecer una franja que ya tiene ocupada
+ * (RF-25). Si cambia el paciente, la fecha o el bloque, la franja elegida se descarta y se avisa.
+ * Ningún dato personal va a la URL ni al almacenamiento del navegador.
  */
 @Component({
   selector: 'app-asignar-turno',
-  imports: [VolverAlInicio, FormularioPaciente, Icono],
+  imports: [VolverAlInicio, FormularioPaciente, Icono, PacienteTarjeta],
   template: `
     <app-volver-al-inicio />
     <h1>Asignar turno</h1>
@@ -93,235 +107,354 @@ export function esFinDeSemana(fecha: string): boolean {
         </div>
       </section>
     } @else {
-      <section class="tarjeta ancha" aria-labelledby="titulo-fecha">
-        <h2 id="titulo-fecha">1. Fecha y bloque</h2>
-        <form class="formulario" novalidate (submit)="consultar($event, fecha)">
-          <div class="campo">
-            <label for="fecha-turno">Fecha</label>
-            <input
-              #fecha
-              id="fecha-turno"
-              name="fecha"
-              type="date"
-              [attr.aria-invalid]="errorFecha() ? 'true' : null"
-              [attr.aria-describedby]="errorFecha() ? 'error-fecha-turno' : null"
-            />
-            @if (errorFecha(); as mensaje) {
-              <p class="error" id="error-fecha-turno"><app-icono nombre="alerta" />{{ mensaje }}</p>
-            }
-          </div>
-          <fieldset>
-            <legend>Bloque</legend>
-            <label>
-              <input
-                type="radio"
-                name="bloque"
-                value="manana"
-                [checked]="bloque() === 'manana'"
-                (change)="bloque.set('manana')"
-              />
-              Mañana
-            </label>
-            <label>
-              <input
-                type="radio"
-                name="bloque"
-                value="tarde"
-                [checked]="bloque() === 'tarde'"
-                (change)="bloque.set('tarde')"
-              />
-              Tarde
-            </label>
-          </fieldset>
-          <div class="acciones">
-            <button type="submit" class="boton" [disabled]="cargando()">
-              <app-icono nombre="agenda" />{{ cargando() ? 'Buscando…' : 'Ver disponibilidad' }}
-            </button>
-          </div>
-        </form>
-      </section>
-
-      @if (consulta(); as c) {
-        <section class="tarjeta ancha" aria-labelledby="titulo-paciente">
-          <h2 id="titulo-paciente">2. Paciente</h2>
-          @if (errorPaciente(); as mensaje) {
-            <p class="error" id="error-paciente" role="alert" tabindex="-1">
-              <app-icono nombre="alerta" />{{ mensaje }}
-            </p>
-          }
-          @if (paciente(); as p) {
-            <p id="paciente-elegido" role="status">Paciente: {{ p.nombre }}, DNI {{ p.dni }}.</p>
-            <button
-              type="button"
-              class="boton secundario"
-              id="cambiar-paciente"
-              (click)="cambiarPaciente()"
-            >
-              Cambiar paciente
-            </button>
-          } @else {
-            <form class="formulario" novalidate (submit)="buscarPaciente($event, dni)">
-              <div class="campo">
-                <label for="dni-turno">DNI del paciente</label>
-                <input
-                  #dni
-                  id="dni-turno"
-                  name="dni"
-                  type="text"
-                  inputmode="numeric"
-                  autocomplete="off"
-                  [attr.aria-invalid]="errorDni() ? 'true' : null"
-                  [attr.aria-describedby]="errorDni() ? 'error-dni-turno' : null"
-                />
-                @if (errorDni(); as mensaje) {
-                  <p class="error" id="error-dni-turno">
-                    <app-icono nombre="alerta" />{{ mensaje }}
-                  </p>
-                }
-              </div>
-              <div class="acciones">
-                <button type="submit" class="boton" [disabled]="buscando()">
-                  <app-icono nombre="buscar" />{{ buscando() ? 'Buscando…' : 'Buscar paciente' }}
+      <nav aria-label="Pasos de la asignación">
+        <ol class="pasos" id="pasos">
+          @for (p of pasos; track p.numero) {
+            <li [class.actual]="paso() === p.numero" [class.completo]="paso() > p.numero">
+              @if (paso() > p.numero) {
+                <button type="button" class="enlace" (click)="irA(p.numero)">
+                  <app-icono nombre="check" [tamano]="16" />{{ p.numero }}. {{ p.titulo }}
                 </button>
-              </div>
-            </form>
-            @if (dniSinResultados(); as sinPaciente) {
-              <div role="status" id="sin-paciente" tabindex="-1">
-                <p>No hay ningún paciente con el DNI {{ sinPaciente }}.</p>
-                @if (!alta()) {
-                  <button
-                    type="button"
-                    class="boton secundario"
-                    id="ofrecer-alta"
-                    (click)="abrirAlta(sinPaciente)"
-                  >
-                    Dar de alta con este DNI
-                  </button>
-                }
-              </div>
-            }
-            @if (alta(); as precarga) {
-              <h3>Nuevo paciente</h3>
-              <app-formulario-paciente
-                etiqueta="Crear paciente y elegirlo"
-                [inicial]="precarga"
-                [ocupado]="creando()"
-                [cancelable]="true"
-                [erroresServidor]="erroresAlta()"
-                (guardar)="crearPaciente($event)"
-                (cancelar)="cerrarAlta()"
-              />
-            }
-          }
-        </section>
-
-        <section
-          class="tarjeta ancha"
-          aria-labelledby="titulo-franja"
-          [attr.aria-busy]="cargando()"
-        >
-          <h2 id="titulo-franja">3. Kinesiólogo y franja</h2>
-          <p>
-            {{ legible(c.fecha) }}, {{ c.bloque === 'manana' ? 'mañana' : 'tarde' }}.
-            @if (paciente()) {
-              Sin las horas en que el paciente ya tiene turno.
-            } @else {
-              Elegí el paciente para descartar las horas en que ya tiene turno.
-            }
-          </p>
-          @if (errorFranja(); as mensaje) {
-            <p class="error" id="error-franja" role="alert" tabindex="-1">
-              <app-icono nombre="alerta" />{{ mensaje }}
-            </p>
-          }
-          @if (avisoFranja(); as mensaje) {
-            <p class="aviso" id="aviso-franja" role="status">
-              <app-icono nombre="alerta" />{{ mensaje }}
-            </p>
-          }
-          @if (errorDisponibilidad(); as mensaje) {
-            <p class="error" id="error-disponibilidad" role="alert" tabindex="-1">
-              <app-icono nombre="alerta" />
-              {{ mensaje }}
-            </p>
-          }
-          @if (kinesiologos(); as lista) {
-            @if (esFinDeSemana(c.fecha)) {
-              <p id="sin-franjas">
-                Los sábados y domingos no hay turnos. Elegí un día de lunes a viernes.
-              </p>
-            } @else if (lista.length === 0) {
-              <p id="sin-franjas">No hay kinesiólogos que atiendan en ese bloque.</p>
-            } @else if (sinFranjas(lista)) {
-              <p id="sin-franjas">No quedan franjas libres en ese bloque.</p>
-            } @else {
-              @for (k of lista; track k.kinesiologoId) {
-                <fieldset>
-                  <legend>{{ k.nombre }}</legend>
-                  @if (k.franjas.length === 0) {
-                    <p>Sin franjas libres.</p>
-                  }
-                  @for (f of k.franjas; track f.inicio) {
-                    <label>
-                      <input
-                        type="radio"
-                        name="franja"
-                        [id]="'franja-' + k.kinesiologoId + '-' + f.inicio.replace(':', '')"
-                        [disabled]="cargando()"
-                        [checked]="estaElegida(k.kinesiologoId, f.inicio)"
-                        (change)="elegirFranja(k, f.inicio, f.fin)"
-                      />
-                      {{ f.inicio }} a {{ f.fin }}
-                    </label>
-                  }
-                </fieldset>
+              } @else {
+                <span [attr.aria-current]="paso() === p.numero ? 'step' : null"
+                  >{{ p.numero }}. {{ p.titulo }}</span
+                >
               }
-            }
+            </li>
           }
-        </section>
+        </ol>
+        <p class="pasos-corto" id="pasos-corto">Paso {{ paso() }} de 4 · {{ tituloDelPaso() }}</p>
+      </nav>
 
-        <section class="tarjeta ancha" aria-labelledby="titulo-confirmar">
-          <h2 id="titulo-confirmar">4. Coseguro abonado y confirmación</h2>
-          @if (seleccion(); as s) {
-            <p id="resumen-franja">
-              Turno con {{ s.kinesiologo }}, {{ legible(c.fecha) }} de {{ s.inicio }} a {{ s.fin }}.
-            </p>
-          }
-          <form class="formulario" novalidate (submit)="confirmar($event, coseguroAbonado)">
-            <div class="campo">
-              <label for="coseguro-abonado">Coseguro abonado (opcional)</label>
-              <input
-                #coseguroAbonado
-                id="coseguro-abonado"
-                name="coseguroAbonado"
-                type="text"
-                inputmode="decimal"
-                autocomplete="off"
-                aria-describedby="ayuda-coseguros"
-                [attr.aria-invalid]="errorCoseguros() ? 'true' : null"
-              />
-              <p id="ayuda-coseguros">
-                Monto en pesos, con hasta dos decimales. Se puede cargar después.
-              </p>
-              @if (errorCoseguros(); as mensaje) {
-                <p class="error" id="error-coseguros" role="alert" tabindex="-1">
+      <div class="asistente">
+        <section class="tarjeta ancha asistente-paso" aria-labelledby="titulo-paso">
+          @switch (paso()) {
+            @case (1) {
+              <h2 id="titulo-paso" tabindex="-1">1. Paciente</h2>
+              @if (errorPaciente(); as mensaje) {
+                <p class="error" id="error-paciente" role="alert" tabindex="-1">
                   <app-icono nombre="alerta" />{{ mensaje }}
                 </p>
               }
-            </div>
-            @if (errorConfirmar(); as mensaje) {
-              <p class="error" id="error-confirmar" role="alert" tabindex="-1">
-                <app-icono nombre="alerta" />{{ mensaje }}
-              </p>
+              @if (paciente(); as p) {
+                <div id="paciente-elegido" role="status">
+                  <app-paciente-tarjeta [paciente]="p">
+                    <button
+                      type="button"
+                      class="boton secundario"
+                      id="cambiar-paciente"
+                      (click)="cambiarPaciente()"
+                    >
+                      Cambiar paciente
+                    </button>
+                  </app-paciente-tarjeta>
+                </div>
+              } @else {
+                <form class="formulario" novalidate (submit)="buscarPaciente($event, dni)">
+                  <div class="campo">
+                    <label for="dni-turno">DNI del paciente</label>
+                    <input
+                      #dni
+                      id="dni-turno"
+                      name="dni"
+                      type="text"
+                      inputmode="numeric"
+                      autocomplete="off"
+                      [attr.aria-invalid]="errorDni() ? 'true' : null"
+                      [attr.aria-describedby]="errorDni() ? 'error-dni-turno' : null"
+                    />
+                    @if (errorDni(); as mensaje) {
+                      <p class="error" id="error-dni-turno">
+                        <app-icono nombre="alerta" />{{ mensaje }}
+                      </p>
+                    }
+                  </div>
+                  <div class="acciones">
+                    <button type="submit" class="boton secundario" [disabled]="buscando()">
+                      <app-icono nombre="buscar" />{{
+                        buscando() ? 'Buscando…' : 'Buscar paciente'
+                      }}
+                    </button>
+                  </div>
+                </form>
+                @if (dniSinResultados(); as sinPaciente) {
+                  <div id="sin-paciente" tabindex="-1">
+                    <p class="info" role="status">
+                      <app-icono nombre="info" />No hay ningún paciente con el DNI
+                      {{ sinPaciente }}.
+                    </p>
+                    @if (!alta()) {
+                      <button
+                        type="button"
+                        class="boton secundario"
+                        id="ofrecer-alta"
+                        (click)="abrirAlta(sinPaciente)"
+                      >
+                        <app-icono nombre="usuario" />Dar de alta con este DNI
+                      </button>
+                    }
+                  </div>
+                }
+                @if (alta(); as precarga) {
+                  <h3>Nuevo paciente</h3>
+                  <app-formulario-paciente
+                    etiqueta="Crear paciente y elegirlo"
+                    [inicial]="precarga"
+                    [ocupado]="creando()"
+                    [cancelable]="true"
+                    [erroresServidor]="erroresAlta()"
+                    (guardar)="crearPaciente($event)"
+                    (cancelar)="cerrarAlta()"
+                  />
+                }
+              }
+              <div class="asistente-botones">
+                <button
+                  type="button"
+                  class="boton"
+                  id="siguiente"
+                  [disabled]="!paciente()"
+                  (click)="irAPaso(2)"
+                >
+                  Siguiente<app-icono nombre="siguiente" />
+                </button>
+              </div>
             }
-            <div class="acciones">
-              <button type="submit" class="boton" id="confirmar-turno" [disabled]="confirmando()">
-                <app-icono nombre="asignar" />{{ confirmando() ? 'Asignando…' : 'Confirmar turno' }}
-              </button>
-            </div>
-          </form>
+            @case (2) {
+              <h2 id="titulo-paso" tabindex="-1">2. Fecha y bloque</h2>
+              <form class="formulario" novalidate (submit)="elegirFechaYBloque($event)">
+                <div class="campo">
+                  <label for="fecha-turno">Fecha</label>
+                  <input
+                    id="fecha-turno"
+                    name="fecha"
+                    type="date"
+                    [value]="fechaElegida()"
+                    (input)="fechaElegida.set($any($event.target).value)"
+                    [attr.aria-invalid]="errorFecha() ? 'true' : null"
+                    [attr.aria-describedby]="errorFecha() ? 'error-fecha-turno' : null"
+                  />
+                  @if (errorFecha(); as mensaje) {
+                    <p class="error" id="error-fecha-turno">
+                      <app-icono nombre="alerta" />{{ mensaje }}
+                    </p>
+                  }
+                </div>
+                <fieldset>
+                  <legend>Bloque</legend>
+                  <label>
+                    <input
+                      type="radio"
+                      name="bloque"
+                      value="manana"
+                      [checked]="bloque() === 'manana'"
+                      (change)="bloque.set('manana')"
+                    />
+                    Mañana
+                  </label>
+                  <label>
+                    <input
+                      type="radio"
+                      name="bloque"
+                      value="tarde"
+                      [checked]="bloque() === 'tarde'"
+                      (change)="bloque.set('tarde')"
+                    />
+                    Tarde
+                  </label>
+                </fieldset>
+                <div class="asistente-botones">
+                  <button type="button" class="boton secundario" id="atras" (click)="atras()">
+                    <app-icono nombre="volver" />Atrás
+                  </button>
+                  <button
+                    type="submit"
+                    class="boton"
+                    id="siguiente"
+                    [disabled]="!fechaValida() || cargando()"
+                  >
+                    Siguiente<app-icono nombre="siguiente" />
+                  </button>
+                </div>
+              </form>
+            }
+            @case (3) {
+              <h2 id="titulo-paso" tabindex="-1" [attr.aria-busy]="cargando()">
+                3. Kinesiólogo y franja
+              </h2>
+              @if (consulta(); as c) {
+                <p>
+                  {{ legible(c.fecha) }}, {{ c.bloque === 'manana' ? 'mañana' : 'tarde' }}. Sin las
+                  horas en que el paciente ya tiene turno.
+                </p>
+              }
+              @if (errorFranja(); as mensaje) {
+                <p class="error" id="error-franja" role="alert" tabindex="-1">
+                  <app-icono nombre="alerta" />{{ mensaje }}
+                </p>
+              }
+              @if (avisoFranja(); as mensaje) {
+                <p class="aviso" id="aviso-franja" role="status">
+                  <app-icono nombre="alerta" />{{ mensaje }}
+                </p>
+              }
+              @if (errorDisponibilidad(); as mensaje) {
+                <p class="error" id="error-disponibilidad" role="alert" tabindex="-1">
+                  <app-icono nombre="alerta" />
+                  {{ mensaje }}
+                </p>
+              }
+              <form class="formulario" novalidate (submit)="avanzarDesdeFranja($event)">
+                @if (kinesiologos(); as lista) {
+                  @if (consulta(); as c) {
+                    @if (esFinDeSemana(c.fecha)) {
+                      <p id="sin-franjas">
+                        Los sábados y domingos no hay turnos. Elegí un día de lunes a viernes.
+                      </p>
+                    } @else if (lista.length === 0) {
+                      <p id="sin-franjas">No hay kinesiólogos que atiendan en ese bloque.</p>
+                    } @else if (sinFranjas(lista)) {
+                      <p id="sin-franjas">No quedan franjas libres en ese bloque.</p>
+                    } @else {
+                      @for (k of lista; track k.kinesiologoId) {
+                        <fieldset>
+                          <legend>{{ k.nombre }}</legend>
+                          @if (k.franjas.length === 0) {
+                            <p>Sin franjas libres.</p>
+                          }
+                          @for (f of k.franjas; track f.inicio) {
+                            <label>
+                              <input
+                                type="radio"
+                                name="franja"
+                                [id]="'franja-' + k.kinesiologoId + '-' + f.inicio.replace(':', '')"
+                                [disabled]="cargando()"
+                                [checked]="estaElegida(k.kinesiologoId, f.inicio)"
+                                (change)="elegirFranja(k, f.inicio, f.fin)"
+                              />
+                              {{ f.inicio }} a {{ f.fin }}
+                            </label>
+                          }
+                        </fieldset>
+                      }
+                    }
+                  }
+                } @else if (cargando()) {
+                  <p role="status">Buscando la disponibilidad…</p>
+                }
+                <div class="asistente-botones">
+                  <button type="button" class="boton secundario" id="atras" (click)="atras()">
+                    <app-icono nombre="volver" />Atrás
+                  </button>
+                  <button
+                    type="submit"
+                    class="boton"
+                    id="siguiente"
+                    [disabled]="!seleccion() || cargando()"
+                  >
+                    Siguiente<app-icono nombre="siguiente" />
+                  </button>
+                </div>
+              </form>
+            }
+            @case (4) {
+              <h2 id="titulo-paso" tabindex="-1">4. Coseguro abonado y confirmación</h2>
+              <form class="formulario" novalidate (submit)="confirmar($event, coseguroAbonado)">
+                <div class="campo">
+                  <label for="coseguro-abonado">Coseguro abonado (opcional)</label>
+                  <input
+                    #coseguroAbonado
+                    id="coseguro-abonado"
+                    name="coseguroAbonado"
+                    type="text"
+                    inputmode="decimal"
+                    autocomplete="off"
+                    aria-describedby="ayuda-coseguros"
+                    [value]="abonoTexto()"
+                    (input)="abonoTexto.set(coseguroAbonado.value)"
+                    [attr.aria-invalid]="errorCoseguros() ? 'true' : null"
+                  />
+                  <p id="ayuda-coseguros">
+                    Monto en pesos, con hasta dos decimales. Se puede cargar después.
+                  </p>
+                  @if (errorCoseguros(); as mensaje) {
+                    <p class="error" id="error-coseguros" role="alert" tabindex="-1">
+                      <app-icono nombre="alerta" />{{ mensaje }}
+                    </p>
+                  }
+                </div>
+                @if (errorConfirmar(); as mensaje) {
+                  <p class="error" id="error-confirmar" role="alert" tabindex="-1">
+                    <app-icono nombre="alerta" />{{ mensaje }}
+                  </p>
+                }
+                <div class="asistente-botones">
+                  <button type="button" class="boton secundario" id="atras" (click)="atras()">
+                    <app-icono nombre="volver" />Atrás
+                  </button>
+                  <button
+                    type="submit"
+                    class="boton"
+                    id="confirmar-turno"
+                    [disabled]="confirmando()"
+                  >
+                    <app-icono nombre="asignar" />{{
+                      confirmando() ? 'Asignando…' : 'Confirmar turno'
+                    }}
+                  </button>
+                </div>
+              </form>
+            }
+          }
         </section>
-      }
+
+        <aside class="resumen" aria-labelledby="titulo-resumen">
+          <h2 id="titulo-resumen">Tu turno</h2>
+          @if (!paciente() && !consulta() && !seleccion()) {
+            <p class="resumen-vacio">Todavía no elegiste nada.</p>
+          }
+          <ul>
+            @if (paciente(); as p) {
+              <li id="resumen-paciente">
+                <app-paciente-tarjeta [paciente]="p" [compacta]="true" />
+                @if (paso() > 1) {
+                  <button type="button" class="enlace" (click)="irA(1)">
+                    Cambiar<span class="solo-lectores"> el paciente</span>
+                  </button>
+                }
+              </li>
+            }
+            @if (consulta(); as c) {
+              <li id="resumen-fecha" class="resumen-dato">
+                <app-icono nombre="agenda" />
+                <span
+                  ><strong>{{ legible(c.fecha) }}</strong
+                  ><br />{{ c.bloque === 'manana' ? 'Mañana' : 'Tarde' }}</span
+                >
+                @if (paso() > 2) {
+                  <button type="button" class="enlace" (click)="irA(2)">
+                    Cambiar<span class="solo-lectores"> la fecha y el bloque</span>
+                  </button>
+                }
+              </li>
+            }
+            @if (seleccion(); as s) {
+              <li id="resumen-franja" class="resumen-dato">
+                <app-icono nombre="kinesiologos" />
+                <span
+                  ><strong>{{ s.kinesiologo }}</strong
+                  ><br />{{ s.inicio }} a {{ s.fin }}</span
+                >
+                @if (paso() > 3) {
+                  <button type="button" class="enlace" (click)="irA(3)">
+                    Cambiar<span class="solo-lectores"> el kinesiólogo y la franja</span>
+                  </button>
+                }
+              </li>
+            }
+          </ul>
+        </aside>
+      </div>
     }
   `,
 })
@@ -334,8 +467,17 @@ export class AsignarTurno {
 
   protected readonly legible = fechaLegible;
   protected readonly esFinDeSemana = esFinDeSemana;
+  protected readonly pasos = PASOS;
 
+  protected readonly paso = signal<Paso>(1);
+  protected readonly tituloDelPaso = computed(() => PASOS[this.paso() - 1].titulo);
+
+  protected readonly fechaElegida = signal('');
   protected readonly bloque = signal<Bloque>('manana');
+  protected readonly abonoTexto = signal('');
+  protected readonly fechaValida = computed(() => FORMATO_FECHA.test(this.fechaElegida()));
+
+  /** Fecha y bloque confirmados al salir del paso 2; la disponibilidad se pide para esta consulta. */
   protected readonly consulta = signal<Consulta | null>(null);
   protected readonly kinesiologos = signal<KinesiologoDisponible[] | null>(null);
   protected readonly seleccion = signal<Seleccion | null>(null);
@@ -362,6 +504,65 @@ export class AsignarTurno {
   protected readonly alta = signal<DatosPaciente | null>(null);
   protected readonly erroresAlta = signal<ErroresPaciente>({});
 
+  // Navegación entre pasos
+
+  /** Pasa a un paso y deja el foco en su título (DESIGN.md §6.1). */
+  protected irAPaso(paso: Paso): void {
+    this.paso.set(paso);
+    enfocar('titulo-paso');
+  }
+
+  /** Vuelve a un paso ya completo desde el indicador o desde «Cambiar» del resumen. */
+  protected irA(paso: Paso): void {
+    if (paso < this.paso()) this.irAPaso(paso);
+  }
+
+  protected atras(): void {
+    const actual = this.paso();
+    if (actual > 1) this.irAPaso((actual - 1) as Paso);
+  }
+
+  /** Descarta la franja elegida y lo avisa en el paso 3, porque ya no corresponde. */
+  private descartarFranja(motivo: string): void {
+    if (this.seleccion() === null) return;
+    this.seleccion.set(null);
+    this.errorFranja.set(null);
+    this.avisoFranja.set(`${motivo} La franja que habías elegido se descartó: elegí otra.`);
+  }
+
+  /** Paso 2: confirma fecha y bloque, descarta la franja si cambiaron y pide la disponibilidad. */
+  protected async elegirFechaYBloque(evento: Event): Promise<void> {
+    evento.preventDefault();
+    if (this.cargando()) return;
+    const fecha = this.fechaElegida();
+    if (!FORMATO_FECHA.test(fecha)) {
+      this.errorFecha.set('Elegí la fecha del turno.');
+      enfocar('fecha-turno');
+      return;
+    }
+    this.errorFecha.set(null);
+    const nueva: Consulta = { fecha, bloque: this.bloque() };
+    const previa = this.consulta();
+    if (previa === null || previa.fecha !== nueva.fecha || previa.bloque !== nueva.bloque) {
+      this.descartarFranja('Cambió la fecha o el bloque.');
+      this.kinesiologos.set(null);
+    }
+    this.errorFranja.set(null);
+    this.consulta.set(nueva);
+    this.irAPaso(3);
+    await this.cargar();
+  }
+
+  /** Paso 3: sigue solo con una franja elegida. */
+  protected avanzarDesdeFranja(evento: Event): void {
+    evento.preventDefault();
+    if (this.cargando() || !this.seleccion()) return;
+    this.errorFranja.set(null);
+    this.irAPaso(4);
+  }
+
+  // Paso 3: franjas
+
   protected sinFranjas(lista: KinesiologoDisponible[]): boolean {
     return lista.every((k) => k.franjas.length === 0);
   }
@@ -375,23 +576,6 @@ export class AsignarTurno {
     this.errorFranja.set(null);
     this.avisoFranja.set(null);
     this.seleccion.set({ kinesiologoId: k.kinesiologoId, kinesiologo: k.nombre, inicio, fin });
-  }
-
-  protected async consultar(evento: Event, campo: HTMLInputElement): Promise<void> {
-    evento.preventDefault();
-    if (this.cargando()) return;
-    const fecha = campo.value;
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) {
-      this.errorFecha.set('Elegí la fecha del turno.');
-      enfocar('fecha-turno');
-      return;
-    }
-    this.errorFecha.set(null);
-    this.seleccion.set(null);
-    this.errorFranja.set(null);
-    this.avisoFranja.set(null);
-    this.consulta.set({ fecha, bloque: this.bloque() });
-    await this.cargar();
   }
 
   /** Pide la disponibilidad de la consulta vigente, con el paciente elegido si lo hay (RF-25). */
@@ -427,6 +611,8 @@ export class AsignarTurno {
     }
   }
 
+  // Paso 1: paciente
+
   protected async buscarPaciente(evento: Event, campo: HTMLInputElement): Promise<void> {
     evento.preventDefault();
     if (this.buscando()) return;
@@ -446,7 +632,7 @@ export class AsignarTurno {
       const lista = await this.pacientes.buscarPorDni(dni);
       if (numero !== this.busquedaActual) return;
       if (lista.length > 0) {
-        await this.elegirPaciente(lista[0]);
+        this.elegirPaciente(lista[0]);
       } else {
         this.dniSinResultados.set(dni);
         enfocar('sin-paciente');
@@ -465,19 +651,19 @@ export class AsignarTurno {
     enfocar('dni-turno');
   }
 
-  private async elegirPaciente(paciente: Paciente): Promise<void> {
+  private elegirPaciente(paciente: Paciente): void {
     this.dniSinResultados.set(null);
     this.cerrarAlta();
     this.paciente.set(paciente);
-    await this.cargar();
+    enfocar('siguiente');
   }
 
-  protected async cambiarPaciente(): Promise<void> {
+  protected cambiarPaciente(): void {
     this.paciente.set(null);
     this.errorPaciente.set(null);
+    // La disponibilidad depende del paciente (RF-25): la franja elegida ya no vale.
+    this.descartarFranja('Cambió el paciente.');
     enfocar('dni-turno');
-    // Sin paciente la disponibilidad vuelve a ser la general; la franja elegida se revalida.
-    await this.cargar();
   }
 
   protected abrirAlta(dni: string): void {
@@ -498,7 +684,7 @@ export class AsignarTurno {
     this.creando.set(true);
     try {
       const creado = await this.pacientes.crear(datos);
-      await this.elegirPaciente(creado);
+      this.elegirPaciente(creado);
     } catch (error) {
       const errores = erroresDeCampo(error);
       if (errores) {
@@ -512,6 +698,8 @@ export class AsignarTurno {
       this.creando.set(false);
     }
   }
+
+  // Paso 4: confirmar
 
   protected async confirmar(evento: Event, abonado: HTMLInputElement): Promise<void> {
     evento.preventDefault();
@@ -527,11 +715,13 @@ export class AsignarTurno {
     if (!c) return;
     if (!paciente) {
       this.errorPaciente.set('Falta elegir el paciente. Buscalo por DNI o dalo de alta.');
+      this.irAPaso(1);
       enfocar('error-paciente');
       return;
     }
     if (!s) {
       this.errorFranja.set('Falta elegir una franja libre.');
+      this.irAPaso(3);
       enfocar('error-franja');
       return;
     }
@@ -563,10 +753,12 @@ export class AsignarTurno {
       switch (t.paso) {
         case 'paciente':
           this.errorPaciente.set(t.mensaje);
+          this.irAPaso(1);
           enfocar('error-paciente');
           break;
         case 'franja':
           this.errorFranja.set(t.mensaje);
+          this.irAPaso(3);
           enfocar('error-franja');
           break;
         case 'coseguros':
@@ -603,6 +795,10 @@ export class AsignarTurno {
     this.cargaActual++;
     this.busquedaActual++;
     this.asignado.set(null);
+    this.paso.set(1);
+    this.fechaElegida.set('');
+    this.bloque.set('manana');
+    this.abonoTexto.set('');
     this.consulta.set(null);
     this.kinesiologos.set(null);
     this.seleccion.set(null);
@@ -624,6 +820,6 @@ export class AsignarTurno {
     }
     this.cargando.set(false);
     this.buscando.set(false);
-    enfocar('fecha-turno');
+    enfocar('dni-turno');
   }
 }

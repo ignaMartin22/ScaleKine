@@ -653,6 +653,265 @@ fieldset label {
   color: var(--advertencia);
 }
 
+/* Tarjeta de paciente y lista de resultados (§6.2) */
+
+.paciente-tarjeta {
+  display: flex;
+  align-items: center;
+  gap: var(--e-3);
+  min-width: 0;
+}
+
+.paciente-tarjeta > .boton {
+  margin-left: auto;
+}
+
+.paciente-icono {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  color: var(--primario);
+  background: var(--acento-suave);
+  border-radius: 50%;
+}
+
+.paciente-datos {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.paciente-nombre {
+  font-size: var(--texto-subtitulo);
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.paciente-detalle {
+  font-size: var(--texto-tabla);
+  color: var(--texto-2);
+  overflow-wrap: anywhere;
+}
+
+.paciente-tarjeta.compacta .paciente-nombre {
+  font-size: var(--texto-base);
+}
+
+.lista-pacientes {
+  margin: 0 0 var(--e-4);
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--borde);
+  border-radius: var(--radio);
+}
+
+.lista-pacientes li + li {
+  border-top: 1px solid var(--borde);
+}
+
+.lista-pacientes a {
+  display: flex;
+  align-items: center;
+  gap: var(--e-3);
+  padding: var(--e-3) var(--e-4);
+  color: var(--texto);
+  text-decoration: none;
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease,
+    color 150ms ease;
+}
+
+.lista-pacientes a:hover {
+  background: var(--acento-suave);
+}
+
+.lista-pacientes .paciente-tarjeta {
+  flex: 1;
+}
+
+.lista-pacientes a > app-icono {
+  color: var(--texto-2);
+}
+
+/* Asistente por pasos (§6.1) */
+
+.pasos {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--e-2) var(--e-5);
+  margin: 0 0 var(--e-4);
+  padding: 0;
+  list-style: none;
+  font-size: var(--texto-tabla);
+  color: var(--texto-2);
+}
+
+.pasos li.actual {
+  font-weight: 600;
+  color: var(--primario);
+}
+
+.pasos li.completo {
+  color: var(--texto);
+}
+
+.pasos .enlace {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--e-1);
+  min-height: var(--alto-control);
+  color: inherit;
+  text-decoration: none;
+}
+
+.pasos .enlace:hover {
+  text-decoration: underline;
+}
+
+.pasos li > span {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--alto-control);
+}
+
+.pasos-corto {
+  display: none;
+}
+
+.asistente {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 17.5rem;
+  gap: var(--e-4);
+  align-items: start;
+}
+
+.asistente .tarjeta {
+  max-width: none;
+  margin: 0;
+}
+
+.asistente-paso h2 {
+  margin-top: 0;
+}
+
+.asistente-botones {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--e-2);
+  margin-top: var(--e-4);
+}
+
+.asistente-botones > .boton:only-child {
+  margin-left: auto;
+}
+
+.resumen {
+  padding: var(--e-4);
+  background: var(--superficie);
+  border: 1px solid var(--borde);
+  border-radius: var(--radio);
+}
+
+.resumen h2 {
+  margin: 0 0 var(--e-3);
+  font-size: var(--texto-subtitulo);
+}
+
+.resumen ul {
+  display: grid;
+  gap: var(--e-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.resumen-vacio {
+  color: var(--texto-2);
+}
+
+.resumen li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--e-2) var(--e-3);
+}
+
+.resumen li .enlace {
+  margin-left: auto;
+}
+
+.resumen-dato > app-icono {
+  color: var(--primario);
+}
+
+@media (max-width: 899px) {
+  .asistente {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .resumen {
+    order: -1;
+    padding: var(--e-2) var(--e-3);
+  }
+
+  .resumen h2 {
+    margin-bottom: var(--e-2);
+    font-size: var(--texto-base);
+  }
+
+  .resumen ul {
+    grid-auto-flow: column;
+    grid-auto-columns: auto;
+    gap: var(--e-2) var(--e-4);
+  }
+}
+
+@media (max-width: 599px) {
+  .pasos {
+    display: none;
+  }
+
+  .pasos-corto {
+    display: block;
+    margin: 0 0 var(--e-3);
+    font-weight: 600;
+    color: var(--primario);
+  }
+
+  .resumen ul {
+    grid-auto-flow: row;
+  }
+}
+
+/* Pie de la agenda: recaudado (RF-48) */
+
+.recaudado {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--e-2);
+  margin: var(--e-3) 0 0;
+  padding: var(--e-3) var(--e-4);
+  background: var(--superficie);
+  border: 1px solid var(--borde);
+  border-radius: var(--radio);
+}
+
+.recaudado strong {
+  font-size: var(--texto-subtitulo);
+  font-variant-numeric: tabular-nums;
+}
+
+.recaudado-ayuda {
+  margin-left: auto;
+  font-size: var(--texto-chico);
+  color: var(--texto-2);
+}
+
 /* Utilidades */
 
 .codigos {
