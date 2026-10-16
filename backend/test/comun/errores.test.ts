@@ -67,6 +67,30 @@ describe('manejo centralizado de errores (RNF-10)', () => {
     expect(res.status).toBe(404);
     expect(res.body.error.codigo).toBe('no_encontrado');
   });
+
+  it('un error del cliente que Express ya clasificó (4xx) conserva su estado y no se registra como fallo', async () => {
+    const router = Router();
+    router.get('/cliente', () => {
+      throw Object.assign(new Error('detalle interno del parser'), { status: 415, type: 'encoding.unsupported' });
+    });
+    const { app, texto } = appDePrueba([router]);
+    const res = await request(app).get('/api/cliente');
+
+    expect(res.status).toBe(415);
+    expect(res.body).toEqual({ error: { codigo: 'peticion_invalida', mensaje: 'La petición no es válida.' } });
+    expect(res.text).not.toContain('detalle interno');
+    expect(texto()).not.toContain('error no controlado');
+  });
+
+  it('un error con status 5xx sigue siendo un fallo interno', async () => {
+    const router = Router();
+    router.get('/servidor', () => {
+      throw Object.assign(new Error('detalle'), { status: 503 });
+    });
+    const { app } = appDePrueba([router]);
+
+    expect((await request(app).get('/api/servidor')).body.error.codigo).toBe('error_interno');
+  });
 });
 
 describe('errores de Prisma en el log (RNF-08)', () => {

@@ -39,6 +39,14 @@ function esErrorDeCuerpo(err: unknown): err is { type: string; status: number } 
   return typeof err === 'object' && err !== null && 'type' in err && 'status' in err;
 }
 
+/** Estado 4xx con el que Express o body-parser marcaron un error causado por el cliente, si lo hicieron. */
+function estadoDeErrorDeCliente(err: unknown): number | undefined {
+  if (typeof err !== 'object' || err === null) return undefined;
+  const { status, statusCode } = err as { status?: unknown; statusCode?: unknown };
+  const estado = typeof status === 'number' ? status : statusCode;
+  return typeof estado === 'number' && Number.isInteger(estado) && estado >= 400 && estado < 500 ? estado : undefined;
+}
+
 /**
  * Los errores de Prisma pueden copiar en su mensaje los argumentos de la consulta (DNI, nombres),
  * que la redacción por campo no alcanza (RNF-08). De esos se registra solo el tipo, el código y la
@@ -84,6 +92,14 @@ export function manejadorErrores(logger: Logger): ErrorRequestHandler {
         res.status(400).json(cuerpo('json_invalido', 'El cuerpo de la petición no es JSON válido.'));
         return;
       }
+    }
+
+    // Otros errores del cliente que Express o body-parser ya clasificaron (una URL con un `%` mal
+    // formado, una compresión o un charset que no se soportan): son 4xx, no un fallo del servidor.
+    const estadoCliente = estadoDeErrorDeCliente(err);
+    if (estadoCliente !== undefined) {
+      res.status(estadoCliente).json(cuerpo('peticion_invalida', 'La petición no es válida.'));
+      return;
     }
 
     logger.error({ err: errorParaLog(err), metodo: req.method, ruta: req.path }, 'error no controlado');
