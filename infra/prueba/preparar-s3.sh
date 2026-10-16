@@ -22,7 +22,9 @@ RESP_P=$resp_p
 WAL_U=$wal_u
 WAL_P=$wal_p
 E2
-# respaldo: rclone con el backend S3 (en producción es el backend b2; el remoto se llama igual).
+# respaldo: rclone con el backend S3 (en producción es el backend b2; el remoto se llama igual). El backend
+# S3 crea el bucket y consulta el objeto subido; se desactiva (no_check_bucket, no_head) para ensayar una clave
+# que solo escribe, como la de B2 (el backend b2 no hace ninguna de las dos cosas con una clave de un bucket).
 sed -i '/^BUCKET=/d;/^RCLONE_CONFIG_B2_/d' "$dir/.env.respaldo"
 cat >> "$dir/.env.respaldo" <<E2
 BUCKET=scalekine-copias
@@ -31,7 +33,9 @@ RCLONE_CONFIG_B2_PROVIDER=Minio
 RCLONE_CONFIG_B2_ENDPOINT=https://s3
 RCLONE_CONFIG_B2_ACCESS_KEY_ID=$resp_u
 RCLONE_CONFIG_B2_SECRET_ACCESS_KEY=$resp_p
-RCLONE_CONFIG_B2_CA_CERT=/certs/public.crt
+RCLONE_CA_CERT=/certs/public.crt
+RCLONE_CONFIG_B2_NO_CHECK_BUCKET=true
+RCLONE_CONFIG_B2_NO_HEAD=true
 E2
 # db: pgBackRest hacia el bucket del registro de transacciones.
 cat >> "$dir/.env.db" <<E2

@@ -10,5 +10,5 @@ cd "$(dirname "$0")/.."
 [ -n "${COMPOSE_FILE:-}" ] || export COMPOSE_FILE=docker-compose.prod.yml
 
 docker compose exec -T -u postgres -e ESPERA="${ESPERA:-60}" db archivo-reciente.sh
-curl -fsS --max-time 20 -o /dev/null "$LATIDO_ARCHIVO_URL"
+curl -fsS --max-time 20 "$LATIDO_ARCHIVO_URL" >/dev/null
 echo "latido-archivo: latido enviado."

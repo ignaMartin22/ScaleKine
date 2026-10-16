@@ -4,5 +4,6 @@
 # Contexto: infra/prueba/s3/
 FROM alpine:3.23.6
 RUN apk add --no-cache minio minio-client aws-cli openssl bash curl
+RUN ln -s /usr/bin/mcli /usr/local/bin/mc
 COPY --chmod=0555 entrada.sh /usr/local/bin/entrada.sh
 ENTRYPOINT ["/usr/local/bin/entrada.sh"]

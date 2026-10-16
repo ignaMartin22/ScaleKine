@@ -7,7 +7,7 @@ set -eu
 pgbackrest stanza-create
 pgbackrest check
 if ! pgbackrest info --output=json | grep -q '"backup":\[{'; then
-  pgbackrest --type=full backup
+  pgbackrest --type=full --start-fast backup
 else
   echo "iniciar-archivo: ya hay una copia base; no se toma otra."
 fi

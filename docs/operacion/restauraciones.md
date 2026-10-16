@@ -28,12 +28,21 @@ dé OK.
 
 ## Registros
 
-### 2026-10-15 · copia diaria · **PRUEBA LOCAL, datos ficticios**
+### 2026-10-16 · punto en el tiempo (perfil económico) · **PRUEBA LOCAL, datos ficticios**
 - Quién: Claude (T-37), contra un S3 compatible en un contenedor; no es una prueba de producción.
-- Copia usada: PENDIENTE_COPIA
-- Pacientes: PENDIENTE_P · Turnos: PENDIENTE_T · Eventos: PENDIENTE_E
-- Último evento: PENDIENTE_U
-- Migraciones pendientes aplicadas a la copia temporal: PENDIENTE_M
-- Resultado: PENDIENTE_R
-- Notas: sirve de ejemplo del formato. La primera prueba real se anota arriba cuando exista la cuenta de
-  B2 (T-36/T-40).
+- Copia usada: copia base completa más registro de transacciones archivado, repositorio cifrado
+  (`aes-256-cbc`) · instante T: 2026-10-16 04:17:37 UTC
+- Registros ficticios anteriores a T que quedaron: 4 de 4 · posteriores a T que quedaron: 0 de 5
+- Migraciones pendientes aplicadas a la copia temporal: no corresponde (restauración en el mismo servidor)
+- Resultado: OK
+- Notas: ejemplo del formato; se hizo con `infra/prueba/verificar-t37.sh pitr`.
+
+### 2026-10-16 · copia diaria · **PRUEBA LOCAL, datos ficticios**
+- Quién: Claude (T-37), contra un S3 compatible en un contenedor; no es una prueba de producción.
+- Copia usada: `scalekine-2026-10-16T04xx.dump.age`, la única del bucket local, descifrada con una clave `age` de prueba
+- Pacientes: 3 · Turnos: 3 · Eventos: 3
+- Último evento: 2026-10-16 04:07 UTC (hace 0 h)
+- Migraciones pendientes aplicadas a la copia temporal: 0 (6 ya aplicadas)
+- Resultado: OK
+- Notas: ejemplo del formato; se hizo con `infra/prueba/verificar-t37.sh copia`. La primera prueba real se anota
+  arriba cuando exista la cuenta de B2 (T-36/T-40).

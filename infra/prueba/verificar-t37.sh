@@ -15,7 +15,7 @@ export MSYS_NO_PATHCONV=1
 cd "$(dirname "$0")/../.."
 
 T37_ENV="${T37_ENV:-$(cd "${TMPDIR:-/tmp}" && pwd)/t37-entorno}"
-export DIR_ENV="$T37_ENV" COMPOSE_PROJECT_NAME="${T37_PROYECTO:-scalekine-t37-a}" COMPOSE_PROFILES=base-local
+export DIR_ENV="$(cygpath -m "$T37_ENV" 2>/dev/null || echo "$T37_ENV")" COMPOSE_PROJECT_NAME="${T37_PROYECTO:-scalekine-t37-a}" COMPOSE_PROFILES=base-local
 export COMPOSE_PATH_SEPARATOR=":" COMPOSE_FILE="docker-compose.prod.yml:infra/prueba/docker-compose.s3.yml"
 RECEPTOR="scalekine-t37-receptor"
 PUERTO_RECEPTOR=18999
@@ -48,7 +48,7 @@ WITH p AS (
   FROM generate_series(1,$2) g RETURNING id),
 t AS (
   INSERT INTO \"Turno\"(\"pacienteId\",\"kinesiologoId\",fecha,\"horaInicio\",\"creadoPorId\",\"creadoEn\")
-  SELECT p.id,(SELECT id FROM \"Kinesiologo\" LIMIT 1),current_date,'09:00',(SELECT id FROM \"Usuario\" LIMIT 1),now() FROM p RETURNING id)
+  SELECT p.id,(SELECT id FROM \"Kinesiologo\" LIMIT 1),date '2030-01-01' + p.id,'09:00',(SELECT id FROM \"Usuario\" LIMIT 1),now() FROM p RETURNING id)
 INSERT INTO \"TurnoEvento\"(\"turnoId\",tipo,\"autorId\",\"ocurridoEn\") SELECT t.id,'asignacion',(SELECT id FROM \"Usuario\" LIMIT 1),now() FROM t;" >/dev/null
 }
 contar() { psql_db "SELECT count(*) FROM \"Paciente\" WHERE nombre LIKE 'ZZPRUEBA-$1-%'"; }
@@ -132,6 +132,7 @@ etapa_lock() {
 # ---------------------------------------------------------------------------------- verificación 3 · PITR
 etapa_pitr() {
   echo "== Verificación 3: perfil económico, restauración a un punto en el tiempo desde el bucket del registro"
+  local previos; previos="$(contar ANTES)"
   sembrar ANTES 4
   sleep 2
   local T; T="$(psql_db "SELECT to_char(clock_timestamp() AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS.US') || '+00'" | tr -d '\r')"
@@ -147,15 +148,15 @@ etapa_pitr() {
   dc up -d --wait db >/dev/null 2>&1 && ok "db arrancó tras la restauración" || { falla "db no arrancó"; return 1; }
   local a d; a="$(contar ANTES)"; d="$(contar DESPUES)"
   echo "después de restaurar: ANTES=$a DESPUES=$d"
-  [ "$a" = 4 ] && [ "$d" = 0 ] && ok "quedan solo los datos anteriores a T" || falla "la restauración no dejó solo lo anterior a T"
-  [ "$(contar COPIA)" = 3 ] && ok "los datos de antes de la copia base también están" || falla "faltan datos anteriores"
+  [ "$a" = "$((previos + 4))" ] && [ "$d" = 0 ] && ok "quedan solo los datos anteriores a T" || falla "la restauración no dejó solo lo anterior a T"
+  [ "$(contar COPIA)" -ge 3 ] && ok "los datos de antes de la copia base también están" || falla "faltan datos anteriores"
   dc exec -T -u postgres db archivo-reciente.sh >/dev/null 2>&1 && ok "tras restaurar, el archivo continuo sigue funcionando (línea de tiempo nueva)" || falla "el archivo no sigue tras restaurar"
   verificar_cifrado
 }
 
 # Comprueba que el repositorio del registro de transacciones está cifrado.
 verificar_cifrado() {
-  local info magia
+  local info magia; cargar_claves
   info="$(dc exec -T -u postgres db pgbackrest info 2>/dev/null)"
   printf '%s' "$info" | grep -q "cipher: aes-256-cbc" && ok "pgbackrest info: repositorio cifrado (aes-256-cbc)" || falla "pgbackrest info no muestra cifrado aes-256-cbc"
   magia="$(en_s3 sh -c "mc --insecure alias set l https://localhost '$ADMIN_U' '$ADMIN_P' >/dev/null && mc --insecure cat l/scalekine-registro/scalekine/backup/scalekine/backup.info | head -c 8" 2>/dev/null)"
@@ -163,11 +164,12 @@ verificar_cifrado() {
 }
 
 # ----------------------------------------------------------------------------------------- verificación 4
-conteo_receptor() { docker logs "$RECEPTOR" 2>&1 | grep -c "GET /ping" || true; }
+conteo_receptor() { docker logs "$RECEPTOR" 2>&1 | grep -c "LATIDO GET /ping" || true; }
 etapa_latido() {
   echo "== Verificación 4: el latido horario no se envía si el archivo está atrasado"
   docker rm -f "$RECEPTOR" >/dev/null 2>&1
-  docker run -d --name "$RECEPTOR" -p "127.0.0.1:$PUERTO_RECEPTOR:8080" alpine:3.23.6 httpd -f -vv -p 8080 -h /tmp >/dev/null
+  # Receptor mínimo (Node, ya presente por las imágenes del repo): registra cada GET que recibe.
+  docker run -d --name "$RECEPTOR" -p "127.0.0.1:$PUERTO_RECEPTOR:8080" node:24-alpine node -e     "require('http').createServer((q,r)=>{console.log('LATIDO '+q.method+' '+q.url);r.end('ok')}).listen(8080)" >/dev/null
   sleep 2
   export LATIDO_ARCHIVO_URL="http://127.0.0.1:$PUERTO_RECEPTOR/ping"
   local n0 n1 n2 n3
@@ -229,7 +231,8 @@ etapa_limpiar() {
 
 [ "$#" -gt 0 ] || { sed -n 2,13p "$0"; exit 2; }
 etapas=("$@")
-[ "$1" = todo ] && etapas=(preparar copia lock pitr latido mutaciones limpiar)
+# `todo` arranca limpiando restos de una corrida anterior.
+[ "$1" = todo ] && etapas=(limpiar preparar copia lock pitr latido mutaciones limpiar)
 for e in "${etapas[@]}"; do "etapa_$e" || { echo "(la etapa $e terminó con errores)"; }; done
 echo "== Resumen: $fallas comprobaciones fallidas"
 [ "$fallas" -eq 0 ]

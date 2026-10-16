@@ -120,8 +120,10 @@ b2 key create --bucket <bucket-del-registro> scalekine-registro listFiles,readFi
 **¿`rclone` necesita permiso de listar?** No. Resuelto en T-37 (`despliegue.md` §8.2). Con una clave
 limitada a un bucket, `rclone rcat` solo llama a `b2_get_upload_url` y `b2_upload_file`/`b2_*_large_file`
 (permiso `writeFiles`): el identificador del bucket sale de la propia clave y no hay consultas de existencia
-ni listados. La prueba local (`infra/prueba/verificar-t37.sh lock`) confirma el mismo principio contra un S3
-compatible: una clave que solo puede `PutObject` sube la copia. Confirmar contra B2 real al crear la clave
+ni listados. La prueba local (`infra/prueba/verificar-t37.sh lock`) ensaya el mismo principio contra un S3 compatible:
+una clave que solo puede `PutObject` sube la copia (el backend S3 de `rclone` se configura con `no_check_bucket`
+y `no_head`, porque a diferencia del backend `b2` crea el bucket y relee el objeto). La conclusión para B2 sale
+de leer el código del backend `b2`, no de esta prueba. Confirmar contra B2 real al crear la clave
 (`sudo systemctl start scalekine-respaldo.service`); si fallara con un error de permisos, agregar
 `listFiles` y nada más, y dejarlo anotado en `despliegue.md` §8.2.
 
