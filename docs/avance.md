@@ -1,6 +1,6 @@
 # Avance de la implementación
 
-Estado al 2026-10-16, con la ola 7 en curso: T-33, T-35, T-37 y T-42 fusionadas; T-43 en curso en el carril B.
+Estado al 2026-10-16, con la ola 7 en curso: T-33, T-35, T-37, T-42 y T-43 fusionadas. Sigue T-34 en el carril A y T-36 en el carril B.
 medio camino y cómo retomarlo. No reemplaza a las fuentes de verdad: los requisitos están en
 [`spec.md`](./spec.md), las decisiones de diseño en [`plan.md`](./plan.md) y el orden y los
 criterios de "hecho" en [`tasks.md`](./tasks.md). Se actualiza cada vez que se fusiona un PR.
@@ -49,7 +49,7 @@ criterios de "hecho" en [`tasks.md`](./tasks.md). Se actualiza cada vez que se f
 | T-35 · Imágenes y configuración de producción | Hecha | #62 | Imágenes `web`, `api`, `migraciones` y `respaldo`; `docker-compose.prod.yml` con los dos perfiles; ver §2f. |
 | T-37 · Copias externas y restauración | Hecha | #83 | Probada en local con un S3 de prueba; lo que necesita cuentas reales queda para T-36/T-40 (ver §4). |
 | T-42 · Coseguro abonado (backend) | Hecha | #82 | Crítica: pasó `revisor-seguridad` sin bloqueantes. Migración `coseguro_abonado`. |
-| T-43 · Coseguro abonado, recaudado y asistente (frontend) | En curso | rama `t-43-asistente-abono` | Carril B. Cierra con el recorrido manual del usuario. |
+| T-43 · Coseguro abonado, recaudado y asistente (frontend) | Hecha | #85 | Pasó el recorrido manual del usuario. Montos en formato argentino (`$ 1.500,50`); el recaudado se recalcula en vivo en centavos. |
 | T-34, T-36, T-38, T-39 y T-40 | Pendientes | — | Ola 7 de `tasks.md`. T-36 y T-40 necesitan cuentas a nombre del consultorio, el dominio y credenciales. |
 
 Otros PRs fusionados:
@@ -325,6 +325,12 @@ centavos con `BigInt`) y `GET /api/obras-sociales`. La agenda del kinesiólogo n
 base, y su mensaje de tiempo real sale de una copia sin el campo. El frontend recibió solo la
 adaptación mínima; el resto es T-43.
 
+**T-43 (#85):** asistente de asignación en cuatro pasos con el resumen "Tu turno", tarjeta de
+paciente, registrar o corregir el abono desde la agenda, pie de recaudado que se recalcula en vivo
+en centavos (`nucleo/turnos/montos.ts`) y sugerencias de obra social con `datalist`, sin variantes
+repetidas por mayúsculas. La E2E recorre el asistente, verifica que cada paso entra en 1280×720 y
+que el kinesiólogo no ve montos. Se agregaron a `app-icono` los íconos `usuario` y `siguiente`.
+
 **Asistente de asignación (#81, decisión del usuario):** `DESIGN.md` §6.1 reemplaza el formulario
 largo por pasos con un resumen "Tu turno", y §6.2 define la tarjeta de paciente. Lo implementa T-43.
 
@@ -399,6 +405,8 @@ Las que cambian requisitos o diseño ya están en la spec o el plan. Esta lista 
 | Lo que T-37 no pudo probar sin cuentas reales: crear los buckets y las claves de B2, confirmar que `rclone` sube con solo `writeFiles`, la regla de ciclo de vida por la API S3 de B2, los checks de healthchecks.io y la instalación de los temporizadores. Tampoco se volvió a correr `verificar-stack.sh` con la imagen `db` nueva. | Hacerlo al provisionar. | Pendiente de T-36/T-40 |
 | `GET /api/obras-sociales` no tiene tope y trata como distintas las variantes de mayúsculas. | Con el volumen de un consultorio no importa; la interfaz no muestra duplicadas por mayúsculas (T-43). | Anotado |
 | No hay una prueba que fuerce un abono concurrente con una anulación; la condición en el mismo `UPDATE` lo resuelve. | Agregar una prueba con dos transacciones si se toca `registrarAbono`. | Anotado |
+| En pantallas de menos de 900 px, el resumen "Tu turno" se ve arriba, pero el foco le llega después del paso. | Reordenar el DOM si molesta. | Anotado |
+| La suite completa del frontend (`ng test` sin `--include`) se cae en la máquina local con un SIGTERM del worker; en dos tandas pasa. | Confiar en el CI para la corrida completa. | En observación |
 | La base local `scalekine_e2e_pruebas` no recibe sola las migraciones: sin la de T-42, la E2E da 500 al asignar. | Correr `prisma migrate deploy` contra ella después de traer migraciones nuevas. | Anotado |
 
 ---
