@@ -388,13 +388,17 @@ El estado de cada tarea y lo que quedó a medio hacer están en [`avance.md`](./
   ni mensaje de tiempo real del kinesiólogo trae el monto, y que el total no cuenta anulados.
   Crítica: pasa por `revisor-seguridad`.
 
-### T-43 · F · Pantallas de coseguro abonado, recaudado y obras sociales
+### T-43 · F · Coseguro abonado, recaudado, obras sociales y asistente de asignación
 - Asignar y agenda: un solo campo "Coseguro abonado" y la acción para registrarlo o corregirlo; "Sin
   abonar" cuando no hay monto. Pie de la agenda con lo recaudado, que se actualiza en vivo y sigue
   al filtro. El formulario de paciente sugiere las obras sociales guardadas (RF-49). Ficha del
   paciente con el monto abonado de cada turno. Ajusta la suite E2E (T-33) si recorre los coseguros.
-- **RF/RNF:** RF-23, RF-27, RF-47, RF-48, RF-49, RNF-15.
-- **Hecho:** pruebas de unidad de cada pantalla y recorrido manual del usuario.
+- Asignar pasa a ser el asistente por pasos con resumen de `DESIGN.md` §6.1, y el paciente
+  encontrado y los resultados de Pacientes usan la tarjeta de §6.2 (decisión del usuario).
+- **RF/RNF:** RF-19, RF-21, RF-22, RF-23, RF-27, RF-47, RF-48, RF-49, RNF-15.
+- **Hecho:** pruebas de unidad de cada pantalla y de la navegación entre pasos (avanzar, volver,
+  descartar la franja al cambiar paciente o fecha), suite E2E en verde y recorrido manual del
+  usuario.
 
 ---
 
