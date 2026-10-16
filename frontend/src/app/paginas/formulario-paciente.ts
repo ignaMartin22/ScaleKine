@@ -1,7 +1,11 @@
-import { Component, input, output, signal } from '@angular/core';
+import { Component, inject, input, output, signal } from '@angular/core';
 import { ErrorApi } from '../nucleo/http/error-api';
 import { normalizarDni } from '../nucleo/pacientes/dni';
-import type { DatosPaciente } from '../nucleo/pacientes/pacientes';
+import {
+  Pacientes,
+  sugerenciasDeObraSocial,
+  type DatosPaciente,
+} from '../nucleo/pacientes/pacientes';
 import { enfocar } from '../nucleo/ui/enfocar';
 import { Icono } from '../nucleo/ui/icono';
 
@@ -125,10 +129,12 @@ export function erroresDeCampo(error: unknown): ErroresPaciente | null {
           [attr.aria-invalid]="error('obraSocial') ? 'true' : null"
         />
         <datalist id="sugerencias-obra-social">
-          <option value="Particular"></option>
+          @for (nombre of sugerencias(); track nombre) {
+            <option [value]="nombre"></option>
+          }
         </datalist>
         <p id="ayuda-paciente-obra-social">
-          Escribila o elegí «Particular» si no tiene. No se completa sola.
+          Elegila de la lista o escribí una nueva. «Particular» si no tiene. No se completa sola.
         </p>
         @if (error('obraSocial'); as mensaje) {
           <p class="error" id="error-paciente-obra-social">
@@ -158,7 +164,23 @@ export class FormularioPaciente {
   readonly guardar = output<DatosPaciente>();
   readonly cancelar = output<void>();
 
+  private readonly servicio = inject(Pacientes);
   private readonly locales = signal<ErroresPaciente>({});
+  /** «Particular» y las obras sociales ya guardadas, sin repetidas (RF-49). */
+  protected readonly sugerencias = signal<string[]>(sugerenciasDeObraSocial([]));
+
+  constructor() {
+    void this.cargarSugerencias();
+  }
+
+  /** Las sugerencias son una ayuda: si no llegan, queda «Particular» y se puede escribir igual. */
+  private async cargarSugerencias(): Promise<void> {
+    try {
+      this.sugerencias.set(sugerenciasDeObraSocial(await this.servicio.obrasSociales()));
+    } catch {
+      // Sin sugerencias de la API el campo sigue funcionando.
+    }
+  }
 
   protected error(campo: CampoPaciente): string | undefined {
     return this.locales()[campo] ?? this.erroresServidor()[campo];

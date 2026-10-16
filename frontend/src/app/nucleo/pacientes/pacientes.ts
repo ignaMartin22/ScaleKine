@@ -57,10 +57,35 @@ export class Pacientes {
     return paciente;
   }
 
+  /** Obras sociales ya guardadas, para sugerir al cargar un paciente (RF-49). Solo secretaría y administrador. */
+  async obrasSociales(): Promise<string[]> {
+    const { obrasSociales } = await firstValueFrom(
+      this.http.get<{ obrasSociales: string[] }>('/api/obras-sociales'),
+    );
+    return obrasSociales;
+  }
+
   private async buscar(params: HttpParams): Promise<Paciente[]> {
     const { pacientes } = await firstValueFrom(
       this.http.get<{ pacientes: Paciente[] }>('/api/pacientes', { params }),
     );
     return pacientes;
   }
+}
+
+/**
+ * Sugerencias de obra social (RF-49): «Particular» primero y las guardadas después, sin repetir las
+ * variantes que solo difieren en mayúsculas ni los espacios sobrantes. Gana la primera que aparece.
+ */
+export function sugerenciasDeObraSocial(guardadas: readonly string[]): string[] {
+  const vistas = new Set<string>();
+  const sugerencias: string[] = [];
+  for (const nombre of ['Particular', ...guardadas]) {
+    const limpio = nombre.trim().replace(/\s+/g, ' ');
+    const clave = limpio.toLocaleLowerCase('es');
+    if (clave === '' || vistas.has(clave)) continue;
+    vistas.add(clave);
+    sugerencias.push(limpio);
+  }
+  return sugerencias;
 }
