@@ -39,12 +39,26 @@ function esErrorDeCuerpo(err: unknown): err is { type: string; status: number } 
   return typeof err === 'object' && err !== null && 'type' in err && 'status' in err;
 }
 
-/** Estado 4xx con el que Express o body-parser marcaron un error causado por el cliente, si lo hicieron. */
+/** `type` de los errores de body-parser causados por el cliente (el resto de `entity.*` se maneja arriba). */
+const TIPOS_DE_CUERPO_DEL_CLIENTE = new Set([
+  'encoding.unsupported',
+  'charset.unsupported',
+  'request.aborted',
+  'request.size.invalid',
+  'entity.verify.failed',
+]);
+
+/**
+ * Estado 4xx de los errores del cliente que se quieren cubrir: los de body-parser por su `type` y el
+ * `URIError` de Express al decodificar un parámetro de la ruta (400). Cualquier otro error, aunque
+ * traiga un `status` 4xx, es un fallo interno.
+ */
 function estadoDeErrorDeCliente(err: unknown): number | undefined {
   if (typeof err !== 'object' || err === null) return undefined;
-  const { status, statusCode } = err as { status?: unknown; statusCode?: unknown };
-  const estado = typeof status === 'number' ? status : statusCode;
-  return typeof estado === 'number' && Number.isInteger(estado) && estado >= 400 && estado < 500 ? estado : undefined;
+  const { status, type } = err as { status?: unknown; type?: unknown };
+  if (typeof status !== 'number' || !Number.isInteger(status) || status < 400 || status >= 500) return undefined;
+  if (err instanceof URIError && status === 400) return 400;
+  return typeof type === 'string' && TIPOS_DE_CUERPO_DEL_CLIENTE.has(type) ? status : undefined;
 }
 
 /**

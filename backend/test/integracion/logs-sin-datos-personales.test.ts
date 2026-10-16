@@ -191,10 +191,12 @@ describe('los logs no contienen datos personales ni secretos (RNF-08)', () => {
     await db.consultorio.create({
       data: { id: 1, nombre: 'Consultorio Ficticio', direccion: 'Calle Falsa 123', telefono: '11 5555 0000' },
     });
+    const hashAdmin = await hashearContrasena(CLAVE_ADMIN);
+    agregar(hashAdmin, 'hash argon2 de la contraseña');
     const admin = await crearUsuario({
       rol: 'administrador',
       nombreUsuario: ADMIN,
-      hashContrasena: await hashearContrasena(CLAVE_ADMIN),
+      hashContrasena: hashAdmin,
     });
 
     // --- Administrador: ingreso fallido, ingreso, activación del segundo factor ---------------------

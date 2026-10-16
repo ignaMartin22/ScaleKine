@@ -82,6 +82,36 @@ describe('manejo centralizado de errores (RNF-10)', () => {
     expect(texto()).not.toContain('error no controlado');
   });
 
+  it('un error genérico con status 4xx (404, 403) sigue siendo un fallo interno y se registra', async () => {
+    const router = Router();
+    router.get('/otro-404', () => {
+      throw Object.assign(new Error('detalle'), { status: 404 });
+    });
+    router.get('/otro-403', () => {
+      throw Object.assign(new Error('detalle'), { statusCode: 403 });
+    });
+    const { app, texto } = appDePrueba([router]);
+
+    for (const ruta of ['/api/otro-404', '/api/otro-403']) {
+      const res = await request(app).get(ruta);
+      expect(res.status).toBe(500);
+      expect(res.body.error.codigo).toBe('error_interno');
+    }
+    expect(texto().match(/error no controlado/g)).toHaveLength(2);
+  });
+
+  it('el URIError de Express al decodificar un parámetro responde 400', async () => {
+    const router = Router();
+    router.get('/x/:id', (_req, res) => {
+      res.end();
+    });
+    const { app } = appDePrueba([router]);
+    const res = await request(app).get('/api/x/%E0%A4%A');
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.codigo).toBe('peticion_invalida');
+  });
+
   it('un error con status 5xx sigue siendo un fallo interno', async () => {
     const router = Router();
     router.get('/servidor', () => {
