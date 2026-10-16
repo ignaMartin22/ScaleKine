@@ -127,6 +127,7 @@ const fila = (f: ComponentFixture<unknown>, id: number) => q(f, '#turno-' + id);
 async function montar(
   turnos: TurnoDeAgenda[] = [turno(1), cerrado(2)],
   pendientes: TurnoPendiente[] = [],
+  recaudado = '0.00',
 ) {
   TestBed.configureTestingModule({
     providers: [
@@ -141,7 +142,7 @@ async function montar(
   (await peticion(servidor, '/api/kinesiologos')).flush({ kinesiologos: KINESIOLOGOS });
   const agenda = await peticion(servidor, '/api/agenda');
   expect(agenda.request.params.keys()).toEqual([]);
-  agenda.flush({ fecha: '2026-10-15', turnos });
+  agenda.flush({ fecha: '2026-10-15', turnos, recaudado });
   (await peticion(servidor, '/api/agenda/pendientes')).flush({
     cantidad: pendientes.length,
     turnos: pendientes,
@@ -155,8 +156,9 @@ async function relectura(
   servidor: HttpTestingController,
   turnos: TurnoDeAgenda[],
   pendientes: TurnoPendiente[] = [],
+  recaudado = '0.00',
 ) {
-  (await peticion(servidor, '/api/agenda')).flush({ fecha: '2026-10-15', turnos });
+  (await peticion(servidor, '/api/agenda')).flush({ fecha: '2026-10-15', turnos, recaudado });
   (await peticion(servidor, '/api/agenda/pendientes')).flush({
     cantidad: pendientes.length,
     turnos: pendientes,
@@ -182,7 +184,7 @@ describe('AgendaSecretaria: lista y filtros (RF-41)', () => {
       '08:00 a 08:45',
       'En espera',
       'Llegó a las 10:05',
-      '$ 1500.50',
+      '$ 1.500,50',
     ]) {
       expect(t).toContain(dato);
     }
@@ -209,7 +211,11 @@ describe('AgendaSecretaria: lista y filtros (RF-41)', () => {
     const fixture = TestBed.createComponent(AgendaSecretaria);
     fixture.detectChanges();
     (await peticion(servidor, '/api/kinesiologos')).flush({ kinesiologos: [] });
-    (await peticion(servidor, '/api/agenda')).flush({ fecha: '2026-10-15', turnos: [] });
+    (await peticion(servidor, '/api/agenda')).flush({
+      fecha: '2026-10-15',
+      turnos: [],
+      recaudado: '0.00',
+    });
     (await peticion(servidor, '/api/agenda/pendientes')).flush({ cantidad: 0, turnos: [] });
     await aparece(fixture, '#sin-turnos');
   });
@@ -230,6 +236,7 @@ describe('AgendaSecretaria: lista y filtros (RF-41)', () => {
     p.flush({
       fecha: '2026-10-15',
       turnos: [turno(9, { kinesiologo: { id: 4, nombre: 'Otra Ficticia' } })],
+      recaudado: '0.00',
     });
     await aparece(fixture, '#turno-9');
     expect(fila(fixture, 1)).toBeNull();
@@ -243,7 +250,7 @@ describe('AgendaSecretaria: lista y filtros (RF-41)', () => {
     const p = await peticion(servidor, '/api/agenda');
     expect(p.request.params.get('fecha')).toBe('2026-10-16');
     expect(p.request.params.has('kinesiologoId')).toBe(false);
-    p.flush({ fecha: '2026-10-16', turnos: [] });
+    p.flush({ fecha: '2026-10-16', turnos: [], recaudado: '0.00' });
     await aparece(fixture, '#sin-turnos');
   });
 
@@ -276,14 +283,15 @@ describe('AgendaSecretaria: acciones que manda la API (RF-34)', () => {
       'No asistió',
       'Anular',
       'Reprogramar',
-      'Coseguro abonado',
+      'Registrar abono',
       'Ticket (PDF)',
       'Corregir estado',
     ]);
     // En espera: solo lo que la API ofrece; sin reprogramar (solo reservados) ni corregir.
-    expect(de(2)).toEqual(['Asistió', 'Coseguro abonado', 'Ticket (PDF)']);
+    expect(de(2)).toEqual(['Asistió', 'Registrar abono', 'Ticket (PDF)']);
     // Un turno cerrado no recibe acciones de flujo, y nunca se calcula "Anular" en el cliente.
-    expect(de(3)).toEqual(['Coseguro abonado', 'Ticket (PDF)', 'Corregir estado']);
+    // Un turno anulado no admite abono (RF-27): no se ofrece la acción.
+    expect(de(3)).toEqual(['Ticket (PDF)', 'Corregir estado']);
   });
 
   it('usa el texto de la acción tal como llega', async () => {
@@ -635,7 +643,7 @@ describe('AgendaSecretaria: coseguro abonado (RF-27)', () => {
 
   it('precarga el monto y manda la clave monto', async () => {
     const { fixture, servidor } = await montar([turno(1, { coseguroAbonado: '1500.50' })]);
-    boton(fixture, 'Coseguro abonado').click();
+    boton(fixture, 'Corregir abono').click();
     await aparece(fixture, '#editar-coseguro-abonado');
     const campo = q<HTMLInputElement>(fixture, '#editar-coseguro-abonado');
     expect(campo.value).toBe('1500.50');
@@ -647,12 +655,12 @@ describe('AgendaSecretaria: coseguro abonado (RF-27)', () => {
     p.flush({ turno: { id: 1 } });
     await relectura(servidor, [turno(1, { coseguroAbonado: '300.50' })]);
     await desaparece(fixture, '[role="dialog"]');
-    expect(fila(fixture, 1).textContent).toContain('$ 300.50');
+    expect(fila(fixture, 1).textContent).toContain('$ 300,50');
   });
 
   it('vaciar el monto manda null y no omite la clave', async () => {
     const { fixture, servidor } = await montar([turno(1, { coseguroAbonado: '1500.50' })]);
-    boton(fixture, 'Coseguro abonado').click();
+    boton(fixture, 'Corregir abono').click();
     await aparece(fixture, '#editar-coseguro-abonado');
     q<HTMLInputElement>(fixture, '#editar-coseguro-abonado').value = '';
     q(fixture, '#guardar-abono').click();
@@ -664,13 +672,128 @@ describe('AgendaSecretaria: coseguro abonado (RF-27)', () => {
 
   it('un monto inválido avisa y no escribe', async () => {
     const { fixture, servidor } = await montar();
-    boton(fixture, 'Coseguro abonado').click();
+    boton(fixture, 'Registrar abono').click();
     await aparece(fixture, '#editar-coseguro-abonado');
     q<HTMLInputElement>(fixture, '#editar-coseguro-abonado').value = '1.234';
     q(fixture, '#guardar-abono').click();
     await aparece(fixture, '#error-dialogo');
     expect(q(fixture, '#error-dialogo').textContent).toContain('hasta dos decimales');
     servidor.expectNone((r) => r.url.includes('/abono'));
+  });
+
+  it('el botón dice «Registrar abono» sin monto y «Corregir abono» con monto', async () => {
+    const { fixture } = await montar([turno(1), turno(2, { coseguroAbonado: '10.00' })]);
+    const rotulos = (id: number) =>
+      Array.from(fila(fixture, id).querySelectorAll('button')).map((b) => b.textContent?.trim());
+    expect(rotulos(1)).toContain('Registrar abono');
+    expect(rotulos(1)).not.toContain('Corregir abono');
+    expect(rotulos(2)).toContain('Corregir abono');
+  });
+
+  it('un turno anulado muestra su monto pero no ofrece registrar ni corregir el abono', async () => {
+    const { fixture } = await montar([{ ...cerrado(1, 'anulado'), coseguroAbonado: '500.00' }]);
+    expect(fila(fixture, 1).textContent).toContain('$ 500,00');
+    expect(botones(fixture)).not.toContain('Corregir abono');
+    expect(botones(fixture)).not.toContain('Registrar abono');
+  });
+
+  it('«Quitar abono» manda monto null y deja el turno sin abonar', async () => {
+    const { fixture, servidor } = await montar([turno(1, { coseguroAbonado: '1500.50' })]);
+    boton(fixture, 'Corregir abono').click();
+    await aparece(fixture, '#quitar-abono');
+    q(fixture, '#quitar-abono').click();
+    const p = await peticion(servidor, '/api/turnos/1/abono', 'PUT');
+    expect(p.request.body).toEqual({ monto: null });
+    p.flush({ turno: { id: 1 } });
+    await relectura(servidor, [turno(1)]);
+    await desaparece(fixture, '[role="dialog"]');
+    expect(fila(fixture, 1).textContent).toContain('Sin abonar');
+    expect(q(fixture, '#mensaje-turno-1').textContent).toContain('quedó sin abonar');
+  });
+
+  it('sin monto cargado no ofrece quitar el abono', async () => {
+    const { fixture } = await montar([turno(1)]);
+    boton(fixture, 'Registrar abono').click();
+    await aparece(fixture, '#editar-coseguro-abonado');
+    expect(q(fixture, '#quitar-abono')).toBeNull();
+  });
+
+  it('409 turno_anulado: avisa en el turno con un mensaje claro y relee la agenda', async () => {
+    const { fixture, servidor } = await montar([turno(1)]);
+    boton(fixture, 'Registrar abono').click();
+    await aparece(fixture, '#editar-coseguro-abonado');
+    q<HTMLInputElement>(fixture, '#editar-coseguro-abonado').value = '100';
+    q(fixture, '#guardar-abono').click();
+    const [cuerpo, opciones] = error('turno_anulado');
+    (await peticion(servidor, '/api/turnos/1/abono', 'PUT')).flush(cuerpo, opciones);
+    await relectura(servidor, [cerrado(1, 'anulado')]);
+    await desaparece(fixture, '[role="dialog"]');
+    const mensaje = q(fixture, '#mensaje-turno-1');
+    expect(mensaje.getAttribute('role')).toBe('alert');
+    expect(mensaje.textContent).toContain('anulado');
+    expect(mensaje.textContent).toContain('no admite');
+  });
+
+  it('al registrar un abono el recaudado sale de la relectura de la agenda', async () => {
+    const { fixture, servidor } = await montar([turno(1)], [], '0.00');
+    expect(q(fixture, '#recaudado-monto').textContent).toContain('$ 0,00');
+    boton(fixture, 'Registrar abono').click();
+    await aparece(fixture, '#editar-coseguro-abonado');
+    q<HTMLInputElement>(fixture, '#editar-coseguro-abonado').value = '2500,5';
+    q(fixture, '#guardar-abono').click();
+    (await peticion(servidor, '/api/turnos/1/abono', 'PUT')).flush({ turno: { id: 1 } });
+    await relectura(servidor, [turno(1, { coseguroAbonado: '2500.50' })], [], '2500.50');
+    await vi.waitFor(() => {
+      fixture.detectChanges();
+      expect(q(fixture, '#recaudado-monto').textContent).toContain('$ 2.500,50');
+    });
+  });
+});
+
+describe('AgendaSecretaria: recaudado al pie (RF-48)', () => {
+  it('muestra el recaudado que manda la API, formateado en pesos', async () => {
+    const { fixture } = await montar([turno(1, { coseguroAbonado: '1500.50' })], [], '1500.50');
+    expect(q(fixture, '#recaudado').textContent).toContain('Recaudado');
+    expect(q(fixture, '#recaudado-monto').textContent).toBe('$ 1.500,50');
+  });
+
+  it('se muestra también sin turnos, en cero', async () => {
+    const { fixture, servidor } = await montar([turno(1)], [], '0.00');
+    const f = q<HTMLInputElement>(fixture, '#agenda-fecha');
+    f.value = '2026-10-16';
+    f.dispatchEvent(new Event('change'));
+    (await peticion(servidor, '/api/agenda')).flush({
+      fecha: '2026-10-16',
+      turnos: [],
+      recaudado: '0.00',
+    });
+    await aparece(fixture, '#sin-turnos');
+    expect(q(fixture, '#recaudado-monto').textContent).toBe('$ 0,00');
+  });
+
+  it('al cambiar la fecha o el filtro vuelve a tomar el recaudado de la API', async () => {
+    const { fixture, servidor } = await montar([turno(1)], [], '300.00');
+    const f = q<HTMLInputElement>(fixture, '#agenda-fecha');
+    f.value = '2026-10-16';
+    f.dispatchEvent(new Event('change'));
+    const porFecha = await peticion(servidor, '/api/agenda');
+    expect(porFecha.request.params.get('fecha')).toBe('2026-10-16');
+    porFecha.flush({ fecha: '2026-10-16', turnos: [turno(2)], recaudado: '45.00' });
+    await vi.waitFor(() => {
+      fixture.detectChanges();
+      expect(q(fixture, '#recaudado-monto').textContent).toBe('$ 45,00');
+    });
+
+    const select = q<HTMLSelectElement>(fixture, '#agenda-kinesiologo');
+    select.value = '4';
+    select.dispatchEvent(new Event('change'));
+    const porFiltro = await peticion(servidor, '/api/agenda');
+    expect(porFiltro.request.params.get('kinesiologoId')).toBe('4');
+    porFiltro.flush({ fecha: '2026-10-16', turnos: [turno(3)], recaudado: '10.10' });
+    await vi.waitFor(() => {
+      fixture.detectChanges();
+      expect(q(fixture, '#recaudado-monto').textContent).toBe('$ 10,10');
+    });
   });
 });
 
@@ -732,7 +855,11 @@ describe('AgendaSecretaria: aviso de pendientes (RF-42)', () => {
     const select = q<HTMLSelectElement>(fixture, '#agenda-kinesiologo');
     select.value = '4';
     select.dispatchEvent(new Event('change'));
-    (await peticion(servidor, '/api/agenda')).flush({ fecha: '2026-10-15', turnos: [turno(1)] });
+    (await peticion(servidor, '/api/agenda')).flush({
+      fecha: '2026-10-15',
+      turnos: [turno(1)],
+      recaudado: '0.00',
+    });
 
     await aparece(fixture, '#aviso-pendientes');
     boton(fixture, 'Ver en la agenda').click();
@@ -742,6 +869,7 @@ describe('AgendaSecretaria: aviso de pendientes (RF-42)', () => {
     p.flush({
       fecha: '2026-10-14',
       turnos: [turno(5, { fecha: '2026-10-14', horaInicio: '10:00', horaFin: '10:45' })],
+      recaudado: '0.00',
     });
     await aparece(fixture, '#turno-5');
     expect(q<HTMLInputElement>(fixture, '#agenda-fecha').value).toBe('2026-10-14');

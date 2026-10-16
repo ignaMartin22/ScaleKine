@@ -187,7 +187,7 @@ function deAgenda(id: number, cambios: Partial<TurnoDeAgenda> = {}): TurnoDeAgen
   };
 }
 
-async function montarSecretaria(turnos: TurnoDeAgenda[]) {
+async function montarSecretaria(turnos: TurnoDeAgenda[], recaudado = '0.00') {
   const base = configurar('secretaria');
   const fixture = TestBed.createComponent(AgendaSecretaria);
   fixture.detectChanges();
@@ -197,7 +197,7 @@ async function montarSecretaria(turnos: TurnoDeAgenda[]) {
       { id: 4, nombre: 'Otra Ficticia', bloque: 'tarde', activo: true },
     ],
   });
-  (await pedido(base.servidor, '/api/agenda')).flush({ fecha: '2026-10-15', turnos });
+  (await pedido(base.servidor, '/api/agenda')).flush({ fecha: '2026-10-15', turnos, recaudado });
   (await pedido(base.servidor, '/api/agenda/pendientes')).flush({ cantidad: 0, turnos: [] });
   await aparece(fixture, () =>
     expect(raiz(fixture).querySelector('#turno-' + turnos[0].id)).not.toBeNull(),
@@ -213,6 +213,156 @@ const hay = (f: ComponentFixture<unknown>, id: number) =>
 async function pendientesVacios(servidor: HttpTestingController) {
   (await pedido(servidor, '/api/agenda/pendientes')).flush({ cantidad: 0, turnos: [] });
 }
+
+const recaudadoVisible = (f: ComponentFixture<unknown>) =>
+  raiz(f).querySelector('#recaudado-monto')?.textContent?.trim();
+
+describe('Recaudado en vivo (RF-48, RF-44)', () => {
+  it('un turno:cambio con un abono nuevo lo suma, en centavos: 0.10 + 0.20 es 0.30', async () => {
+    const { fixture, socket, servidor } = await montarSecretaria(
+      [deAgenda(1, { coseguroAbonado: '0.10' }), deAgenda(2)],
+      '0.10',
+    );
+    expect(recaudadoVisible(fixture)).toBe('$ 0,10');
+    socket.emitir('turno:cambio', { turno: deAgenda(2, { coseguroAbonado: '0.20' }) });
+    fixture.detectChanges();
+    expect(recaudadoVisible(fixture)).toBe('$ 0,30');
+    await pendientesVacios(servidor);
+  });
+
+  it('suma con formato de miles y mantiene los dos decimales', async () => {
+    const { fixture, socket, servidor } = await montarSecretaria(
+      [deAgenda(1, { coseguroAbonado: '1999.99' })],
+      '1999.99',
+    );
+    socket.emitir('turno:cambio', {
+      turno: deAgenda(2, { horaInicio: '09:00', coseguroAbonado: '0.01' }),
+    });
+    fixture.detectChanges();
+    expect(recaudadoVisible(fixture)).toBe('$ 2.000,00');
+    await pendientesVacios(servidor);
+  });
+
+  it('un turno que pasa a anulado deja de contar', async () => {
+    const { fixture, socket, servidor } = await montarSecretaria(
+      [deAgenda(1, { coseguroAbonado: '500.00' }), deAgenda(2, { coseguroAbonado: '250.00' })],
+      '750.00',
+    );
+    socket.emitir('turno:cambio', {
+      turno: deAgenda(1, { estado: 'anulado', coseguroAbonado: '500.00' }),
+    });
+    fixture.detectChanges();
+    expect(hay(fixture, 1)).toBe(true);
+    expect(recaudadoVisible(fixture)).toBe('$ 250,00');
+    await pendientesVacios(servidor);
+  });
+
+  it('un turno nuevo ya anulado no suma aunque traiga un monto', async () => {
+    const { fixture, socket, servidor } = await montarSecretaria(
+      [deAgenda(1, { coseguroAbonado: '100.00' })],
+      '100.00',
+    );
+    socket.emitir('turno:cambio', {
+      turno: deAgenda(2, { estado: 'anulado', coseguroAbonado: '900.00' }),
+    });
+    fixture.detectChanges();
+    expect(recaudadoVisible(fixture)).toBe('$ 100,00');
+    await pendientesVacios(servidor);
+  });
+
+  it('un turno que se corrige de anulado a otro estado vuelve a contar', async () => {
+    const { fixture, socket, servidor } = await montarSecretaria(
+      [deAgenda(1, { estado: 'anulado', coseguroAbonado: '300.00' })],
+      '0.00',
+    );
+    socket.emitir('turno:cambio', { turno: deAgenda(1, { coseguroAbonado: '300.00' }) });
+    fixture.detectChanges();
+    expect(recaudadoVisible(fixture)).toBe('$ 300,00');
+    await pendientesVacios(servidor);
+  });
+
+  it('un abono quitado baja el recaudado', async () => {
+    const { fixture, socket, servidor } = await montarSecretaria(
+      [deAgenda(1, { coseguroAbonado: '300.00' })],
+      '300.00',
+    );
+    socket.emitir('turno:cambio', { turno: deAgenda(1, { coseguroAbonado: null }) });
+    fixture.detectChanges();
+    expect(recaudadoVisible(fixture)).toBe('$ 0,00');
+    await pendientesVacios(servidor);
+  });
+
+  it('turno:quitado resta el turno que sale de la agenda', async () => {
+    const { fixture, socket } = await montarSecretaria(
+      [deAgenda(1, { coseguroAbonado: '100.00' }), deAgenda(2, { coseguroAbonado: '40.50' })],
+      '140.50',
+    );
+    socket.emitir('turno:quitado', { turnoId: 2 });
+    fixture.detectChanges();
+    expect(recaudadoVisible(fixture)).toBe('$ 100,00');
+  });
+
+  it('un turno de otra fecha no suma, y uno reprogramado a otra fecha resta', async () => {
+    const { fixture, socket, servidor } = await montarSecretaria(
+      [deAgenda(1, { coseguroAbonado: '100.00' }), deAgenda(2, { coseguroAbonado: '50.00' })],
+      '150.00',
+    );
+    socket.emitir('turno:cambio', {
+      turno: deAgenda(9, { fecha: '2026-10-16', coseguroAbonado: '999.00' }),
+    });
+    fixture.detectChanges();
+    expect(recaudadoVisible(fixture)).toBe('$ 150,00');
+    await pendientesVacios(servidor);
+
+    socket.emitir('turno:cambio', {
+      turno: deAgenda(2, { fecha: '2026-10-20', coseguroAbonado: '50.00' }),
+    });
+    fixture.detectChanges();
+    expect(recaudadoVisible(fixture)).toBe('$ 100,00');
+    await pendientesVacios(servidor);
+  });
+
+  it('sigue el filtro de kinesiólogo: lo ajeno no suma y lo que sale del filtro resta', async () => {
+    const { fixture, socket, servidor } = await montarSecretaria([deAgenda(1), deAgenda(2)]);
+    const select = raiz(fixture).querySelector('#agenda-kinesiologo') as HTMLSelectElement;
+    select.value = '3';
+    select.dispatchEvent(new Event('change'));
+    (await pedido(servidor, '/api/agenda')).flush({
+      fecha: '2026-10-15',
+      turnos: [deAgenda(1, { coseguroAbonado: '100.00' })],
+      recaudado: '100.00',
+    });
+    await aparece(fixture, () => expect(recaudadoVisible(fixture)).toBe('$ 100,00'));
+
+    socket.emitir('turno:cambio', {
+      turno: deAgenda(5, {
+        kinesiologo: { id: 4, nombre: 'Otra Ficticia' },
+        coseguroAbonado: '700.00',
+      }),
+    });
+    fixture.detectChanges();
+    expect(recaudadoVisible(fixture)).toBe('$ 100,00');
+    await pendientesVacios(servidor);
+
+    socket.emitir('turno:cambio', {
+      turno: deAgenda(1, {
+        kinesiologo: { id: 4, nombre: 'Otra Ficticia' },
+        coseguroAbonado: '100.00',
+      }),
+    });
+    fixture.detectChanges();
+    expect(recaudadoVisible(fixture)).toBe('$ 0,00');
+    await pendientesVacios(servidor);
+  });
+
+  it('el kinesiólogo no ve el recaudado ni ningún monto', async () => {
+    const { fixture } = await montarKinesiologo([], [propio(1)]);
+    expect(raiz(fixture).querySelector('#recaudado')).toBeNull();
+    expect(raiz(fixture).textContent).not.toContain('Recaudado');
+    expect(raiz(fixture).textContent).not.toContain('$ ');
+    expect(raiz(fixture).textContent).not.toContain('Coseguro');
+  });
+});
 
 describe('Agenda de secretaría en vivo (RF-44, RF-45)', () => {
   it('reemplaza el turno por id con el estado y las acciones que manda el servidor', async () => {
@@ -270,7 +420,11 @@ describe('Agenda de secretaría en vivo (RF-44, RF-45)', () => {
     const select = raiz(fixture).querySelector('#agenda-kinesiologo') as HTMLSelectElement;
     select.value = '3';
     select.dispatchEvent(new Event('change'));
-    (await pedido(servidor, '/api/agenda')).flush({ fecha: '2026-10-15', turnos: [deAgenda(1)] });
+    (await pedido(servidor, '/api/agenda')).flush({
+      fecha: '2026-10-15',
+      turnos: [deAgenda(1)],
+      recaudado: '0.00',
+    });
     await aparece(fixture, () => expect(hay(fixture, 2)).toBe(false));
 
     socket.emitir('turno:cambio', {
@@ -305,7 +459,11 @@ describe('Agenda de secretaría en vivo (RF-44, RF-45)', () => {
     );
 
     socket.emitir('connect');
-    (await pedido(servidor, '/api/agenda')).flush({ fecha: '2026-10-15', turnos: [deAgenda(9)] });
+    (await pedido(servidor, '/api/agenda')).flush({
+      fecha: '2026-10-15',
+      turnos: [deAgenda(9)],
+      recaudado: '0.00',
+    });
     await pendientesVacios(servidor);
     await aparece(fixture, () => {
       expect(hay(fixture, 9)).toBe(true);
