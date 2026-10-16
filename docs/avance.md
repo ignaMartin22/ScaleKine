@@ -1,6 +1,6 @@
 # Avance de la implementación
 
-Estado al 2026-10-15, con la ola 6 avanzada: T-31, T-32 y T-41 fusionadas; sigue la infraestructura (T-35 → T-37).
+Estado al 2026-10-16, con la ola 7 en curso: T-33, T-35, T-37 y T-42 fusionadas; T-43 en curso en el carril B.
 medio camino y cómo retomarlo. No reemplaza a las fuentes de verdad: los requisitos están en
 [`spec.md`](./spec.md), las decisiones de diseño en [`plan.md`](./plan.md) y el orden y los
 criterios de "hecho" en [`tasks.md`](./tasks.md). Se actualiza cada vez que se fusiona un PR.
@@ -45,7 +45,12 @@ criterios de "hecho" en [`tasks.md`](./tasks.md). Se actualiza cada vez que se f
 | T-31 · Difusión | Hecha | #54 | Crítica: `revisor-seguridad` encontró un bloqueante (ver §2e) y pasó dos rondas de correcciones. |
 | T-32 · Agenda viva | Hecha | #56 | Pasó el recorrido manual del usuario. El recorrido encontró que el polling no manda `Origin` en el navegador: el tiempo real quedó solo por websocket (ver §2e). |
 | T-41 · Diseño visual | Hecha | #58 | Implementa `DESIGN.md` (RNF-15). Pasó el recorrido manual del usuario; a pedido suyo, secretaría y administrador entran directo a la agenda. |
-| T-33 a T-40 | Pendientes | — | Ola 6 (T-35, T-37) y ola 7 de `tasks.md`. |
+| T-33 · Pruebas de punta a punta | Hecha | #61 | Playwright en `e2e/`, con dos contextos y su propio job en el CI. |
+| T-35 · Imágenes y configuración de producción | Hecha | #62 | Imágenes `web`, `api`, `migraciones` y `respaldo`; `docker-compose.prod.yml` con los dos perfiles; ver §2f. |
+| T-37 · Copias externas y restauración | Hecha | #83 | Probada en local con un S3 de prueba; lo que necesita cuentas reales queda para T-36/T-40 (ver §4). |
+| T-42 · Coseguro abonado (backend) | Hecha | #82 | Crítica: pasó `revisor-seguridad` sin bloqueantes. Migración `coseguro_abonado`. |
+| T-43 · Coseguro abonado, recaudado y asistente (frontend) | En curso | rama `t-43-asistente-abono` | Carril B. Cierra con el recorrido manual del usuario. |
+| T-34, T-36, T-38, T-39 y T-40 | Pendientes | — | Ola 7 de `tasks.md`. T-36 y T-40 necesitan cuentas a nombre del consultorio, el dominio y credenciales. |
 
 Otros PRs fusionados:
 - #10 vuelve `@types/node` a la versión 24 y limita los saltos de versión que propone Dependabot.
@@ -55,7 +60,11 @@ Otros PRs fusionados:
 - #42 resuelve deuda de documentación y configuración; #43 centraliza `ingresarComo` en las fábricas de prueba.
 - #46 documenta el cierre de la ola 4; #49 agrega `Cache-Control: no-store` a toda la API (RNF-14, decisión del usuario).
 - #52 documenta la pausa de la ola 5; #55 define el sistema visual (`DESIGN.md`, RNF-15, T-41).
-- #3, #4 y #20 son de Dependabot.
+- #59 documenta la ola 6; #60 agrega los dos perfiles de despliegue (ver §2f).
+- #78 cambia la spec por el coseguro abonado y #81 define el asistente de asignación en `DESIGN.md` (ver §2f).
+- #79 sube los 7 paquetes de Angular juntos a 22.2.2 y agrupa Angular en Dependabot; se cerraron
+  sin fusionar #63, #64, #67, #69, #71, #73 y #77, que lo proponían por separado.
+- #3, #4, #20, #65, #66, #68, #70, #72, #74, #75 y #76 son de Dependabot.
 - El #5 (TypeScript 7 en el frontend) se cerró: Angular 22 exige TypeScript `~6.0`.
 
 ---
@@ -278,6 +287,50 @@ secretaría y administrador se eliminaron: entran a `/secretaria/agenda` (RF-01)
 **Sistema visual (#55):** `DESIGN.md` en la raíz, aprobado por el usuario con una página de
 muestra. RNF-15 en la spec y T-41 en `tasks.md`, en el carril B antes de T-35.
 
+## 2f. Ola 7: pruebas de punta a punta, producción y coseguro abonado (2026-10-16)
+
+**Perfiles de despliegue (#60):** `despliegue.md` §3.1 define dos. El **administrado**, por
+defecto, usa la base administrada de DigitalOcean (≈26 USD/mes). El **económico** corre `db` en el
+mismo Droplet, sobre Block Storage cifrado, con archivo continuo a B2 EU y 7 días de recuperación a
+un punto en el tiempo (≈16 USD/mes). Cloudflare se descartó como proxy y como hosting (descifra el
+tráfico y es de EE. UU.: D-28 y RNF-05); solo podría servir como DNS sin proxy.
+
+**T-33 (#61):** Playwright con dos contextos (el administrador hace de secretaría), backend en
+3101, frontend en 4301 y base `scalekine_e2e_pruebas`. Dependencias de desarrollo `@playwright/test`
+1.64.1 y `otplib` 13.5.0.
+
+**T-35 (#62):** imágenes `web` (Caddy sin root), `api` (Node, sistema de archivos de solo
+lectura), `migraciones` y `respaldo` (`pg_dump`, `age` y `rclone`); `docker-compose.prod.yml` con
+los perfiles `base-local`, `tareas` y `migraciones`; `Caddyfile` según §6.2 y la verificación local
+en `infra/prueba/` y `infra/verificar-stack.sh`. `02-usuarios.sh` acepta `SCALEKINE_BASES` y
+`SCALEKINE_MIGRACIONES_CREATEDB`; sin ellas, desarrollo sigue igual.
+
+**T-37 (#83):** temporizadores de systemd (copia diaria a las 03:30, copia base semanal y latido
+horario del archivo continuo), `infra/verificar-restauracion.sh` (solo imprime conteos y OK/FALLA),
+`docs/operacion/restaurar.md` y `restauraciones.md`, `infra/respaldo/crear-bucket.sh` y la imagen
+`db` con pgBackRest 2.58.0 (MIT) para el perfil económico. Se probó con un S3 local: copia
+descifrada y restaurada, Object Lock en modo de cumplimiento que ni el administrador pudo saltear,
+restauración a un punto en el tiempo y latido que no sale con el bucket caído. `rclone` sube con
+solo `writeFiles` (se reconfirma con la clave real). `db` pasa a estar también en la red `salida`
+para llegar al bucket, sin publicar puertos.
+
+**Coseguro abonado (#78, decisión del usuario):** en vez de cargar cuánto debe pagar cada
+paciente, se registra cuánto abonó. Cambian RF-27, RF-40, RF-41 y RF-46, y se agregan RF-48 (lo
+recaudado del día al pie de la agenda, con el filtro y sin anulados) y RF-49 (sugerencias de obra
+social sacadas de los pacientes, sin catálogo). El kinesiólogo no ve el monto.
+
+**T-42 (#82):** `PUT /api/turnos/:id/abono` (409 `turno_anulado`, con la condición en el mismo
+`UPDATE`), `coseguroAbonado` opcional al asignar, `recaudado` en `GET /api/agenda` (sumado en
+centavos con `BigInt`) y `GET /api/obras-sociales`. La agenda del kinesiólogo no lee el monto de la
+base, y su mensaje de tiempo real sale de una copia sin el campo. El frontend recibió solo la
+adaptación mínima; el resto es T-43.
+
+**Asistente de asignación (#81, decisión del usuario):** `DESIGN.md` §6.1 reemplaza el formulario
+largo por pasos con un resumen "Tu turno", y §6.2 define la tarjeta de paciente. Lo implementa T-43.
+
+**Angular (#79):** los paquetes de Angular se actualizan juntos; por separado, npm no resuelve las
+dependencias entre pares. Hubo que borrar sus entradas del lockfile para que resolviera.
+
 ---
 
 ## 3. Decisiones tomadas durante la implementación
@@ -310,6 +363,11 @@ Las que cambian requisitos o diseño ya están en la spec o el plan. Esta lista 
 | Transiciones y correcciones condicionadas al estado leído; regla de `llegadaEn` al corregir. | `plan.md` §2.3 y §4.7 (#39) |
 | Disponibilidad y ticket autorizados con `autorizarEscritura('turnos')`. | Comentarios de `rutasDisponibilidad.ts` (#33) y `rutasTicket.ts` (#38) |
 | Dependencias nuevas: `pdfkit` (MIT); `@types/pdfkit` y `jsqr` (Apache-2.0) solo en desarrollo. | `backend/package.json` (#38) |
+| Dos perfiles de despliegue: administrado (por defecto) y económico (decisión del usuario). | `despliegue.md` §3.1, `plan.md` §4.16 (#60) |
+| Se registra el coseguro abonado en vez de los dos coseguros; recaudado del día y sugerencias de obra social (decisión del usuario). | `spec.md` RF-27, RF-48 y RF-49; `plan.md` §2.1, §3 M3 y M4 (#78) |
+| Asignar es un asistente por pasos, y el paciente se muestra en una tarjeta (decisión del usuario). | `DESIGN.md` §6.1 y §6.2 (#81) |
+| Angular se actualiza en grupo. | `.github/dependabot.yml` (#79) |
+| pgBackRest para el archivo continuo del perfil económico, en un bucket propio sin Object Lock. | `despliegue.md` §8.1 (#83) |
 
 ---
 
@@ -334,8 +392,14 @@ Las que cambian requisitos o diseño ya están en la spec o el plan. Esta lista 
 | La suite completa tarda 10 a 15 minutos en local, y con los dos carriles corriendo a la vez aparecen timeouts de 15 s en pruebas ajenas (distintas en cada corrida). Solas pasan, y en el CI nunca fallaron. | Evitar correr las dos suites completas a la vez; confiar en el CI para la corrida completa. | En observación |
 | `prettier --check` marca casi todos los archivos (CRLF de Windows y sin configuración de Prettier en el backend). | Decidir si se agrega una configuración de Prettier o se deja de mencionar en los encargos. | Decidido: el backend no usa Prettier (su código no sigue ese formato y agregarlo reformatearía todo). El estilo lo dan ESLint y el código vecino; los encargos dejan de pedir `prettier --check` en el backend. El frontend sí tiene `.prettierrc`. |
 | Las pruebas de la ola 4 copian en cada archivo el ayudante `ingresarComo`. | Centralizarlo en `test/integracion/fabricas.ts`. | Sin tarea asignada |
-| Un PUT de coseguros exige las dos claves: el frontend de T-30 tiene que mandarlas siempre. | Tenerlo en cuenta en T-30. | Anotado |
+| Un PUT de coseguros exige las dos claves: el frontend de T-30 tiene que mandarlas siempre. | Tenerlo en cuenta en T-30. | Reemplazado en #82 por `PUT /abono`, con una sola clave obligatoria |
 | Socket.io no limita conexiones por sesión ni por IP (cada handshake cuesta una consulta). | Limitarlo en Caddy. | Pendiente de T-36 |
+| Caddy publica 443/udp (HTTP/3), pero el firewall de `despliegue.md` §4 abre solo TCP. | Abrir 443/udp o desactivar HTTP/3 en el `Caddyfile`. | Pendiente de T-36 |
+| En la prueba local de T-35, la redirección de HTTP a HTTPS pierde el puerto. | Solo afecta a la prueba local (en producción son 80 y 443). | Anotado |
+| Lo que T-37 no pudo probar sin cuentas reales: crear los buckets y las claves de B2, confirmar que `rclone` sube con solo `writeFiles`, la regla de ciclo de vida por la API S3 de B2, los checks de healthchecks.io y la instalación de los temporizadores. Tampoco se volvió a correr `verificar-stack.sh` con la imagen `db` nueva. | Hacerlo al provisionar. | Pendiente de T-36/T-40 |
+| `GET /api/obras-sociales` no tiene tope y trata como distintas las variantes de mayúsculas. | Con el volumen de un consultorio no importa; la interfaz no muestra duplicadas por mayúsculas (T-43). | Anotado |
+| No hay una prueba que fuerce un abono concurrente con una anulación; la condición en el mismo `UPDATE` lo resuelve. | Agregar una prueba con dos transacciones si se toca `registrarAbono`. | Anotado |
+| La base local `scalekine_e2e_pruebas` no recibe sola las migraciones: sin la de T-42, la E2E da 500 al asignar. | Correr `prisma migrate deploy` contra ella después de traer migraciones nuevas. | Anotado |
 
 ---
 
