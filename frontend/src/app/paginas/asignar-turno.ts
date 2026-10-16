@@ -281,32 +281,19 @@ export function esFinDeSemana(fecha: string): boolean {
         </section>
 
         <section class="tarjeta ancha" aria-labelledby="titulo-confirmar">
-          <h2 id="titulo-confirmar">4. Coseguros y confirmación</h2>
+          <h2 id="titulo-confirmar">4. Coseguro abonado y confirmación</h2>
           @if (seleccion(); as s) {
             <p id="resumen-franja">
               Turno con {{ s.kinesiologo }}, {{ legible(c.fecha) }} de {{ s.inicio }} a {{ s.fin }}.
             </p>
           }
-          <form class="formulario" novalidate (submit)="confirmar($event, coseguroOS, coseguroAd)">
+          <form class="formulario" novalidate (submit)="confirmar($event, coseguroAbonado)">
             <div class="campo">
-              <label for="coseguro-obra-social">Coseguro según obra social (opcional)</label>
+              <label for="coseguro-abonado">Coseguro abonado (opcional)</label>
               <input
-                #coseguroOS
-                id="coseguro-obra-social"
-                name="coseguroObraSocial"
-                type="text"
-                inputmode="decimal"
-                autocomplete="off"
-                aria-describedby="ayuda-coseguros"
-                [attr.aria-invalid]="errorCoseguros() ? 'true' : null"
-              />
-            </div>
-            <div class="campo">
-              <label for="coseguro-adicional">Coseguro adicional (opcional)</label>
-              <input
-                #coseguroAd
-                id="coseguro-adicional"
-                name="coseguroAdicional"
+                #coseguroAbonado
+                id="coseguro-abonado"
+                name="coseguroAbonado"
                 type="text"
                 inputmode="decimal"
                 autocomplete="off"
@@ -314,7 +301,7 @@ export function esFinDeSemana(fecha: string): boolean {
                 [attr.aria-invalid]="errorCoseguros() ? 'true' : null"
               />
               <p id="ayuda-coseguros">
-                Monto en pesos, con hasta dos decimales. Se pueden cargar después.
+                Monto en pesos, con hasta dos decimales. Se puede cargar después.
               </p>
               @if (errorCoseguros(); as mensaje) {
                 <p class="error" id="error-coseguros" role="alert" tabindex="-1">
@@ -526,11 +513,7 @@ export class AsignarTurno {
     }
   }
 
-  protected async confirmar(
-    evento: Event,
-    obraSocial: HTMLInputElement,
-    adicional: HTMLInputElement,
-  ): Promise<void> {
+  protected async confirmar(evento: Event, abonado: HTMLInputElement): Promise<void> {
     evento.preventDefault();
     if (this.confirmando()) return;
     this.errorPaciente.set(null);
@@ -552,13 +535,12 @@ export class AsignarTurno {
       enfocar('error-franja');
       return;
     }
-    const montoOS = normalizarMonto(obraSocial.value);
-    const montoAd = normalizarMonto(adicional.value);
-    if (montoOS === null || montoAd === null) {
+    const monto = normalizarMonto(abonado.value);
+    if (monto === null) {
       this.errorCoseguros.set(
-        'Los coseguros deben ser montos en pesos, con hasta dos decimales (por ejemplo 1500 o 1500,50).',
+        'El coseguro abonado debe ser un monto en pesos, con hasta dos decimales (por ejemplo 1500 o 1500,50).',
       );
-      enfocar(montoOS === null ? 'coseguro-obra-social' : 'coseguro-adicional');
+      enfocar('coseguro-abonado');
       return;
     }
 
@@ -569,8 +551,7 @@ export class AsignarTurno {
         kinesiologoId: s.kinesiologoId,
         fecha: c.fecha,
         horaInicio: s.inicio,
-        ...(montoOS !== undefined ? { coseguroObraSocial: montoOS } : {}),
-        ...(montoAd !== undefined ? { coseguroAdicional: montoAd } : {}),
+        ...(monto !== undefined ? { coseguroAbonado: monto } : {}),
       });
       this.asignado.set({ turno, seleccion: s, paciente: paciente.nombre });
       this.errorTicket.set(null);

@@ -15,6 +15,8 @@ export type DatosPaciente = Omit<Paciente, 'id'>;
 
 /** Largo mínimo de una búsqueda por nombre (RF-21): con menos caracteres casi todo coincide. */
 export const MINIMO_BUSQUEDA_NOMBRE = 3;
+/** Obra social de quien no tiene (RF-17); siempre se sugiere (RF-49). */
+export const OBRA_SOCIAL_PARTICULAR = 'Particular';
 /** Tope de resultados de una búsqueda por nombre: la pantalla pide afinar si hay más. */
 export const TOPE_BUSQUEDA_NOMBRE = 20;
 
@@ -76,6 +78,16 @@ export function crearServicioPacientes({ db }: { db: BaseDeDatos }) {
       });
       if (!fila) throw errorNoEncontrado();
       return fila;
+    },
+
+    /**
+     * Obras sociales para sugerir al cargar un paciente (RF-49): las distintas ya guardadas en
+     * `Paciente` más "Particular", sin repetidas y ordenadas. Solo nombres, ningún dato de paciente.
+     */
+    async obrasSociales(): Promise<string[]> {
+      const filas = await db.paciente.findMany({ distinct: ['obraSocial'], select: { obraSocial: true } });
+      const nombres = new Set([OBRA_SOCIAL_PARTICULAR, ...filas.map((f) => f.obraSocial)]);
+      return [...nombres].sort((a, b) => a.localeCompare(b, 'es') || (a < b ? -1 : 1));
     },
 
     /** Búsqueda exacta (RF-19): cero o un paciente. El DNI ya llega normalizado. */

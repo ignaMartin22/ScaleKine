@@ -91,7 +91,6 @@ export function ordenarProximos(turnos: readonly TurnoPropio[]): TurnoPropio[] {
                   <th scope="col">Franja</th>
                   <th scope="col">Paciente</th>
                   <th scope="col">Estado</th>
-                  <th scope="col">Coseguros</th>
                 </tr>
               </thead>
               <tbody>
@@ -107,10 +106,6 @@ export function ordenarProximos(turnos: readonly TurnoPropio[]): TurnoPropio[] {
                       {{ t.paciente.obraSocial }}
                     </td>
                     <td data-label="Estado"><app-estado-turno [estado]="t.estado" /></td>
-                    <td data-label="Coseguros">
-                      Obra social: {{ monto(t.coseguroObraSocial) }}<br />
-                      Adicional: {{ monto(t.coseguroAdicional) }}
-                    </td>
                   </tr>
                 }
               </tbody>
@@ -134,7 +129,6 @@ export function ordenarProximos(turnos: readonly TurnoPropio[]): TurnoPropio[] {
                   <th scope="col">Franja</th>
                   <th scope="col">Paciente</th>
                   <th scope="col">Estado</th>
-                  <th scope="col">Coseguros</th>
                 </tr>
               </thead>
               <tbody>
@@ -149,10 +143,6 @@ export function ordenarProximos(turnos: readonly TurnoPropio[]): TurnoPropio[] {
                       {{ t.paciente.obraSocial }}
                     </td>
                     <td data-label="Estado"><app-estado-turno [estado]="t.estado" /></td>
-                    <td data-label="Coseguros">
-                      Obra social: {{ monto(t.coseguroObraSocial) }}<br />
-                      Adicional: {{ monto(t.coseguroAdicional) }}
-                    </td>
                   </tr>
                 }
               </tbody>
@@ -228,10 +218,6 @@ export class InicioKinesiologo {
       enEspera: actual.enEspera.filter((t) => t.id !== turnoId),
       proximos: actual.proximos.filter((t) => t.id !== turnoId),
     });
-  }
-
-  protected monto(valor: string | null): string {
-    return valor === null ? 'sin cargar' : '$ ' + valor;
   }
 
   protected async cambiarFecha(evento: Event): Promise<void> {

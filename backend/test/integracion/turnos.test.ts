@@ -68,12 +68,12 @@ async function escenario() {
 }
 
 describe('asignar un turno (RF-23)', () => {
-  it('crea el turno en reservado con sus coseguros y devuelve su identificador', async () => {
+  it('crea el turno en reservado con el abono y devuelve su identificador', async () => {
     const { app } = await crearAppDePrueba();
     const { cookie } = await ingresarComo(app, 'secretaria');
     const { paciente, kinesiologo, cuerpo } = await escenario();
 
-    const res = await asignar(app, cookie, { ...cuerpo, coseguroObraSocial: 1500.5, coseguroAdicional: '300' });
+    const res = await asignar(app, cookie, { ...cuerpo, coseguroAbonado: 1500.5 });
 
     expect(res.status).toBe(201);
     expect(res.body).toEqual({
@@ -84,42 +84,39 @@ describe('asignar un turno (RF-23)', () => {
         fecha: FECHA,
         horaInicio: '08:00',
         estado: 'reservado',
-        coseguroObraSocial: '1500.50',
-        coseguroAdicional: '300.00',
+        coseguroAbonado: '1500.50',
       },
     });
     const turno = await db.turno.findUniqueOrThrow({ where: { id: res.body.turno.id } });
     expect(turno.estado).toBe('reservado');
     expect(turno.fecha.toISOString()).toBe(`${FECHA}T00:00:00.000Z`);
     expect(turno.llegadaEn).toBeNull();
-    expect(turno.coseguroObraSocial?.toFixed(2)).toBe('1500.50');
-    expect(turno.coseguroAdicional?.toFixed(2)).toBe('300.00');
+    expect(turno.coseguroAbonado?.toFixed(2)).toBe('1500.50');
     expect(turno.creadoEn).toEqual(AHORA);
   });
 
-  it('sin coseguros los deja sin cargar', async () => {
+  it('sin abono lo deja sin abonar', async () => {
     const { app } = await crearAppDePrueba();
     const { cookie } = await ingresarComo(app, 'secretaria');
     const { cuerpo } = await escenario();
 
-    const res = await asignar(app, cookie, { ...cuerpo, coseguroAdicional: null });
+    const res = await asignar(app, cookie, { ...cuerpo, coseguroAbonado: null });
 
     expect(res.status).toBe(201);
-    expect(res.body.turno).toMatchObject({ coseguroObraSocial: null, coseguroAdicional: null });
+    expect(res.body.turno).toMatchObject({ coseguroAbonado: null });
   });
 
-  it.each(['', '   '])('un coseguro vacío (%j) queda sin cargar', async (vacio) => {
+  it.each(['', '   '])('un abono vacío (%j) queda sin abonar', async (vacio) => {
     const { app } = await crearAppDePrueba();
     const { cookie } = await ingresarComo(app, 'secretaria');
     const { cuerpo } = await escenario();
 
-    const res = await asignar(app, cookie, { ...cuerpo, coseguroObraSocial: vacio, coseguroAdicional: vacio });
+    const res = await asignar(app, cookie, { ...cuerpo, coseguroAbonado: vacio });
 
     expect(res.status).toBe(201);
-    expect(res.body.turno).toMatchObject({ coseguroObraSocial: null, coseguroAdicional: null });
+    expect(res.body.turno).toMatchObject({ coseguroAbonado: null });
     const turno = await db.turno.findUniqueOrThrow({ where: { id: res.body.turno.id } });
-    expect(turno.coseguroObraSocial).toBeNull();
-    expect(turno.coseguroAdicional).toBeNull();
+    expect(turno.coseguroAbonado).toBeNull();
   });
 
   it('el administrador también asigna', async () => {
@@ -261,11 +258,12 @@ describe('asignación: datos faltantes o inválidos (RF-26)', () => {
     ['fecha', 20261012],
     ['horaInicio', '8:00'],
     ['horaInicio', '25:00'],
-    ['coseguroObraSocial', -1],
-    ['coseguroObraSocial', '12,5'],
-    ['coseguroObraSocial', 1.234],
-    ['coseguroAdicional', 'abc'],
-    ['coseguroAdicional', 1e12],
+    ['coseguroAbonado', -1],
+    ['coseguroAbonado', '12,5'],
+    ['coseguroAbonado', 1.234],
+    ['coseguroAbonado', 'abc'],
+    ['coseguroAbonado', 1e12],
+    ['coseguroAbonado', 10_000_000],
   ])('rechaza %s con valor inválido %j', async (campo, valor) => {
     const { app } = await crearAppDePrueba();
     const { cookie } = await ingresarComo(app, 'secretaria');
@@ -550,12 +548,12 @@ describe('asignación: no registra datos personales (RNF-08)', () => {
     const { cookie } = await ingresarComo(app, 'secretaria');
     const { paciente, cuerpo } = await escenario();
 
-    const res = await asignar(app, cookie, { ...cuerpo, coseguroObraSocial: '7654.32', coseguroAdicional: 8765.43 });
+    const res = await asignar(app, cookie, { ...cuerpo, coseguroAbonado: '7654.32' });
 
     expect(res.status).toBe(500);
     expect(res.body.error.codigo).toBe('error_interno');
     expect(registros().some((r) => r.msg === 'error no controlado')).toBe(true);
-    for (const prohibido of [paciente.dni, paciente.nombre, '7654.32', '8765.43']) {
+    for (const prohibido of [paciente.dni, paciente.nombre, '7654.32']) {
       expect(texto()).not.toContain(prohibido);
     }
   });

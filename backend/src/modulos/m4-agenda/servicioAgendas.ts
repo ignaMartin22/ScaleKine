@@ -5,18 +5,22 @@ import { finDeFranja } from '../m2-maestros/grilla.js';
 import { accionesDisponibles, type EstadoTurno, type Rol } from '../m3-turnos/transiciones.js';
 import { fechaYHoraLocal, franjaTranscurrida } from './pendientes.js';
 
-/** Lo que se lee de la base por turno; la agenda propia y la de secretaría parten de lo mismo. */
+/**
+ * Lo que se lee de la base por turno en toda agenda. NO incluye el coseguro abonado: la agenda del
+ * kinesiólogo se arma solo con esta selección, así el monto nunca llega a su proyección (RF-40).
+ */
 const SELECCION = {
   id: true,
   fecha: true,
   horaInicio: true,
   estado: true,
   llegadaEn: true,
-  coseguroObraSocial: true,
-  coseguroAdicional: true,
   paciente: { select: { id: true, nombre: true, dni: true, telefono: true, obraSocial: true } },
   kinesiologo: { select: { id: true, nombre: true } },
 } as const;
+
+/** Lo que leen la secretaría y la ficha del paciente: lo anterior más el coseguro abonado (RF-41, RF-47). */
+const SELECCION_CON_ABONO = { ...SELECCION, coseguroAbonado: true } as const;
 
 interface Monto {
   toFixed(n: number): string;
@@ -27,11 +31,14 @@ interface FilaAgenda {
   horaInicio: string;
   estado: EstadoTurno;
   llegadaEn: Date | null;
-  coseguroObraSocial: Monto | null;
-  coseguroAdicional: Monto | null;
 }
+type FilaConAbono = FilaAgenda & { coseguroAbonado: Monto | null };
 
-/** Proyección común a las dos agendas (D-15: el kinesiólogo ve lo mismo que la secretaría). */
+/**
+ * Proyección común a las dos agendas (D-15: el kinesiólogo ve lo mismo que la secretaría), sin el
+ * coseguro abonado. El monto lo agrega `conAbono`, que usan solo las proyecciones de secretaría y
+ * ficha; la del kinesiólogo no lo tiene (RF-40).
+ */
 function proyectar(t: FilaAgenda, zonaHoraria: string) {
   return {
     id: t.id,
@@ -42,9 +49,25 @@ function proyectar(t: FilaAgenda, zonaHoraria: string) {
     llegadaEn: t.llegadaEn?.toISOString() ?? null,
     // La misma llegada en hora de pared de la zona del consultorio, para que el cliente no deba conocerla.
     horaLlegada: t.llegadaEn ? fechaYHoraLocal(t.llegadaEn, zonaHoraria).hora : null,
-    coseguroObraSocial: t.coseguroObraSocial?.toFixed(2) ?? null,
-    coseguroAdicional: t.coseguroAdicional?.toFixed(2) ?? null,
   };
+}
+
+/** Proyección de secretaría y ficha (RF-41, RF-47): la común más el coseguro abonado, o null si no abonó. */
+function conAbono(t: FilaConAbono, zonaHoraria: string) {
+  return { ...proyectar(t, zonaHoraria), coseguroAbonado: t.coseguroAbonado?.toFixed(2) ?? null };
+}
+
+/**
+ * Suma de montos en centavos enteros (BigInt), sin coma flotante (RF-48, plan.md §4.9). Cada monto
+ * llega como texto con dos decimales ('1500.50').
+ */
+export function sumarMontos(montos: readonly (string | null)[]): string {
+  let centavos = 0n;
+  for (const m of montos) {
+    if (m !== null) centavos += BigInt(m.replace('.', ''));
+  }
+  const texto = centavos.toString().padStart(3, '0');
+  return `${texto.slice(0, -2)}.${texto.slice(-2)}`;
 }
 
 type FilaSeleccionada = FilaAgenda & {
@@ -53,10 +76,10 @@ type FilaSeleccionada = FilaAgenda & {
 };
 
 /** Turno de la agenda de secretaría (RF-41): proyección común, paciente, kinesiólogo y acciones. */
-function aTurnoDeSecretaria(t: FilaSeleccionada, rol: Rol, zonaHoraria: string) {
+function aTurnoDeSecretaria(t: FilaSeleccionada & FilaConAbono, rol: Rol, zonaHoraria: string) {
   const acciones = accionesDisponibles(t.estado, rol);
   return {
-    ...proyectar(t, zonaHoraria),
+    ...conAbono(t, zonaHoraria),
     paciente: t.paciente,
     kinesiologo: t.kinesiologo,
     acciones: {
@@ -70,6 +93,12 @@ function aTurnoDeSecretaria(t: FilaSeleccionada, rol: Rol, zonaHoraria: string) 
 function aTurnoDeKinesiologo(t: FilaSeleccionada, zonaHoraria: string) {
   const { dni, nombre, telefono, obraSocial } = t.paciente;
   return { ...proyectar(t, zonaHoraria), paciente: { nombre, dni, telefono, obraSocial } };
+}
+
+/** El mismo turno sin el campo del abono. */
+function sinAbono<T extends { coseguroAbonado?: unknown }>(t: T): Omit<T, 'coseguroAbonado'> {
+  const { coseguroAbonado: _abono, ...resto } = t;
+  return resto;
 }
 
 /**
@@ -88,14 +117,18 @@ export function crearServicioAgendas({ db, reloj }: { db: BaseDeDatos; reloj: Re
      * Agenda de secretaría (RF-41): todos los turnos de `fecha`, en cualquier estado y de cualquier
      * kinesiólogo (también el de una cuenta desactivada), o solo los de `kinesiologoId`. Cada turno
      * trae las acciones que `accionesDisponibles` da para su estado y el `rol` de la sesión.
+     * `recaudado` (RF-48) es la suma de los coseguros abonados de los turnos devueltos, sin los
+     * `anulado`, como texto con dos decimales.
      */
     async deSecretaria(rol: Rol, fecha: string, kinesiologoId?: number) {
       const filas = await db.turno.findMany({
         where: { fecha: comoFecha(fecha), ...(kinesiologoId === undefined ? {} : { kinesiologoId }) },
-        select: SELECCION,
+        select: SELECCION_CON_ABONO,
         orderBy: [{ horaInicio: 'asc' }, { kinesiologo: { nombre: 'asc' } }, { id: 'asc' }],
       });
-      return filas.map((t) => aTurnoDeSecretaria(t, rol, reloj.zonaHoraria));
+      const turnos = filas.map((t) => aTurnoDeSecretaria(t, rol, reloj.zonaHoraria));
+      const recaudado = sumarMontos(turnos.filter((t) => t.estado !== 'anulado').map((t) => t.coseguroAbonado));
+      return { turnos, recaudado };
     },
 
     /**
@@ -105,13 +138,14 @@ export function crearServicioAgendas({ db, reloj }: { db: BaseDeDatos; reloj: Re
      * (D-15). Es una lectura: el que llama decide a qué sala va cada una.
      */
     async paraDifusion(turnoId: number) {
-      const t = await db.turno.findUnique({ where: { id: turnoId }, select: SELECCION });
+      const t = await db.turno.findUnique({ where: { id: turnoId }, select: SELECCION_CON_ABONO });
       if (!t) return null;
       return {
         // El kinesiólogo actual del turno según esta lectura: de ahí sale a qué sala va el cambio.
         kinesiologoId: t.kinesiologo.id,
         secretaria: aTurnoDeSecretaria(t, 'secretaria', reloj.zonaHoraria),
-        kinesiologo: aTurnoDeKinesiologo(t, reloj.zonaHoraria),
+        // Se proyecta desde una copia sin el abono: la del kinesiólogo no puede incluirlo (RF-40).
+        kinesiologo: aTurnoDeKinesiologo(sinAbono(t), reloj.zonaHoraria),
       };
     },
 
@@ -132,11 +166,11 @@ export function crearServicioAgendas({ db, reloj }: { db: BaseDeDatos; reloj: Re
       if (!paciente) throw new ErrorNegocio('paciente_no_encontrado', 'El paciente no existe.', 404);
       const filas = await db.turno.findMany({
         where: { pacienteId },
-        select: { ...SELECCION, paciente: false },
+        select: { ...SELECCION_CON_ABONO, paciente: false },
         orderBy: [{ fecha: 'asc' }, { horaInicio: 'asc' }, { id: 'asc' }],
       });
       const ahora = reloj.ahora();
-      const turnos = filas.map((t) => ({ ...proyectar(t, reloj.zonaHoraria), kinesiologo: t.kinesiologo }));
+      const turnos = filas.map((t) => ({ ...conAbono(t, reloj.zonaHoraria), kinesiologo: t.kinesiologo }));
       const proximos: typeof turnos = [];
       const historial: typeof turnos = [];
       for (const turno of turnos) {

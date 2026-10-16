@@ -298,6 +298,33 @@ describe('difusión por salas (RF-43, RF-44, D-15, D-16)', () => {
     });
   });
 
+  it('el monto abonado viaja a secretaría y nunca a la sala del kinesiólogo (RF-40)', async () => {
+    const { e, secretaria, a, paciente, cs, ca, cb } = await escenario();
+    const turno = await crearTurno({ fecha: FECHA, kinesiologoId: a.kinesiologo.id, pacienteId: paciente.id });
+
+    // Con el monto cargado al asignar y al registrarlo después, ningún mensaje al kinesiólogo lo lleva.
+    await escribir(e, 'put', `/api/turnos/${turno.id}/abono`, secretaria.cookie, { monto: '4321.09' });
+    await escribir(e, 'post', `/api/turnos/${turno.id}/transicion`, secretaria.cookie, { hacia: 'en_espera' });
+    const nuevo = await escribir(e, 'post', '/api/turnos', secretaria.cookie, {
+      pacienteId: paciente.id,
+      kinesiologoId: a.kinesiologo.id,
+      fecha: FECHA,
+      horaInicio: '09:30',
+      coseguroAbonado: '987.65',
+    });
+    expect(nuevo.status).toBe(201);
+    await esperar(() => nombres(cs).length === 3 && nombres(ca).length === 3);
+    await pausa();
+
+    expect(cs.eventos[0]![1].turno.coseguroAbonado).toBe('4321.09');
+    expect(cs.eventos[2]![1].turno.coseguroAbonado).toBe('987.65');
+    const alKinesiologo = JSON.stringify(ca.eventos);
+    expect(alKinesiologo).not.toMatch(/coseguro|abono|abonad/i);
+    expect(alKinesiologo).not.toContain('4321');
+    expect(alKinesiologo).not.toContain('987.65');
+    expect(cb.eventos).toEqual([]);
+  });
+
   it('el administrador entra a la sala de secretaría y recibe las acciones', async () => {
     const { e, secretaria, a } = await escenario();
     const admin = await ingresarComo(e.app, 'administrador');
@@ -308,7 +335,7 @@ describe('difusión por salas (RF-43, RF-44, D-15, D-16)', () => {
     expect(ca.eventos[0]![1].turno.acciones.puedeCorregir).toBe(true);
   });
 
-  it('asignar, corregir y modificar coseguros también se difunden', async () => {
+  it('asignar, registrar el abono y corregir también se difunden', async () => {
     const { e, secretaria, a, paciente, cs, ca, cb } = await escenario();
 
     const asignado = await escribir(e, 'post', '/api/turnos', secretaria.cookie, {
@@ -322,13 +349,11 @@ describe('difusión por salas (RF-43, RF-44, D-15, D-16)', () => {
     await esperar(() => nombres(cs).length === 1 && nombres(ca).length === 1);
     expect(ca.eventos[0]![1].turno).toMatchObject({ id, estado: 'reservado' });
 
-    const coseguros = await escribir(e, 'put', `/api/turnos/${id}/coseguros`, secretaria.cookie, {
-      coseguroObraSocial: '1500.50',
-      coseguroAdicional: null,
-    });
-    expect(coseguros.status).toBe(200);
-    await esperar(() => nombres(ca).length === 2);
-    expect(ca.eventos[1]![1].turno.coseguroObraSocial).toBe('1500.50');
+    const abono = await escribir(e, 'put', `/api/turnos/${id}/abono`, secretaria.cookie, { monto: '1500.50' });
+    expect(abono.status).toBe(200);
+    await esperar(() => nombres(ca).length === 2 && nombres(cs).length === 2);
+    expect(ca.eventos[1]![1].turno).toMatchObject({ id, estado: 'reservado' });
+    expect(cs.eventos[1]![1].turno.coseguroAbonado).toBe('1500.50');
 
     const corregido = await escribir(e, 'post', `/api/turnos/${id}/correccion`, secretaria.cookie, { estado: 'anulado' });
     expect(corregido.status).toBe(200);
@@ -410,7 +435,7 @@ describe('emisión después del commit (plan.md §3 M3)', () => {
           avisos.push(cambio);
           vistos.push(
             db.turno.findUnique({ where: { id: cambio.turnoId } }).then((t) =>
-              t ? { estado: t.estado, kinesiologoId: t.kinesiologoId, horaInicio: t.horaInicio, coseguro: t.coseguroObraSocial?.toFixed(2) ?? null } : null,
+              t ? { estado: t.estado, kinesiologoId: t.kinesiologoId, horaInicio: t.horaInicio, coseguro: t.coseguroAbonado?.toFixed(2) ?? null } : null,
             ),
           );
         },
@@ -432,7 +457,7 @@ describe('emisión después del commit (plan.md §3 M3)', () => {
     );
     await servicio.transicionar(asignado.id, 'en_espera', autor.usuarioId, 'secretaria');
     await servicio.corregir(asignado.id, 'reservado', autor.usuarioId);
-    await servicio.modificarCoseguros(asignado.id, { coseguroObraSocial: '1500.50', coseguroAdicional: null }, autor.usuarioId);
+    await servicio.registrarAbono(asignado.id, '1500.50', autor.usuarioId);
     await servicio.reprogramar(asignado.id, { kinesiologoId: otroKin.id, fecha: FECHA, horaInicio: '08:45' }, autor.usuarioId);
 
     expect(avisos).toEqual([
@@ -460,7 +485,7 @@ describe('emisión después del commit (plan.md §3 M3)', () => {
     await expect(servicio.reprogramar(otro.id, { kinesiologoId: otro.kinesiologoId, fecha: FECHA, horaInicio: '08:45' }, 1)).rejects.toMatchObject({ estadoHttp: 409 });
     await expect(servicio.corregir(turno.id, 'asistio', 1)).rejects.toMatchObject({ estadoHttp: 409 });
     await expect(servicio.transicionar(999_999, 'en_espera', 1, 'secretaria')).rejects.toMatchObject({ estadoHttp: 404 });
-    await expect(servicio.modificarCoseguros(999_999, { coseguroObraSocial: null, coseguroAdicional: null }, 1)).rejects.toMatchObject({ estadoHttp: 404 });
+    await expect(servicio.registrarAbono(999_999, null, 1)).rejects.toMatchObject({ estadoHttp: 404 });
 
     expect(avisos).toEqual([]);
   });
@@ -481,7 +506,7 @@ describe('emisión después del commit (plan.md §3 M3)', () => {
       servicio.reprogramar(turno.id, { kinesiologoId: turno.kinesiologoId, fecha: FECHA, horaInicio: '08:45' }, autor.usuarioId),
     ).rejects.toThrow();
     await expect(
-      servicio.modificarCoseguros(turno.id, { coseguroObraSocial: '1', coseguroAdicional: null }, autor.usuarioId),
+      servicio.registrarAbono(turno.id, '1', autor.usuarioId),
     ).rejects.toThrow();
 
     expect(avisos).toEqual([]);

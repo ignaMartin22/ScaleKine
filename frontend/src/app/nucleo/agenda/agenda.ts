@@ -43,8 +43,8 @@ export interface TurnoDeAgenda {
   estado: EstadoTurno;
   /** Llegada en hora de pared del consultorio ('HH:MM'), calculada por la API, o `null`. */
   horaLlegada: string | null;
-  coseguroObraSocial: string | null;
-  coseguroAdicional: string | null;
+  /** Coseguro abonado (texto con dos decimales), o `null` si no abonó (RF-27). */
+  coseguroAbonado: string | null;
   paciente: { id: number; nombre: string; dni: string; telefono: string; obraSocial: string };
   kinesiologo: { id: number; nombre: string };
   acciones: AccionesDelTurno;
@@ -53,6 +53,8 @@ export interface TurnoDeAgenda {
 export interface AgendaDelDia {
   fecha: string;
   turnos: TurnoDeAgenda[];
+  /** Suma de los coseguros abonados de los turnos listados, sin anulados (RF-48), calculada por la API. */
+  recaudado: string;
 }
 
 /** Turno activo cuya franja ya terminó sin marcarse (RF-42). */
@@ -84,8 +86,6 @@ export interface TurnoPropio {
   estado: EstadoTurno;
   /** Llegada en hora de pared del consultorio ('HH:MM'), calculada por la API, o `null`. */
   horaLlegada: string | null;
-  coseguroObraSocial: string | null;
-  coseguroAdicional: string | null;
   paciente: { nombre: string; dni: string; telefono: string; obraSocial: string };
 }
 
@@ -102,8 +102,8 @@ export interface TurnoDePaciente {
   horaInicio: string;
   horaFin: string;
   estado: EstadoTurno;
-  coseguroObraSocial: string | null;
-  coseguroAdicional: string | null;
+  /** Coseguro abonado (texto con dos decimales), o `null` si no abonó (RF-27, RF-47). */
+  coseguroAbonado: string | null;
   kinesiologo: { id: number; nombre: string };
 }
 

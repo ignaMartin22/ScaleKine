@@ -312,19 +312,19 @@ describe('AsignarTurno: confirmar (RF-23 a RF-26)', () => {
     await conDisponibilidad(fixture, servidor);
     await conPacienteAna(fixture, servidor);
     elegir(fixture, 'franja-3-0900');
-    q<HTMLInputElement>(fixture, '#coseguro-adicional').value = '10,123';
+    q<HTMLInputElement>(fixture, '#coseguro-abonado').value = '10,123';
     enviar(fixture, seccion('titulo-confirmar'));
     fixture.detectChanges();
     expect(q(fixture, '#error-coseguros').textContent).toContain('dos decimales');
     servidor.expectNone('/api/turnos');
   });
 
-  it('manda paciente, kinesiólogo, fecha, hora de inicio y coseguros normalizados', async () => {
+  it('manda paciente, kinesiólogo, fecha, hora de inicio y coseguro abonado normalizado', async () => {
     const { fixture, servidor } = montar();
     await conDisponibilidad(fixture, servidor);
     await conPacienteAna(fixture, servidor);
     elegir(fixture, 'franja-4-0800');
-    q<HTMLInputElement>(fixture, '#coseguro-obra-social').value = '1500,50';
+    q<HTMLInputElement>(fixture, '#coseguro-abonado').value = '1500,50';
     enviar(fixture, seccion('titulo-confirmar'));
 
     const p = await peticion(servidor, '/api/turnos', 'POST');
@@ -333,11 +333,11 @@ describe('AsignarTurno: confirmar (RF-23 a RF-26)', () => {
       kinesiologoId: 4,
       fecha: '2026-10-14',
       horaInicio: '08:00',
-      coseguroObraSocial: '1500.50',
+      coseguroAbonado: '1500.50',
     });
   });
 
-  it('sin coseguros no manda las claves', async () => {
+  it('sin coseguro abonado no manda la clave', async () => {
     const { fixture, servidor } = montar();
     await conDisponibilidad(fixture, servidor);
     await conPacienteAna(fixture, servidor);
@@ -418,8 +418,7 @@ describe('AsignarTurno: ticket (RF-28)', () => {
           fecha: '2026-10-14',
           horaInicio: '09:00',
           estado: 'reservado',
-          coseguroObraSocial: null,
-          coseguroAdicional: null,
+          coseguroAbonado: null,
         },
       },
       { status: 201, statusText: 'Created' },

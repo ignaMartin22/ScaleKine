@@ -42,7 +42,7 @@ enum TipoEvento {
   cambio_estado
   correccion
   reprogramacion
-  modificacion_coseguros
+  modificacion_abono
 }
 
 /// Cuenta de una persona del consultorio (M1). No se borra: se desactiva (RF-09).
@@ -133,8 +133,8 @@ model Turno {
   estado             EstadoTurno @default(reservado)
   /// Momento en que pasó a en_espera (RF-30, RF-40).
   llegadaEn          DateTime?   @db.Timestamptz(3)
-  coseguroObraSocial Decimal?    @db.Decimal(12, 2)
-  coseguroAdicional  Decimal?    @db.Decimal(12, 2)
+  /// Coseguro que el paciente abonó (RF-27); null = sin abonar. Solo lo ve la secretaría (RF-40).
+  coseguroAbonado    Decimal?    @db.Decimal(12, 2)
   creadoPorId        Int
   creadoEn           DateTime    @db.Timestamptz(3)
 

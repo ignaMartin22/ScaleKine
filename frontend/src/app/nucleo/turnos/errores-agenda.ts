@@ -2,8 +2,7 @@ import { ErrorApi } from '../http/error-api';
 import { mensajeDe } from '../ui/enfocar';
 
 /** Acción de la agenda en la que ocurrió el error. */
-export type ContextoAccion =
-  'transicion' | 'correccion' | 'reprogramacion' | 'coseguros' | 'ticket';
+export type ContextoAccion = 'transicion' | 'correccion' | 'reprogramacion' | 'abono' | 'ticket';
 
 export interface TraduccionAccion {
   mensaje: string;
@@ -107,10 +106,10 @@ export function traducirErrorAccion(error: unknown, contexto: ContextoAccion): T
           mensaje: 'El kinesiólogo elegido ya no atiende. Se actualizó la disponibilidad.',
         };
       case 'datos_invalidos':
-        if (contexto === 'coseguros') {
+        if (contexto === 'abono') {
           return {
             ...base,
-            mensaje: 'Los coseguros deben ser montos en pesos, con hasta dos decimales.',
+            mensaje: 'El coseguro abonado debe ser un monto en pesos, con hasta dos decimales.',
           };
         }
         break;

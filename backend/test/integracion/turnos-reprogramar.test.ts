@@ -41,14 +41,14 @@ const eventosDe = (turnoId: number) => db.turnoEvento.findMany({ where: { turnoI
 const turnoDe = (id: number) => db.turno.findUniqueOrThrow({ where: { id } });
 const fechaDe = (t: { fecha: Date }) => t.fecha.toISOString().slice(0, 10);
 
-/** Turno del lunes 08:00 con coseguros cargados, de un kinesiólogo de la mañana. */
+/** Turno del lunes 08:00 con abono cargado, de un kinesiólogo de la mañana. */
 async function escenario(estado: EstadoTurno = 'reservado') {
   const paciente = await crearPaciente();
   const kinesiologo = await crearKinesiologo();
   const base = await crearTurno({ pacienteId: paciente.id, kinesiologoId: kinesiologo.id, fecha: FECHA, estado });
   const turno = await db.turno.update({
     where: { id: base.id },
-    data: { coseguroObraSocial: '1500.50', coseguroAdicional: '300' },
+    data: { coseguroAbonado: '1500.50' },
   });
   return { paciente, kinesiologo, turno, destino: { kinesiologoId: kinesiologo.id, fecha: FECHA, horaInicio: '09:30' } };
 }
@@ -107,7 +107,7 @@ describe('reprogramar: casos válidos (RF-36)', () => {
     expect(guardado.horaInicio).toBe('08:00');
   });
 
-  it('mueve el mismo turno: conserva id, estado, paciente y coseguros, y no crea otro', async () => {
+  it('mueve el mismo turno: conserva id, estado, paciente y abono, y no crea otro', async () => {
     const { app } = await crearAppDePrueba();
     const { cookie } = await ingresarComo(app, 'secretaria');
     const { turno, paciente, destino } = await escenario();
@@ -118,26 +118,24 @@ describe('reprogramar: casos válidos (RF-36)', () => {
       id: turno.id,
       estado: 'reservado',
       pacienteId: paciente.id,
-      coseguroObraSocial: '1500.50',
-      coseguroAdicional: '300.00',
+      coseguroAbonado: '1500.50',
       llegadaEn: null,
     });
     const guardado = await turnoDe(turno.id);
     expect(guardado).toMatchObject({ estado: 'reservado', pacienteId: paciente.id, llegadaEn: null });
-    expect(guardado.coseguroObraSocial?.toFixed(2)).toBe('1500.50');
-    expect(guardado.coseguroAdicional?.toFixed(2)).toBe('300.00');
+    expect(guardado.coseguroAbonado?.toFixed(2)).toBe('1500.50');
     expect(await db.turno.count()).toBe(1);
   });
 
-  it('un turno sin coseguros cargados sigue sin ellos', async () => {
+  it('un turno sin abono cargado sigue sin abonar', async () => {
     const { app } = await crearAppDePrueba();
     const { cookie } = await ingresarComo(app, 'secretaria');
     const { turno, destino } = await escenario();
-    await db.turno.update({ where: { id: turno.id }, data: { coseguroObraSocial: null, coseguroAdicional: null } });
+    await db.turno.update({ where: { id: turno.id }, data: { coseguroAbonado: null } });
 
     const res = await reprogramar(app, cookie, turno.id, destino);
 
-    expect(res.body.turno).toMatchObject({ coseguroObraSocial: null, coseguroAdicional: null });
+    expect(res.body.turno).toMatchObject({ coseguroAbonado: null });
   });
 
   it('admite una fecha vencida, como al asignar', async () => {

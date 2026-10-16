@@ -53,8 +53,6 @@ function propio(id: number, cambios: Partial<TurnoPropio> = {}): TurnoPropio {
     horaFin: '08:45',
     estado: 'reservado',
     horaLlegada: null,
-    coseguroObraSocial: null,
-    coseguroAdicional: null,
     paciente: {
       nombre: `Paciente Ficticio ${id}`,
       dni: '30123456',
@@ -175,8 +173,7 @@ function deAgenda(id: number, cambios: Partial<TurnoDeAgenda> = {}): TurnoDeAgen
     horaFin: '08:45',
     estado: 'reservado',
     horaLlegada: null,
-    coseguroObraSocial: null,
-    coseguroAdicional: null,
+    coseguroAbonado: null,
     paciente: {
       id: 7,
       nombre: 'Ana Ficticia',

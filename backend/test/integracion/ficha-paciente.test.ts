@@ -56,7 +56,7 @@ describe('GET /api/pacientes/:id/turnos (RF-47)', () => {
     const pasadoReciente = await dato('2026-10-14', '08:00', k1.id);
     await db.turno.update({
       where: { id: futuroCercano.id },
-      data: { coseguroObraSocial: '1500.5', coseguroAdicional: '200' },
+      data: { coseguroAbonado: '1500.5' },
     });
     await crearTurno({ fecha: HOY, horaInicio: '08:45', pacienteId: otroPaciente.id, kinesiologoId: k1.id });
 
@@ -73,8 +73,7 @@ describe('GET /api/pacientes/:id/turnos (RF-47)', () => {
       estado: 'reservado',
       llegadaEn: null,
       horaLlegada: null,
-      coseguroObraSocial: '1500.50',
-      coseguroAdicional: '200.00',
+      coseguroAbonado: '1500.50',
       kinesiologo: { id: k2.id, nombre: k2.nombre },
     });
     // Turnos con dos kinesiólogos distintos en el historial.
@@ -231,12 +230,12 @@ describe('GET /api/pacientes/:id/turnos (RF-47)', () => {
       data: { telefono: '+5491155550123', obraSocial: 'Obra Social Ficticia Sur' },
     });
     const turno = await crearTurno({ fecha: '2026-09-01', pacienteId: paciente.id });
-    await db.turno.update({ where: { id: turno.id }, data: { coseguroObraSocial: '7777.77' } });
+    await db.turno.update({ where: { id: turno.id }, data: { coseguroAbonado: '7777.77' } });
 
     const res = await ficha(app, paciente.id, cookie);
 
     expect(res.status).toBe(200);
-    expect(res.body.historial[0].coseguroObraSocial).toBe('7777.77');
+    expect(res.body.historial[0].coseguroAbonado).toBe('7777.77');
     for (const dato of ['Reservada', '90777666', '5491155550123', 'Obra Social Ficticia', '7777']) {
       expect(texto(), dato).not.toContain(dato);
     }

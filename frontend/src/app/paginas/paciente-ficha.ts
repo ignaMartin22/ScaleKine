@@ -102,7 +102,7 @@ import { Icono } from '../nucleo/ui/icono';
                     <th scope="col">Franja</th>
                     <th scope="col">Kinesiólogo</th>
                     <th scope="col">Estado</th>
-                    <th scope="col">Coseguros</th>
+                    <th scope="col">Coseguro abonado</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -112,9 +112,8 @@ import { Icono } from '../nucleo/ui/icono';
                       <td data-label="Franja">{{ x.horaInicio }} a {{ x.horaFin }}</td>
                       <td data-label="Kinesiólogo">{{ x.kinesiologo.nombre }}</td>
                       <td data-label="Estado"><app-estado-turno [estado]="x.estado" /></td>
-                      <td data-label="Coseguros">
-                        Obra social: {{ monto(x.coseguroObraSocial) }}<br />
-                        Adicional: {{ monto(x.coseguroAdicional) }}
+                      <td data-label="Coseguro abonado">
+                        {{ monto(x.coseguroAbonado) }}
                       </td>
                     </tr>
                   }
@@ -152,7 +151,7 @@ import { Icono } from '../nucleo/ui/icono';
                     <th scope="col">Franja</th>
                     <th scope="col">Kinesiólogo</th>
                     <th scope="col">Estado</th>
-                    <th scope="col">Coseguros</th>
+                    <th scope="col">Coseguro abonado</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -162,9 +161,8 @@ import { Icono } from '../nucleo/ui/icono';
                       <td data-label="Franja">{{ x.horaInicio }} a {{ x.horaFin }}</td>
                       <td data-label="Kinesiólogo">{{ x.kinesiologo.nombre }}</td>
                       <td data-label="Estado"><app-estado-turno [estado]="x.estado" /></td>
-                      <td data-label="Coseguros">
-                        Obra social: {{ monto(x.coseguroObraSocial) }}<br />
-                        Adicional: {{ monto(x.coseguroAdicional) }}
+                      <td data-label="Coseguro abonado">
+                        {{ monto(x.coseguroAbonado) }}
                       </td>
                     </tr>
                   }
@@ -214,7 +212,7 @@ export class PacienteFicha implements OnInit {
   }
 
   protected monto(valor: string | null): string {
-    return valor === null ? 'sin cargar' : '$ ' + valor;
+    return valor === null ? 'Sin abonar' : '$ ' + valor;
   }
 
   protected abrirEdicion(): void {

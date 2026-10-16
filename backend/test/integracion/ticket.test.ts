@@ -50,7 +50,7 @@ async function escenario() {
   const turno = await crearTurno({ pacienteId: paciente.id, kinesiologoId: kinesiologo.id, fecha: '2026-10-19' });
   await db.turno.update({
     where: { id: turno.id },
-    data: { coseguroObraSocial: '7777.77', coseguroAdicional: '8888.88' },
+    data: { coseguroAbonado: '7777.77' },
   });
   return { paciente, kinesiologo, turno };
 }

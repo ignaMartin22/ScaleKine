@@ -58,11 +58,11 @@ export function traducirErrorAsignacion(error: unknown): TraduccionError {
       case 'dato_faltante':
         return { ...base, paso: 'confirmar', mensaje: error.message };
       case 'datos_invalidos':
-        if (error.campos.some((c) => c.includes('coseguro'))) {
+        if (error.campos.some((c) => c.includes('coseguro') || c.includes('monto'))) {
           return {
             ...base,
             paso: 'coseguros',
-            mensaje: 'Los coseguros deben ser montos en pesos, con hasta dos decimales.',
+            mensaje: 'El coseguro abonado debe ser un monto en pesos, con hasta dos decimales.',
           };
         }
         break;
@@ -71,7 +71,7 @@ export function traducirErrorAsignacion(error: unknown): TraduccionError {
   return { ...base, paso: 'confirmar', mensaje: mensajeDe(error) };
 }
 
-const FORMATO_MONTO = /^\d{1,10}([.,]\d{1,2})?$/;
+const FORMATO_MONTO = /^\d{1,7}([.,]\d{1,2})?$/;
 
 /**
  * Normaliza un monto tipeado: vacío es "sin cargar" (`undefined`); si tiene formato válido

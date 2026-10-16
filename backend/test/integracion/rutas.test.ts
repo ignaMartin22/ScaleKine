@@ -78,7 +78,7 @@ function escriturasSinAutorizacion(capas: CapaExpress[]): string[] {
  * Rutas de M2 (consultorio, kinesiólogos, pacientes): sus GET exigen `autorizarLectura` (D-16). Se
  * reconocen por el primer segmento de la ruta; un módulo nuevo de M2 agrega su prefijo acá.
  */
-const PREFIJOS_DE_M2 = ['/consultorio', '/kinesiologos', '/pacientes'];
+const PREFIJOS_DE_M2 = ['/consultorio', '/kinesiologos', '/pacientes', '/obras-sociales'];
 const esRutaDeM2 = (path: string) => PREFIJOS_DE_M2.some((p) => path === p || path.startsWith(`${p}/`));
 
 /** GET de M2 que ningún handler de su stack autoriza como lectura, como `GET /ruta`. */
@@ -508,6 +508,7 @@ describe('cada variante de exigirSesion aparece solo donde corresponde (RF-06, R
         'GET /disponibilidad',
         'GET /kinesiologos',
         'GET /mi-agenda',
+        'GET /obras-sociales',
         'GET /pacientes',
         'GET /pacientes/:id',
         'GET /pacientes/:id/turnos',
@@ -523,7 +524,7 @@ describe('cada variante de exigirSesion aparece solo donde corresponde (RF-06, R
         'PUT /consultorio',
         'PUT /kinesiologos/:id/bloque',
         'PUT /pacientes/:id',
-        'PUT /turnos/:id/coseguros',
+        'PUT /turnos/:id/abono',
         'PUT /turnos/:id/ubicacion',
       ],
     });
