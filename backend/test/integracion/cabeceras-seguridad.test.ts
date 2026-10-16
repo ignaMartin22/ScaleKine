@@ -9,6 +9,7 @@ import {
   prepararEscenario,
   rutasReales,
   type Contexto,
+  type Entrada,
   type Entorno,
   type Respuesta,
   type RolDePrueba,
@@ -106,7 +107,7 @@ describe('cabeceras de seguridad en todas las rutas (RNF-10, RNF-14)', () => {
     let total = 0;
 
     for (const ruta of rutasReales(entorno.app)) {
-      const entrada = (CATALOGO[ruta.clave] ?? (() => ({ url: ruta.plantilla })))(contexto);
+      const entrada: Entrada = (CATALOGO[ruta.clave] ?? (() => ({ url: ruta.plantilla })))(contexto);
       for (const rol of ROLES) {
         const res = await pedirEntrada(entorno, ruta, entrada, cookieDe(entrada, sesiones, rol));
         verificar(res, `${ruta.clave} como ${rol ?? 'sin sesión'}`);
@@ -125,7 +126,7 @@ describe('cabeceras de seguridad en todas las rutas (RNF-10, RNF-14)', () => {
     const estados = new Set<number>();
 
     for (const ruta of rutasReales(entorno.app)) {
-      const entrada = (CATALOGO[ruta.clave] ?? (() => ({ url: ruta.plantilla })))(contexto);
+      const entrada: Entrada = (CATALOGO[ruta.clave] ?? (() => ({ url: ruta.plantilla })))(contexto);
       const cookie = cookieDe(entrada, sesiones, 'administrador');
       const variantes: Record<string, Respuesta> = {
         'id mal formado': await pedir(entorno, ruta.metodo, entrada.url.replace(/\/\d+(?=\/|\?|$)/, '/abc'), {

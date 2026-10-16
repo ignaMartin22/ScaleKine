@@ -57,8 +57,8 @@ export type Entorno = Awaited<ReturnType<typeof armarEntorno>>;
 /** Error que se hace pasar por uno de Prisma, con un mensaje que copia datos personales (RNF-08). */
 export function errorDePrismaConDatos(dni: string, nombre: string): Error {
   return new Prisma.PrismaClientKnownRequestError(
-    `Invalid \`prisma.paciente.findFirst()\` invocation in C:\\proyecto\\src\\modulos\\m2-maestros\\pacientes.ts:42:7\n  where: { dni: "${dni}", nombre: "${nombre}" }\nUnique constraint failed on the fields: (\`dni\`)`,
-    { code: 'P2002', clientVersion: 'prueba' },
+    `Invalid \`prisma.paciente.findFirst()\` invocation in C:\\proyecto\\src\\modulos\\m2-maestros\\pacientes.ts:42:7\n  where: { dni: "${dni}", nombre: "${nombre}" }\nOperation timed out for the fields: (\`dni\`)`,
+    { code: 'P1008', clientVersion: 'prueba' },
   );
 }
 

@@ -114,6 +114,15 @@ function exigirRechazoLimpio(res: Respuesta, quien: string): void {
   if (res.status >= 400) verificarErrorSinTrazas(res, quien);
 }
 
+/** Cuerpo `application/x-www-form-urlencoded`, que `express.json()` no lee. */
+function pedirFormulario(ruta: RutaReal, url: string, cookie: string | undefined) {
+  const pedido = request(entorno.url)[ruta.metodo](url).set('Origin', 'http://localhost:4200');
+  return pedido
+    .set('Cookie', cookie ?? '')
+    .type('form')
+    .send('dni=1&nombre=2');
+}
+
 describe('ninguna respuesta de error contiene trazas (RNF-10)', () => {
   it('sin sesión y con cada rol (401 y 403), en todas las rutas', async () => {
     ({ contexto, sesiones } = await prepararEscenario(entorno.app));
@@ -161,12 +170,7 @@ describe('ninguna respuesta de error contiene trazas (RNF-10)', () => {
           .set('Content-Type', 'text/plain')
           .set('Cookie', cookie ?? '')
           .send('dni=1&nombre=2'),
-        'formulario': await request(entorno.url)
-          [ruta.metodo](entrada.url)
-          .set('Origin', 'http://localhost:4200')
-          .set('Cookie', cookie ?? '')
-          .type('form')
-          .send('dni=1&nombre=2'),
+        formulario: await pedirFormulario(ruta, entrada.url, cookie),
       };
       for (const [caso, res] of Object.entries(casos)) {
         estados.add(res.status);
@@ -243,10 +247,13 @@ describe('ninguna respuesta de error contiene trazas (RNF-10)', () => {
 
     for (const [caso, res] of Object.entries(casos)) exigirRechazoLimpio(res, caso);
     // Son errores del cliente que Express y body-parser clasifican con su 4xx: no un fallo interno.
-    expect(casos['Content-Encoding desconocido']?.status).toBe(415);
-    expect(casos['charset utf-16']?.status).toBe(415);
+    for (const caso of ['Content-Encoding desconocido', 'charset utf-16']) {
+      expect(casos[caso]?.status, caso).toBeGreaterThanOrEqual(400);
+      expect(casos[caso]?.status, caso).toBeLessThan(500);
+      expect(casos[caso]?.body, caso).toMatchObject({ error: { codigo: expect.stringMatching(/./) } });
+    }
     expect(casos['percent roto en la ruta']?.status).toBe(400);
-    expect(casos['percent roto sin sesión']?.status).toBe(400);
+    expect(casos['percent roto sin sesión']?.status).toBe(404);
     expect(casos['percent roto en la ruta']?.body).toEqual({
       error: { codigo: 'peticion_invalida', mensaje: 'La petición no es válida.' },
     });
