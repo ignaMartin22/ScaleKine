@@ -9,6 +9,7 @@ coverage/
 .env*
 !.env.example
 !**/.env.example
+!.env.*.example
 
 # Playwright
 e2e/test-results/

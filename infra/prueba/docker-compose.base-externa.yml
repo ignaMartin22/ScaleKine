@@ -1,0 +1,17 @@
+# PostgreSQL temporal que hace de "base administrada" en la prueba del perfil administrado. Sin
+# puertos publicados. Se levanta en otro proyecto: docker compose -p scalekine-prod-b-ext -f ... up -d
+name: scalekine-prod-b-ext
+services:
+  db-externa:
+    image: postgres:18.6-alpine
+    env_file: [{ path: "${DIR_ENV:?Falta DIR_ENV}/.env.db" }]
+    volumes:
+      - ../postgres/init/02-usuarios.sh:/docker-entrypoint-initdb.d/02-usuarios.sh:ro
+    networks: [externa]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+networks:
+  externa: {}

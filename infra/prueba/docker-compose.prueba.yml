@@ -1,0 +1,12 @@
+# Complemento SOLO para pruebas locales (T-35): certificado interno de Caddy en vez de Let's Encrypt
+# y un destino local de rclone para el respaldo. Nunca se usa en producción.
+#   docker compose -p scalekine-prod-b -f docker-compose.prod.yml -f infra/prueba/docker-compose.prueba.yml ...
+services:
+  web:
+    volumes:
+      - ${CADDYFILE_PRUEBA:-./infra/prueba/Caddyfile.prueba}:/etc/caddy/Caddyfile:ro
+  respaldo:
+    volumes:
+      - respaldos_prueba:/respaldos
+volumes:
+  respaldos_prueba: {}

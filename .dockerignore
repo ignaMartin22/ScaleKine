@@ -1,0 +1,18 @@
+# Contexto de build de las imágenes de producción (infra/*/Dockerfile): nada local ni secreto.
+.git
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+**/node_modules
+**/dist
+**/coverage
+**/.angular
+**/*.log
+backend/src/generado
+e2e
+docs
+.claude
+.vscode
+.idea
