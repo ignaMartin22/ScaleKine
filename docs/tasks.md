@@ -31,7 +31,7 @@ El estado de cada tarea y lo que quedó a medio hacer están en [`avance.md`](./
 | 4 | T-22 → T-23 → T-24 | T-19 → T-21 → T-25 → T-26 | Fase 2, T-15 y T-20. T-25 necesita T-22 |
 | 5 | T-27 → T-29 | T-28 → T-30 | Fase 3 |
 | 6 | T-31 → T-32 | T-41 → T-35 → T-37 | Fase 4. T-41 antes de la infraestructura (decisión del usuario) |
-| 7 | T-33 → T-34 | T-36 → T-38 → T-39 | Todo lo anterior |
+| 7 | T-33 → T-42 → T-34 | T-37 → T-43 → T-36 → T-38 → T-39 | Todo lo anterior. T-42 y T-43 se agregaron por decisión del usuario (2026-10-15); T-43 necesita T-42 |
 | — | T-40 | — | Todo |
 
 **Reglas:**
@@ -376,6 +376,26 @@ El estado de cada tarea y lo que quedó a medio hacer están en [`avance.md`](./
 - **RF/RNF:** RNF-08, RNF-10.
 - **Hecho:** las pruebas pasan en CI.
 
+### T-42 · B · Coseguro abonado, recaudado y obras sociales
+- Migración: `Turno` reemplaza `coseguroObraSocial` y `coseguroAdicional` por `coseguroAbonado`
+  (decimal, opcional), y el tipo de evento `modificacion_coseguros` pasa a `modificacion_abono`.
+  No hay datos de producción; en desarrollo los montos anteriores se descartan.
+- `registrarAbono` en M3 (reemplaza a `modificarCoseguros`), con su evento y 409 sobre `anulado`.
+- La agenda del kinesiólogo y la difusión hacia su sala no incluyen el monto (RF-40). La agenda de
+  la secretaría incluye el total recaudado (RF-48). Endpoint de sugerencias de obra social (RF-49).
+- **RF/RNF:** RF-23, RF-27, RF-40, RF-41, RF-46, RF-48, RF-49, RNF-08.
+- **Hecho:** pruebas de integración de cada punto, incluida una que verifica que ninguna respuesta
+  ni mensaje de tiempo real del kinesiólogo trae el monto, y que el total no cuenta anulados.
+  Crítica: pasa por `revisor-seguridad`.
+
+### T-43 · F · Pantallas de coseguro abonado, recaudado y obras sociales
+- Asignar y agenda: un solo campo "Coseguro abonado" y la acción para registrarlo o corregirlo; "Sin
+  abonar" cuando no hay monto. Pie de la agenda con lo recaudado, que se actualiza en vivo y sigue
+  al filtro. El formulario de paciente sugiere las obras sociales guardadas (RF-49). Ficha del
+  paciente con el monto abonado de cada turno. Ajusta la suite E2E (T-33) si recorre los coseguros.
+- **RF/RNF:** RF-23, RF-27, RF-47, RF-48, RF-49, RNF-15.
+- **Hecho:** pruebas de unidad de cada pantalla y recorrido manual del usuario.
+
 ---
 
 ## Fase 7 · Producción (`despliegue.md`)
@@ -443,7 +463,7 @@ El estado de cada tarea y lo que quedó a medio hacer están en [`avance.md`](./
 | RF-04 | T-13, T-14 | RF-24 | T-04, T-22 | RF-44 | T-31, T-32 |
 | RF-05 | T-10 | RF-25 | T-04, T-22 | RF-45 | T-32 |
 | RF-06 | T-11, T-14, T-33 | RF-26 | T-22 | RF-46 | T-22, T-23, T-24 |
-| RF-07 | T-11, T-14 | RF-27 | T-23, T-30 | RF-47 | T-29, T-30 |
+| RF-07 | T-11, T-14 | RF-27 | T-23, T-30, T-42, T-43 | RF-47 | T-29, T-30, T-43 |
 | RF-08 | T-13, T-14 | RF-28 | T-25, T-30 | RNF-01 | T-07, T-35 |
 | RF-09 | T-13, T-26 | RF-29 | T-03, T-20 | RNF-02 | T-09 |
 | RF-10 | T-07, T-14 | RF-30 | T-23 | RNF-03 | T-11 |
@@ -456,6 +476,7 @@ El estado de cada tarea y lo que quedó a medio hacer están en [`avance.md`](./
 | RF-17 | T-18, T-19 | RF-37 | T-23, T-24 | RNF-10 | T-02, T-05, T-31, T-34, T-35 |
 | RF-18 | T-18 | RF-38 | T-03, T-23 | RNF-11 | T-06, T-39 |
 | RF-19 | T-18, T-30 | RF-39 | T-04, T-26 | RNF-12 | T-37, T-38 |
-| RF-20 | T-18, T-19 | RF-40 | T-27, T-30 | RNF-13 | T-36 |
+| RF-20 | T-18, T-19 | RF-40 | T-27, T-30, T-42 | RNF-13 | T-36 |
 | | | | | RNF-14 | #49 |
 | | | | | RNF-15 | T-41 |
+| | | RF-48 | T-42, T-43 | RF-49 | T-42, T-43 |

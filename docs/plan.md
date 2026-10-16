@@ -86,7 +86,8 @@ Va en la base y no en variables de entorno porque la secretaría la edita (RF-13
 - DNI, único y con formato validado (RF-18)
 - Nombre y apellido
 - Teléfono
-- Obra social (texto; "Particular" si no tiene)
+- Obra social (texto; "Particular" si no tiene). Las sugerencias de RF-49 son las distintas ya
+  guardadas: no hay tabla de obras sociales.
 
 **`Turno`** (M3)
 - Identificador
@@ -95,19 +96,19 @@ Va en la base y no en variables de entorno porque la secretaría la edita (RF-13
 - Hora de inicio de la franja
 - Estado: `reservado` | `en_espera` | `asistio` | `no_asistio` | `anulado`
 - `llegada_en`: momento en que pasó a `en_espera`
-- Coseguro según obra social (monto, opcional)
-- Coseguro adicional (monto, opcional)
+- Coseguro abonado (monto, opcional; vacío = sin abonar). Reemplaza a los dos coseguros
+  anteriores (decisión del usuario, 2026-10-15)
 - Creado por y creado en
 
 **`TurnoEvento`** — auditoría (M6)
 - Turno
-- Tipo: `asignacion` | `cambio_estado` | `correccion` | `reprogramacion` | `modificacion_coseguros`
+- Tipo: `asignacion` | `cambio_estado` | `correccion` | `reprogramacion` | `modificacion_abono`
 - Estado anterior y estado nuevo (solo en `cambio_estado` y `correccion`)
 - Autor
 - Ocurrido en
 
 En `reprogramacion` no se guarda la fecha ni la franja anteriores (D-9), y en
-`modificacion_coseguros`, los montos anteriores.
+`modificacion_abono`, el monto anterior.
 
 ### 2.2 La grilla no se persiste
 
@@ -267,8 +268,8 @@ de lectura (el ticket):
 
 | Operación | Efecto | RF |
 |---|---|---|
-| `asignar` | Crea el turno en `reservado` con sus coseguros; rechaza un kinesiólogo con la cuenta desactivada como si no existiera | RF-23 … RF-26 |
-| `modificarCoseguros` | Cambia los montos; no toca estado ni franja. Registra un evento `modificacion_coseguros` | RF-27, RF-46 |
+| `asignar` | Crea el turno en `reservado`, con el coseguro abonado si viene; rechaza un kinesiólogo con la cuenta desactivada como si no existiera | RF-23 … RF-26 |
+| `registrarAbono` | Guarda, corrige o quita el coseguro abonado; rechaza un turno `anulado` con 409; no toca estado ni franja. Registra un evento `modificacion_abono` | RF-27, RF-46 |
 | `transicionar` | Aplica una acción del flujo normal | RF-30 … RF-33 |
 | `corregir` | Lleva el turno a cualquier estado | RF-35 |
 | `reprogramar` | Cambia fecha, franja y/o kinesiólogo de un turno `reservado`; rechaza un kinesiólogo de destino con la cuenta desactivada como si no existiera, también si es el mismo que ya tiene el turno | RF-36 |
@@ -299,11 +300,17 @@ commit, emite un evento de dominio que M5 difunde.
 ### M4 · Agenda — RF-40 … RF-42
 
 - **RF-40 (kinesiólogo)**: consulta filtrada al kinesiólogo de la sesión, nunca a un parámetro del
-  cliente. La proyección es la misma que la de la secretaría, sin la lista de acciones (D-15).
+  cliente. La proyección es la misma que la de la secretaría, sin la lista de acciones ni el
+  coseguro abonado (D-15). La difusión en tiempo real (M5) usa la misma proyección por rol.
   Todos los endpoints de lectura que acepta el rol `kinesiologo` filtran por el kinesiólogo de la
   sesión; los de búsqueda de pacientes e historial lo rechazan (D-16).
 - **RF-41 (secretaría)**: todos los turnos, filtrables por fecha y kinesiólogo, con la proyección
   completa y la lista de acciones disponibles de M3.
+- **RF-48 (recaudado)**: la respuesta de la agenda de la secretaría incluye el total recaudado de
+  los turnos que devuelve (mismo filtro, sin `anulado`), calculado en el backend con decimales
+  (§4.9). La agenda viva lo recalcula al recibir un cambio.
+- **RF-49 (sugerencias)**: `GET` de las obras sociales distintas guardadas en `Paciente`, solo
+  para `secretaria` y `administrador`. Devuelve nombres de obras sociales, sin ningún otro dato.
 - **RF-22 (disponibilidad)**: dada una fecha y un bloque, devuelve los kinesiólogos de ese bloque con
   la cuenta activa (`Usuario.activo`) y, para cada uno, las horas de inicio de la grilla menos las
   que tienen un turno activo suyo o del paciente. Es una única consulta de los turnos activos de la
@@ -422,8 +429,8 @@ abre la posibilidad de olvidar el chequeo, y la regla de negocio es global (D-3)
 
 **Elegido:** tipo decimal de precisión fija en pesos.
 
-*Descartado:* coma flotante, porque los montos de dinero no deben acumular error de redondeo
-aunque hoy sean informativos.
+*Descartado:* coma flotante, porque los montos de dinero no deben acumular error de redondeo, y
+lo recaudado del día (RF-48) es una suma.
 
 ### 4.10 Interfaz en un solo idioma
 
