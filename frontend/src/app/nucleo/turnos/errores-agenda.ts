@@ -50,6 +50,14 @@ export function traducirErrorAccion(error: unknown, contexto: ContextoAccion): T
           mensaje:
             'Solo se puede reprogramar un turno reservado, y este ya cambió de estado. Se actualizó la agenda.',
         };
+      case 'turno_anulado':
+        return {
+          ...base,
+          refrescarAgenda: true,
+          cerrar: true,
+          mensaje:
+            'Este turno está anulado y no admite registrar el coseguro abonado. Se actualizó la agenda.',
+        };
       case 'turno_no_encontrado':
         return {
           ...base,

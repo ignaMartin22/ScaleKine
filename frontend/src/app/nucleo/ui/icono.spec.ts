@@ -20,7 +20,7 @@ function montar(cambios: Partial<Anfitrion> = {}): SVGSVGElement {
 }
 
 describe('Icono (RNF-15, DESIGN.md §5)', () => {
-  it('trae los 28 íconos de la tabla de DESIGN.md §5', () => {
+  it('trae los 30 íconos de la tabla de DESIGN.md §5', () => {
     expect(Object.keys(ICONOS).sort()).toEqual(
       [
         'agenda',
@@ -51,6 +51,8 @@ describe('Icono (RNF-15, DESIGN.md §5)', () => {
         'volver',
         'escudo',
         'usuario-baja',
+        'usuario',
+        'siguiente',
       ].sort(),
     );
   });

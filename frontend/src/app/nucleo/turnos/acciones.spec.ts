@@ -106,6 +106,13 @@ describe('traducirErrorAccion (RF-35 a RF-37)', () => {
     });
   });
 
+  it('turno anulado en el abono cierra el diálogo, avisa con claridad y relee la agenda', () => {
+    const t = traducirErrorAccion(api('turno_anulado'), 'abono');
+    expect(t).toMatchObject({ cerrar: true, refrescarAgenda: true });
+    expect(t.mensaje).toContain('anulado');
+    expect(t.mensaje).toContain('no admite');
+  });
+
   it('datos inválidos en el abono dice qué formato se espera', () => {
     expect(traducirErrorAccion(api('datos_invalidos'), 'abono').mensaje).toContain('pesos');
   });

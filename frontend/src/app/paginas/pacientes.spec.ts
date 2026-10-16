@@ -96,8 +96,52 @@ describe('PacientesPagina: buscador (RF-19, RF-21)', () => {
 
     const enlace = raiz(fixture).querySelector('#resultados a') as HTMLAnchorElement;
     expect(enlace.textContent).toContain('Ana Ficticia');
-    expect(enlace.textContent).toContain('30123456');
+    expect(enlace.textContent).toContain('DNI 30.123.456');
     expect(enlace.getAttribute('href')).toBe('/secretaria/pacientes/7');
+  });
+
+  it('los resultados son una lista de tarjetas con la cantidad y toda la fila enlaza a la ficha (§6.2)', async () => {
+    const { fixture, servidor } = montar();
+    elegirNombre(fixture);
+    campo(fixture, 'buscar-texto').value = 'Fictic';
+    enviar(fixture, 'section[aria-labelledby="titulo-buscar"] form');
+    servidor
+      .expectOne((p) => p.url === '/api/pacientes')
+      .flush({
+        pacientes: [ana, { ...ana, id: 8, dni: '28111222', nombre: 'Beto Ficticio' }],
+      });
+    await estable(fixture);
+
+    expect(raiz(fixture).querySelector('#resultados h3')?.textContent).toContain('2 pacientes');
+    const filas = Array.from(raiz(fixture).querySelectorAll('ul.lista-pacientes > li'));
+    expect(filas).toHaveLength(2);
+    for (const fila of filas) {
+      const enlaces = fila.querySelectorAll('a');
+      expect(enlaces).toHaveLength(1);
+      // La tarjeta y la flecha están dentro del único enlace: toda la fila es el enlace.
+      expect(enlaces[0].querySelector('app-paciente-tarjeta.paciente-tarjeta')).not.toBeNull();
+      expect(enlaces[0].querySelector('app-icono')).not.toBeNull();
+    }
+    expect(filas[1].querySelector('a')?.getAttribute('href')).toBe('/secretaria/pacientes/8');
+    expect(filas[1].textContent).toContain('DNI 28.111.222');
+  });
+
+  it('con un solo resultado dice «1 paciente»', async () => {
+    const { fixture, servidor } = montar();
+    campo(fixture, 'buscar-texto').value = '30123456';
+    enviar(fixture, 'section[aria-labelledby="titulo-buscar"] form');
+    servidor.expectOne((p) => p.url === '/api/pacientes').flush({ pacientes: [ana] });
+    await estable(fixture);
+    expect(raiz(fixture).querySelector('#resultados h3')?.textContent?.trim()).toBe('1 paciente');
+  });
+
+  it('sin resultados muestra un mensaje de información', async () => {
+    const { fixture, servidor } = montar();
+    campo(fixture, 'buscar-texto').value = '30123456';
+    enviar(fixture, 'section[aria-labelledby="titulo-buscar"] form');
+    servidor.expectOne((p) => p.url === '/api/pacientes').flush({ pacientes: [] });
+    await estable(fixture);
+    expect(raiz(fixture).querySelector('#resultados .info')).not.toBeNull();
   });
 
   it('un DNI con formato inválido es un error del campo y no pega a la API', () => {
@@ -269,6 +313,73 @@ describe('PacientesPagina: alta (RF-17, RF-18)', () => {
   });
 });
 
+describe('Formulario de paciente: sugerencias de obra social (RF-49)', () => {
+  const opciones = (f: ComponentFixture<unknown>) =>
+    Array.from(raiz(f).querySelectorAll('#sugerencias-obra-social option')).map((o) =>
+      o.getAttribute('value'),
+    );
+
+  async function montarAlta() {
+    const servidor = configurar();
+    const fixture = TestBed.createComponent(PacientesPagina);
+    fixture.detectChanges();
+    (raiz(fixture).querySelector('#nuevo-paciente') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    return { fixture, servidor };
+  }
+
+  it('en el alta sugiere Particular y las ya guardadas, sin repetir las que difieren en mayúsculas', async () => {
+    const { fixture, servidor } = await montarAlta();
+    servidor
+      .expectOne({ method: 'GET', url: '/api/obras-sociales' })
+      .flush({ obrasSociales: ['OSDE', 'osde', 'Swiss Medical', 'PARTICULAR', 'Osde'] });
+    await vi.waitFor(() => {
+      fixture.detectChanges();
+      expect(opciones(fixture)).toEqual(['Particular', 'OSDE', 'Swiss Medical']);
+    });
+  });
+
+  it('permite escribir una obra social nueva y la manda tal cual', async () => {
+    const { fixture, servidor } = await montarAlta();
+    servidor.expectOne({ method: 'GET', url: '/api/obras-sociales' }).flush({
+      obrasSociales: ['OSDE'],
+    });
+    llenarAlta(fixture, { 'paciente-obra-social': 'Obra Nueva Ficticia' });
+    enviar(fixture, FORM_ALTA);
+    const alta = servidor.expectOne({ method: 'POST', url: '/api/pacientes' });
+    expect(alta.request.body.obraSocial).toBe('Obra Nueva Ficticia');
+    alta.flush({ paciente: ana }, { status: 201, statusText: 'Created' });
+  });
+
+  it('si las sugerencias no llegan, el campo sigue funcionando con Particular', async () => {
+    const { fixture, servidor } = await montarAlta();
+    servidor
+      .expectOne({ method: 'GET', url: '/api/obras-sociales' })
+      .flush(error('error_inesperado'), { status: 500, statusText: 'Error' });
+    await estable(fixture);
+    expect(opciones(fixture)).toEqual(['Particular']);
+    expect(raiz(fixture).querySelector('#error-pacientes')).toBeNull();
+  });
+
+  it('la edición de la ficha también las ofrece', async () => {
+    const servidor = configurar();
+    const fixture = TestBed.createComponent(PacienteFicha);
+    fixture.componentRef.setInput('id', '7');
+    fixture.detectChanges();
+    servidor.expectOne({ method: 'GET', url: '/api/pacientes/7' }).flush({ paciente: ana });
+    await aparece(fixture, '#editar');
+    (raiz(fixture).querySelector('#editar') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    servidor
+      .expectOne({ method: 'GET', url: '/api/obras-sociales' })
+      .flush({ obrasSociales: ['IOMA', 'ioma'] });
+    await vi.waitFor(() => {
+      fixture.detectChanges();
+      expect(opciones(fixture)).toEqual(['Particular', 'IOMA']);
+    });
+  });
+});
+
 describe('PacienteFicha (RF-20, RF-21)', () => {
   function montar(id = '7') {
     const servidor = configurar();
@@ -411,7 +522,13 @@ describe('PacienteFicha: próximos e historial (RF-47)', () => {
       ],
     );
     const proximos = raiz(fixture).querySelector('#tabla-proximos')?.textContent ?? '';
-    for (const dato of ['20/10/2026', '08:00 a 08:45', 'Kine Ficticio', 'Reservado', '$ 1500.50']) {
+    for (const dato of [
+      '20/10/2026',
+      '08:00 a 08:45',
+      'Kine Ficticio',
+      'Reservado',
+      '$ 1.500,50',
+    ]) {
       expect(proximos).toContain(dato);
     }
     const historial = raiz(fixture).querySelector('#tabla-historial')?.textContent ?? '';

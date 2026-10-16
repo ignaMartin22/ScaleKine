@@ -1,4 +1,4 @@
-import { Component, DestroyRef, inject, signal } from '@angular/core';
+import { Component, DestroyRef, computed, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import {
   Agenda,
@@ -16,6 +16,7 @@ import {
 } from '../nucleo/turnos/disponibilidad';
 import { normalizarMonto } from '../nucleo/turnos/errores-asignacion';
 import { traducirErrorAccion, type ContextoAccion } from '../nucleo/turnos/errores-agenda';
+import { montoAbonado, formatearPesos, recaudadoDe } from '../nucleo/turnos/montos';
 import { Turnos } from '../nucleo/turnos/turnos';
 import { Kinesiologos, type Kinesiologo } from '../nucleo/kinesiologos/kinesiologos';
 import { IndicadorConexion } from '../nucleo/tiempo-real/indicador-conexion';
@@ -203,15 +204,23 @@ interface FranjaElegida {
                             <app-icono nombre="calendario-reloj" />Reprogramar
                           </button>
                         }
-                        <button
-                          type="button"
-                          class="boton secundario"
-                          [disabled]="trabajando()"
-                          [attr.aria-label]="'Coseguro abonado, turno de ' + t.paciente.nombre"
-                          (click)="abrir('abono', t)"
-                        >
-                          <app-icono nombre="monedas" />Coseguro abonado
-                        </button>
+                        @if (t.estado !== 'anulado') {
+                          <button
+                            type="button"
+                            class="boton secundario"
+                            [disabled]="trabajando()"
+                            [attr.aria-label]="
+                              (t.coseguroAbonado === null ? 'Registrar abono' : 'Corregir abono') +
+                              ', turno de ' +
+                              t.paciente.nombre
+                            "
+                            (click)="abrir('abono', t)"
+                          >
+                            <app-icono nombre="monedas" />{{
+                              t.coseguroAbonado === null ? 'Registrar abono' : 'Corregir abono'
+                            }}
+                          </button>
+                        }
                         <button
                           type="button"
                           class="boton secundario"
@@ -253,6 +262,14 @@ interface FranjaElegida {
             </table>
           </div>
         }
+        <p class="recaudado" id="recaudado" aria-live="polite">
+          <app-icono nombre="monedas" />
+          <span>Recaudado</span>
+          <strong id="recaudado-monto">{{ recaudadoFormateado() }}</strong>
+          <span class="recaudado-ayuda"
+            >Coseguros abonados de los turnos listados, sin anulados.</span
+          >
+        </p>
       }
     </section>
 
@@ -374,8 +391,21 @@ interface FranjaElegida {
               }
               <div class="acciones">
                 <button type="submit" class="boton" id="guardar-abono" [disabled]="enviando()">
-                  {{ enviando() ? 'Guardando…' : 'Guardar coseguro abonado' }}
+                  <app-icono nombre="monedas" />{{
+                    enviando() ? 'Guardando…' : 'Guardar coseguro abonado'
+                  }}
                 </button>
+                @if (d.turno.coseguroAbonado !== null) {
+                  <button
+                    type="button"
+                    class="boton secundario"
+                    id="quitar-abono"
+                    [disabled]="enviando()"
+                    (click)="quitarAbono(d.turno)"
+                  >
+                    Quitar abono
+                  </button>
+                }
                 <button type="button" class="boton secundario" (click)="cerrarDialogo()">
                   Cancelar
                 </button>
@@ -505,6 +535,12 @@ export class AgendaSecretaria {
   protected readonly fecha = signal('');
   protected readonly kinesiologoId = signal('');
   protected readonly turnos = signal<TurnoDeAgenda[] | null>(null);
+  /**
+   * Recaudado de la fecha y el filtro vigentes (RF-48), en centavos enteros como texto. Sale de la
+   * API al leer la agenda y se recalcula con los turnos listados ante cada cambio en vivo.
+   */
+  protected readonly recaudado = signal('0.00');
+  protected readonly recaudadoFormateado = computed(() => formatearPesos(this.recaudado()));
   protected readonly kinesiologos = signal<Kinesiologo[]>([]);
   protected readonly pendientes = signal<TurnoPendiente[]>([]);
   protected readonly cargando = signal(false);
@@ -560,6 +596,7 @@ export class AgendaSecretaria {
         a.id - b.id,
     );
     this.turnos.set(resto);
+    this.recaudado.set(recaudadoDe(resto));
     void this.cargarPendientes();
   }
 
@@ -567,7 +604,9 @@ export class AgendaSecretaria {
   private quitar(turnoId: number): void {
     const actuales = this.turnos();
     if (actuales === null) return;
-    this.turnos.set(actuales.filter((t) => t.id !== turnoId));
+    const resto = actuales.filter((t) => t.id !== turnoId);
+    this.turnos.set(resto);
+    this.recaudado.set(recaudadoDe(resto));
   }
 
   private async iniciar(): Promise<void> {
@@ -597,6 +636,7 @@ export class AgendaSecretaria {
       if (numero !== this.cargaActual) return;
       this.fecha.set(dia.fecha);
       this.turnos.set(dia.turnos);
+      this.recaudado.set(dia.recaudado);
     } catch (error) {
       if (numero !== this.cargaActual) return;
       this.errorCarga.set(mensajeDe(error));
@@ -630,9 +670,7 @@ export class AgendaSecretaria {
     return CIERRAN_EL_TURNO.includes(a.hacia);
   }
 
-  protected monto(valor: string | null): string {
-    return valor === null ? 'Sin abonar' : '$ ' + valor;
-  }
+  protected readonly monto = montoAbonado;
 
   protected async cambiarFecha(evento: Event): Promise<void> {
     this.fecha.set((evento.target as HTMLInputElement).value);
@@ -713,6 +751,16 @@ export class AgendaSecretaria {
       'abono',
       () => this.turnosApi.registrarAbono(turno.id, monto ?? null),
       'Coseguro abonado guardado.',
+    );
+  }
+
+  /** Quita el coseguro abonado: el turno queda «Sin abonar» (RF-27). */
+  protected async quitarAbono(turno: TurnoDeAgenda): Promise<void> {
+    await this.escribir(
+      turno,
+      'abono',
+      () => this.turnosApi.registrarAbono(turno.id, null),
+      'Se quitó el coseguro abonado: el turno quedó sin abonar.',
     );
   }
 

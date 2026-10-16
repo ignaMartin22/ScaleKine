@@ -18,6 +18,7 @@ import {
   type ErroresPaciente,
 } from './formulario-paciente';
 import { EstadoDelTurno } from '../nucleo/ui/estado-turno';
+import { montoAbonado } from '../nucleo/turnos/montos';
 import { Icono } from '../nucleo/ui/icono';
 
 /**
@@ -211,9 +212,7 @@ export class PacienteFicha implements OnInit {
     void this.cargar();
   }
 
-  protected monto(valor: string | null): string {
-    return valor === null ? 'Sin abonar' : '$ ' + valor;
-  }
+  protected readonly monto = montoAbonado;
 
   protected abrirEdicion(): void {
     this.aviso.set(null);

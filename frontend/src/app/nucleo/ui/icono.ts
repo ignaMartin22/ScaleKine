@@ -199,6 +199,10 @@ export const ICONOS = {
   ],
   // user-minus
   'usuario-baja': [t('M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2'), c(9, 7, 4), l(22, 11, 16, 11)],
+  // user
+  usuario: [t('M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2'), c(12, 7, 4)],
+  // chevron-right
+  siguiente: [t('m9 18 6-6-6-6')],
 } as const satisfies Record<string, readonly Forma[]>;
 
 export type NombreDeIcono = keyof typeof ICONOS;

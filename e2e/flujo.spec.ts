@@ -91,7 +91,9 @@ async function cambiarContrasenaObligatoria(
 
 /** Lee el secreto del QR que muestra la pantalla de activación (URI otpauth://). */
 async function secretoDelQr(pagina: Page): Promise<string> {
-  const imagen = pagina.getByRole('img', { name: 'Código QR para la aplicación autenticadora' });
+  const imagen = pagina.getByRole('img', {
+    name: 'Código QR para la aplicación autenticadora',
+  });
   await expect(imagen).toBeVisible();
   const pixeles = await imagen.evaluate(async (el) => {
     const img = el as HTMLImageElement;
@@ -103,7 +105,11 @@ async function secretoDelQr(pagina: Page): Promise<string> {
     if (!contexto) throw new Error('Sin contexto 2D.');
     contexto.drawImage(img, 0, 0);
     const datos = contexto.getImageData(0, 0, lienzo.width, lienzo.height);
-    return { ancho: datos.width, alto: datos.height, datos: Array.from(datos.data) };
+    return {
+      ancho: datos.width,
+      alto: datos.height,
+      datos: Array.from(datos.data),
+    };
   });
   const leido = jsQR(Uint8ClampedArray.from(pixeles.datos), pixeles.ancho, pixeles.alto);
   if (!leido) throw new Error('No se pudo leer el QR.');
@@ -120,6 +126,14 @@ function codigoTotp(secreto: string): string {
     digits: 6,
     period: 30,
   });
+}
+
+/** DESIGN.md §10.9: cada paso del asistente entra en 1280 × 720 sin desplazarse. */
+async function expectSinDesplazamiento(pagina: Page): Promise<void> {
+  const desplaza = await pagina.evaluate(
+    () => document.documentElement.scrollHeight > window.innerHeight,
+  );
+  expect(desplaza).toBe(false);
 }
 
 async function contextoNuevo(
@@ -186,8 +200,8 @@ test('flujo principal con secretaría y kinesiólogo en vivo', async ({ browser 
 
   await test.step('4. Asignar un turno y descargar el ticket (RF-43)', async () => {
     await admin.goto('/secretaria/asignar');
-    await admin.getByRole('textbox', { name: 'Fecha' }).fill(fecha);
-    await admin.getByRole('button', { name: 'Ver disponibilidad' }).click();
+    await expect(admin.getByRole('heading', { name: '1. Paciente' })).toBeVisible();
+    await expectSinDesplazamiento(admin);
     await admin.getByLabel('DNI del paciente').fill(PACIENTE.dni);
     await admin.getByRole('button', { name: 'Buscar paciente' }).click();
     await admin.getByRole('button', { name: 'Dar de alta con este DNI' }).click();
@@ -195,9 +209,29 @@ test('flujo principal con secretaría y kinesiólogo en vivo', async ({ browser 
     await admin.getByLabel('Teléfono').fill(PACIENTE.telefono);
     await admin.getByRole('combobox', { name: 'Obra social' }).fill(PACIENTE.obraSocial);
     await admin.getByRole('button', { name: 'Crear paciente y elegirlo' }).click();
-    await expect(admin.getByText(`Paciente: ${PACIENTE.nombre}`)).toBeVisible();
+    // El paciente encontrado se ve como tarjeta y queda en el resumen «Tu turno».
+    await expect(admin.locator('#paciente-elegido')).toContainText(PACIENTE.nombre);
+    await expect(admin.locator('.resumen')).toContainText(PACIENTE.nombre);
+    await expectSinDesplazamiento(admin);
+    await admin.getByRole('button', { name: 'Siguiente' }).click();
 
+    await expect(admin.getByRole('heading', { name: '2. Fecha y bloque' })).toBeVisible();
+    await admin.getByRole('textbox', { name: 'Fecha' }).fill(fecha);
+    await expectSinDesplazamiento(admin);
+    await admin.getByRole('button', { name: 'Siguiente' }).click();
+
+    await expect(admin.getByRole('heading', { name: '3. Kinesiólogo y franja' })).toBeVisible();
     await admin.getByRole('group', { name: KINESIOLOGO.nombre }).getByRole('radio').first().check();
+    await expectSinDesplazamiento(admin);
+    await admin.getByRole('button', { name: 'Siguiente' }).click();
+
+    await expect(
+      admin.getByRole('heading', {
+        name: '4. Coseguro abonado y confirmación',
+      }),
+    ).toBeVisible();
+    await expect(admin.locator('.resumen')).toContainText(KINESIOLOGO.nombre);
+    await expectSinDesplazamiento(admin);
     await admin.getByRole('button', { name: 'Confirmar turno' }).click();
     await expect(admin.getByRole('heading', { name: 'Turno asignado' })).toBeVisible();
 
@@ -220,11 +254,53 @@ test('flujo principal con secretaría y kinesiólogo en vivo', async ({ browser 
 
     await admin.getByRole('button', { name: `Asistió, turno de ${PACIENTE.nombre}` }).click();
     await expect(kine.getByRole('heading', { name: 'En espera (0)' })).toBeVisible();
+    // El kinesiólogo no ve montos ni lo recaudado (RF-46, RF-48).
+    await expect(kine.getByText('Recaudado')).toHaveCount(0);
+    await expect(kine.getByText('Coseguro')).toHaveCount(0);
 
     const sinRecarga = await kine.evaluate(
       () => (window as unknown as { __sinRecarga?: boolean }).__sinRecarga === true,
     );
     expect(sinRecarga).toBe(true);
+  });
+
+  await test.step('5b. Registrar un abono y ver el recaudado actualizarse en otra pestaña (RF-27, RF-48)', async () => {
+    // Otra pestaña de la misma sesión: recibe el cambio por el socket, sin recargar.
+    const otra = await secretaria.contexto.newPage();
+    // El paquete 40 de socket.io confirma la conexión: se espera antes de provocar el cambio.
+    let conectada = false;
+    otra.on('websocket', (ws) =>
+      ws.on('framereceived', (marco) => {
+        if (String(marco.payload).startsWith('40')) conectada = true;
+      }),
+    );
+    await otra.goto('/secretaria/agenda');
+    await otra.getByRole('textbox', { name: 'Fecha' }).fill(fecha);
+    await expect(otra.getByText(PACIENTE.nombre)).toBeVisible();
+    await expect(otra.locator('#recaudado-monto')).toHaveText('$ 0,00');
+    await expect.poll(() => conectada).toBe(true);
+
+    await admin
+      .getByRole('button', {
+        name: `Registrar abono, turno de ${PACIENTE.nombre}`,
+      })
+      .click();
+    await admin.locator('#editar-coseguro-abonado').fill('1500,10');
+    await admin.getByRole('button', { name: 'Guardar coseguro abonado' }).click();
+    await expect(admin.locator('#recaudado-monto')).toHaveText('$ 1.500,10');
+    await expect(otra.locator('#recaudado-monto')).toHaveText('$ 1.500,10');
+    await expect(otra.getByText('$ 1.500,10').first()).toBeVisible();
+
+    // Quitar el abono lo saca de la cuenta.
+    await admin
+      .getByRole('button', {
+        name: `Corregir abono, turno de ${PACIENTE.nombre}`,
+      })
+      .click();
+    await admin.getByRole('button', { name: 'Quitar abono' }).click();
+    await expect(admin.locator('#recaudado-monto')).toHaveText('$ 0,00');
+    await expect(otra.locator('#recaudado-monto')).toHaveText('$ 0,00');
+    await otra.close();
   });
 
   await test.step('6. El kinesiólogo no puede escribir contra la API (RF-03)', async () => {
