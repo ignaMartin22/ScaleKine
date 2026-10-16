@@ -66,8 +66,17 @@ export function errorDePrismaConDatos(dni: string, nombre: string): Error {
  * Base cuyas operaciones fallan con `error`, salvo la lectura de la sesión (que la autenticación
  * necesita para llegar al servicio): fuerza un error interno en cualquier ruta que consulte la base.
  */
-export function baseQueFalla(error: Error): Base {
-  const falla = () => Promise.reject(error);
+export function baseQueFalla(error: unknown): Base {
+  // Pendiente que rechaza recién al esperarlo, como una consulta de Prisma: si el servicio no la
+  // espera (por ejemplo, el resto de un lote), no queda un rechazo sin atender.
+  const falla = () => {
+    const rechazar = () => Promise.reject(error);
+    return {
+      then: (alExito: never, alError: never) => rechazar().then(alExito, alError),
+      catch: (alError: never) => rechazar().catch(alError),
+      finally: (alFinal: never) => rechazar().finally(alFinal),
+    };
+  };
   const delegadoQueFalla = (delegado: object, permitidos: string[] = []) =>
     new Proxy(delegado, {
       get: (destino, propiedad, receptor) =>
@@ -357,7 +366,7 @@ export const PATRONES_DE_TRAZA: [string, RegExp][] = [
 
 /** Verifica que `res` sea un error con el formato del manejador central y sin trazas. */
 export function verificarErrorSinTrazas(res: Respuesta, contexto: string, prohibidos: string[] = []): void {
-  const texto = res.text ?? '';
+  const texto = `${res.text ?? ''}${JSON.stringify(res.body ?? {})}`;
   const quien = `${contexto} -> ${res.status} ${texto.slice(0, 200)}`;
   expect(res.status, quien).toBeGreaterThanOrEqual(400);
   expect(res.headers['content-type'], quien).toMatch(/^application\/json/);
