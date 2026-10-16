@@ -22,11 +22,12 @@ Inventario de servicios: todo servicio nuevo se agrega a esta tabla antes de usa
 | Servicio | Uso | Ubicación | ¿Recibe datos personales? |
 |---|---|---|---|
 | DigitalOcean Droplet | Caddy, backend, frontend, tarea de respaldo | FRA1 (UE) | Sí, en tránsito y en memoria |
-| DigitalOcean Managed PostgreSQL | Base de datos | FRA1 (UE) | Sí |
+| DigitalOcean Managed PostgreSQL (perfil administrado) | Base de datos | FRA1 (UE) | Sí |
+| DigitalOcean Block Storage (perfil económico) | Datos de la base en el contenedor `db` | FRA1 (UE) | Sí, cifrados en reposo por la plataforma |
 | Backblaze B2, región EU Central (Ámsterdam, Países Bajos) | Copia externa diaria | UE | Sí, **cifrados antes de salir del servidor** |
 | GitHub (repositorio, Actions, Container Registry privado) | Código, CI/CD, imágenes | EE. UU. | **No.** Nunca se usan datos de producción en CI ni en imágenes |
 | Better Stack, plan gratuito | Chequeo de `/api/salud` y del certificado TLS | Cualquiera | **No.** Solo consulta un endpoint sin datos |
-| healthchecks.io, plan gratuito | Latido de la copia diaria | Cualquiera | **No.** Solo recibe una petición vacía |
+| healthchecks.io, plan gratuito | Latido de la copia diaria y, en el perfil económico, del registro de transacciones | Cualquiera | **No.** Solo recibe una petición vacía |
 | Registrador del dominio y DNS | Dominio y registros DNS | Cualquiera | No |
 | Gestor de contraseñas del administrador | Secretos y claves de recuperación | Cualquiera | No (solo secretos técnicos) |
 
@@ -82,6 +83,9 @@ servicio SaaS de errores en el MVP.
   puede ser `SameSite=Strict` y no hace falta CORS entre dominios.
 - **El servidor no guarda estado.** Todo el estado vive en la base. El Droplet se puede reconstruir
   desde el repositorio y el archivo `.env`; por eso no se contratan backups del Droplet.
+- El diagrama muestra el **perfil administrado**, el de por defecto. En el perfil económico (§3.1)
+  la base corre en el mismo Droplet, como el contenedor `db`, con sus datos en un volumen de Block
+  Storage; el resto no cambia.
 
 ---
 
@@ -119,6 +123,63 @@ corriendo: se lanza una vez por día (§8.2). En el servidor solo viven Caddy, l
 - Los nodos de base de respaldo (*standby*) están fuera del alcance (spec §4, "Alta
   disponibilidad").
 
+### 3.1 Perfiles de despliegue
+
+El sistema se despliega en uno de dos perfiles. Los dos cumplen los mismos RNF y usan las mismas
+imágenes; cambian la configuración de Compose y el aprovisionamiento. **Por defecto se usa el perfil
+administrado**, el de la tabla anterior. El económico se ofrece cuando la clínica pide un presupuesto
+más ajustado.
+
+| | Perfil administrado (por defecto) | Perfil económico |
+|---|---|---|
+| Base de datos | Managed PostgreSQL de DigitalOcean, fuera del Droplet | Contenedor `db` (PostgreSQL oficial) en el mismo Droplet |
+| Droplet | 1 GB de RAM (6 USD) | 2 GB de RAM (12 USD): la base necesita memoria propia |
+| Datos de la base | En el clúster administrado | Volumen de Block Storage de 10 GB (≈ 1 USD), cifrado en reposo por la plataforma (RNF-06) |
+| Restaurar a un punto en el tiempo (RNF-07) | Lo provee la plataforma (7 días) | Archivo continuo del registro de transacciones, cifrado, en un bucket de B2 EU propio, con 7 días de retención |
+| Copia externa diaria | `respaldo` → B2 (§8.2) | Igual |
+| Costo aproximado con IVA | **≈ 26 USD/mes** | **≈ 16 USD/mes** |
+
+**Perfil administrado. A favor:**
+- Copias, recuperación a un punto en el tiempo, parches menores y cifrado en reposo los resuelve la
+  plataforma.
+- La base y la aplicación están en máquinas separadas: un problema de memoria o de disco en el
+  Droplet no afecta a la base.
+- Menos operación para quien mantiene el sistema; es la opción con menos riesgo.
+
+**Perfil administrado. En contra:**
+- La base es el 70 % del costo.
+- Depende de un producto propio de DigitalOcean. Mudarse sigue siendo simple (copia diaria +
+  `DATABASE_URL`), pero requiere que el proveedor nuevo ofrezca una base administrada equivalente o
+  pasar al perfil económico.
+
+**Perfil económico. A favor:**
+- Cuesta alrededor de un 40 % menos.
+- Es el más portable: corre igual en cualquier servidor Linux con Docker de un proveedor de la UE.
+  Es también el que se usa en la recuperación ante desastre en otro proveedor (§8.4).
+- Al estar la base en la misma máquina, no hay red entre la API y la base.
+
+**Perfil económico. En contra:**
+- La recuperación a un punto en el tiempo, las actualizaciones de PostgreSQL y el control del disco
+  quedan a cargo del operador. Si el archivo del registro de transacciones deja de funcionar, se
+  pierde RNF-07 hasta que se detecta: por eso tiene su propia alerta (§11).
+- La base y la aplicación comparten memoria y disco: un problema del Droplet afecta a las dos.
+- Restaurar a un punto en el tiempo es un procedimiento manual (§8.1), más lento que en el panel
+  del proveedor.
+- La clave que cifra el archivo del registro de transacciones vive en el servidor (la herramienta
+  la necesita para restaurar). La garantía contra un servidor comprometido sigue siendo la copia
+  diaria con Object Lock (§8.2), cifrada con `age`.
+
+**Qué cambia entre perfiles:**
+- `docker-compose.prod.yml`: el servicio `db` está en el perfil de Compose `base-local`. Solo el
+  perfil económico lo levanta (`COMPOSE_PROFILES=base-local` en el `.env` del host).
+- `DATABASE_URL`, `DATABASE_URL_MIGRACIONES` y `DATABASE_URL_RESPALDO` apuntan al clúster o a `db`.
+- `infra/provision.sh` recibe el perfil y crea el clúster (§5, paso 3) o el volumen (§5, paso 3b).
+- El código de la aplicación no cambia.
+
+Cambiar de perfil después de la puesta en producción es una migración planificada: copia con
+`pg_dump`, restauración en la base nueva, cambio de las URL y redespliegue, fuera del horario de
+atención.
+
 ---
 
 ## 4. Red y acceso — RNF-09, RNF-13
@@ -135,10 +196,17 @@ corriendo: se lanza una vez por día (§8.2). En el servidor solo viven Caddy, l
 > Docker publica puertos por encima de `ufw`. Por eso la regla que manda es la del Cloud Firewall,
 > no la del sistema operativo. `ufw` se activa igual, como segunda capa.
 
-**Base de datos:**
+**Base de datos, perfil administrado:**
 - **Fuentes de confianza** (*trusted sources*): solo el Droplet. La base rechaza cualquier otra
   conexión, incluidas las de internet.
 - Conexión por la red privada (VPC) de FRA1 y siempre con TLS (`sslmode=require`).
+
+**Base de datos, perfil económico:**
+- El contenedor `db` **no publica puertos** al host: solo lo alcanzan `api` y `respaldo` por una red
+  interna de Compose propia de la base, a la que `web` no pertenece.
+- El tráfico entre contenedores no sale de la máquina, así que no se usa TLS hacia la base.
+- En otro proveedor sin firewall externo, las reglas van en la cadena `DOCKER-USER` de `iptables`
+  (Docker se saltea `ufw`).
 
 **SSH:**
 - Solo con clave (`PasswordAuthentication no`) y sin ingreso como root (`PermitRootLogin no`).
@@ -158,8 +226,13 @@ que reconstruir el servidor no dependa de la memoria de nadie.
 
 1. Crear el proyecto en DigitalOcean con **2FA activado en la cuenta** del proveedor.
 2. Crear la VPC de FRA1, el Droplet (Ubuntu LTS, clave SSH, en la VPC) y el Cloud Firewall de §4.
-3. Crear el clúster PostgreSQL en FRA1, dentro de la VPC. Configurar las fuentes de confianza (solo
-   el Droplet) y la ventana de mantenimiento (domingo 03:00 hora argentina).
+3. **Perfil administrado:** crear el clúster PostgreSQL en FRA1, dentro de la VPC. Configurar las
+   fuentes de confianza (solo el Droplet) y la ventana de mantenimiento (domingo 03:00 hora
+   argentina).
+
+   3b. **Perfil económico:** crear un volumen de Block Storage de 10 GB en FRA1, conectarlo al
+   Droplet y montarlo como directorio de datos del contenedor `db`. Crear el bucket del registro de
+   transacciones (§8.1) y su clave con permiso solo sobre ese bucket.
 4. En el Droplet: crear el usuario `deploy`, endurecer `sshd`, instalar `unattended-upgrades`,
    `fail2ban`, `ufw` y Docker Engine con el plugin Compose.
 5. Configurar la rotación de logs de Docker (`max-size: 10m`, `max-file: 5`).
@@ -195,6 +268,12 @@ services:
     image: ghcr.io/<org>/scalekine-respaldo:${VERSION}
     env_file: .env.respaldo
     profiles: ["tareas"]
+  db:         # solo en el perfil económico (§3.1)
+    image: postgres:<versión mayor fija>
+    env_file: .env.db
+    volumes: ["/mnt/scalekine-db:/var/lib/postgresql/data"]   # volumen de Block Storage
+    profiles: ["base-local"]
+    restart: unless-stopped
 volumes: { caddy_data: {}, caddy_config: {} }
 ```
 
@@ -202,7 +281,10 @@ volumes: { caddy_data: {}, caddy_config: {} }
   cuando el temporizador lo lanza y termina al subir la copia. No ocupa memoria el resto del día.
 - `api` no publica puertos al host: solo `web` la alcanza por la red interna de Compose.
 - Los contenedores corren sin root y, el de la API, con sistema de archivos de solo lectura.
-- Cada servicio recibe solo las variables que necesita (`.env.web`, `.env.api`, `.env.respaldo`).
+- Cada servicio recibe solo las variables que necesita (`.env.web`, `.env.api`, `.env.respaldo` y,
+  en el perfil económico, `.env.db`).
+- `db` no publica puertos y solo comparte una red interna con `api` y `respaldo` (§4). Lleva el
+  archivo continuo del registro de transacciones de §8.1.
 
 ### 6.2 Caddy
 
@@ -255,11 +337,19 @@ volumes: { caddy_data: {}, caddy_config: {} }
 
 ## 7. Base de datos — RNF-06, RNF-07, RNF-09
 
-**Clúster:** PostgreSQL administrado en FRA1, en la versión estable más reciente que ofrezca el
-proveedor.
+**Perfil administrado (por defecto):** PostgreSQL administrado en FRA1, en la versión estable más
+reciente que ofrezca el proveedor.
 - Cifrado en reposo (LUKS) y en tránsito (TLS), provistos por la plataforma.
 - Copia completa diaria y registro continuo de transacciones, que permiten **restaurar a cualquier
   momento de los últimos 7 días**.
+
+**Perfil económico:** imagen oficial de PostgreSQL con la versión mayor fijada en el compose, en el
+contenedor `db` (§3.1).
+- Cifrado en reposo: el volumen de Block Storage, cifrado por la plataforma.
+- Restauración a un punto en el tiempo: archivo continuo del registro de transacciones (§8.1).
+- Las versiones menores se actualizan cambiando la etiqueta de la imagen en un PR, que pasa por el
+  CI como cualquier otro cambio. La versión mayor, en la revisión anual (§13).
+- Usuarios, permisos y `timezone=UTC`: iguales que en el perfil administrado.
 
 **Usuarios, con mínimo privilegio:**
 
@@ -284,8 +374,15 @@ aplicación fija `timezone=UTC` en la sesión, sin depender de la configuración
 
 ### 8.1 Nivel 1 · Recuperación del proveedor
 
-La recuperación a un punto en el tiempo de DigitalOcean (7 días) cubre errores humanos y fallas del
-clúster. Se restaura a un clúster nuevo y se actualiza `DATABASE_URL`.
+Cubre errores humanos y fallas de la base, con restauración a cualquier momento de los últimos 7
+días (RNF-07).
+
+- **Perfil administrado:** la recuperación a un punto en el tiempo de DigitalOcean. Se restaura a un
+  clúster nuevo y se actualizan las URL de la base.
+- **Perfil económico:** una herramienta de archivo continuo (se propone pgBackRest, licencia MIT; se
+  confirma en T-37) sube al bucket de B2 EU del registro de transacciones una copia base semanal y
+  el registro continuo, cifrados antes de salir del servidor, con 7 días de retención. Restaurar es
+  un procedimiento escrito en `docs/operacion/`, que se ensaya en la prueba mensual (§8.3).
 
 ### 8.2 Nivel 2 · Copia externa diaria
 
@@ -337,13 +434,16 @@ El primer lunes de cada mes:
 
 Si el paso 3 falla, se trata como incidente (§12).
 
+En el perfil económico, la prueba mensual suma una restauración a un punto en el tiempo desde el
+bucket del registro de transacciones, con el mismo registro en `restauraciones.md`.
+
 ### 8.4 Recuperación ante desastre (objetivo: 4 horas)
 
 | Escenario | Procedimiento | Pérdida máxima |
 |---|---|---|
-| Error humano o corrupción | Restaurar el clúster a un punto anterior (§8.1) | Minutos |
+| Error humano o corrupción | Restaurar la base a un punto anterior (§8.1), según el perfil | Minutos |
 | Falla del Droplet | Crear un Droplet nuevo con `infra/provision.sh`, recuperar `.env` del gestor de contraseñas y redesplegar | Ninguna (el estado está en la base) |
-| Pérdida de la cuenta o de la región de DigitalOcean | Levantar un servidor en otro proveedor de la UE (p. ej., Scaleway, en Francia), instalar PostgreSQL, restaurar la última copia de B2, redesplegar con Compose y actualizar el DNS | Hasta 24 h |
+| Pérdida de la cuenta o de la región de DigitalOcean | Levantar un servidor en otro proveedor de la UE (p. ej., Scaleway, en Francia) con el perfil económico (§3.1), restaurar la última copia de B2, redesplegar con Compose y actualizar el DNS | Hasta 24 h (minutos, en el perfil económico, si el bucket del registro de transacciones está disponible) |
 
 El proveedor alternativo se confirma en la revisión anual (§13): hay que verificar que tenga planes
 disponibles para contratar en el momento. En octubre de 2026, por ejemplo, Hetzner no ofrecía sus
@@ -399,6 +499,7 @@ planes económicos por falta de hardware.
 | Copia diaria | Latido en healthchecks.io | Si no llega el latido en 26 horas |
 | CPU, memoria y disco del Droplet y de la base | Alertas nativas de DigitalOcean | Más del 80 % sostenido 10 minutos; en la memoria del Droplet, es el criterio para ampliarlo (§3) |
 | Certificado TLS | Better Stack | Menos de 14 días para vencer |
+| Registro de transacciones (perfil económico) | Latido en healthchecks.io: un temporizador horario lo envía solo si el último archivo subido tiene menos de 1 hora | Si no llega el latido en 2 horas |
 
 **Logs de la aplicación:**
 - JSON de `pino`, con redacción de datos personales (plan §4.15), en la salida estándar de Docker.
@@ -465,7 +566,10 @@ ellas (Res. AAIP 47/2018).
 - [ ] Inventario de §1 completo, con todos los servicios con datos personales en la UE (RNF-05).
 - [ ] Cloud Firewall aplicado: un escaneo externo solo encuentra los puertos 80 y 443, más el 22 si
       se restringió por IP (RNF-09).
-- [ ] La base rechaza conexiones desde fuera del Droplet (RNF-09).
+- [ ] La base rechaza conexiones desde fuera del Droplet (RNF-09). En el perfil económico, `db` no
+      publica puertos y `web` no la alcanza.
+- [ ] Perfil económico: el archivo del registro de transacciones llega al bucket, cifrado, y una
+      restauración a un punto en el tiempo funciona (RNF-06, RNF-07).
 - [ ] `scalekine_app` no puede ejecutar `DROP`, `ALTER` ni `DELETE` sobre `Turno` (RNF-09, RF-39).
 - [ ] `ssh` con contraseña rechazado; `unattended-upgrades` activo (RNF-13).
 - [ ] HTTPS con certificado válido, redirección desde HTTP, HSTS y CSP presentes (RNF-01, RNF-10), y las respuestas de `/api` con `Cache-Control: no-store` (RNF-14).
