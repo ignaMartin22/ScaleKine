@@ -379,10 +379,22 @@ días (RNF-07).
 
 - **Perfil administrado:** la recuperación a un punto en el tiempo de DigitalOcean. Se restaura a un
   clúster nuevo y se actualizan las URL de la base.
-- **Perfil económico:** una herramienta de archivo continuo (se propone pgBackRest, licencia MIT; se
-  confirma en T-37) sube al bucket de B2 EU del registro de transacciones una copia base semanal y
-  el registro continuo, cifrados antes de salir del servidor, con 7 días de retención. Restaurar es
-  un procedimiento escrito en `docs/operacion/`, que se ensaya en la prueba mensual (§8.3).
+- **Perfil económico:** **pgBackRest 2.58.0** (licencia MIT; confirmado en T-37) archiva de forma continua
+  el registro de transacciones en un bucket de B2 EU **propio**, distinto del de las copias diarias, y sube
+  una copia base semanal. Todo sale **cifrado** (`aes-256-cbc`) desde el servidor, y la retención es de 7
+  días (`repo1-retention-full-type=time`, `repo1-retention-full=7`: siempre queda una copia base que cubre
+  todo el período, de modo que se puede restaurar a cualquier instante de los últimos 7 días).
+  - El contenedor `db` usa una imagen propia (`infra/db/Dockerfile`): la oficial `postgres:18.6-alpine` más
+    `pgbackrest`, con la versión fijada. `archive_command` llama a `pgbackrest archive-push` y
+    `archive_timeout=300` limita la pérdida a minutos aun con poca actividad.
+  - La copia base semanal la lanza un temporizador de systemd (domingos 04:00 hora argentina). El stanza se
+    crea una vez con `iniciar-archivo.sh`.
+  - Para llegar al bucket, `db` pertenece también a la red `salida`; sigue sin publicar puertos.
+  - La clave del bucket permite leer, escribir, listar y borrar solo en **ese** bucket (pgBackRest borra lo
+    que vence por retención). No hay Object Lock en este bucket: la garantía contra un servidor comprometido
+    es la copia diaria del nivel 2.
+  - Restaurar es el procedimiento B de `docs/operacion/restaurar.md`, que se ensaya en la prueba mensual
+    (§8.3).
 
 ### 8.2 Nivel 2 · Copia externa diaria
 
@@ -410,15 +422,20 @@ curl -fsS "$LATIDO_URL"
 - **Bucket con Object Lock de 30 días**, en modo de cumplimiento (*compliance*) y habilitado al
   crear el bucket. Ninguna clave puede borrar ni sobrescribir una copia antes de que venza, ni
   siquiera la del administrador. Esa es la garantía de que un servidor comprometido no destruye las
-  copias.
+  copias. (En un bucket con versiones, "sobrescribir" crea una versión nueva; la original queda intacta y
+  bloqueada, y es la que se restaura.)
 - **Retención de 30 días**, aplicada por una regla de ciclo de vida del bucket que elimina las copias
   cuando vence su bloqueo.
 - **Clave de B2 del servidor con mínimo permiso:** escribir en ese bucket y nada más.
-  - Si `rclone` necesita listar archivos para subir, se le agrega solo ese permiso
-    **[verificar en T-37]**.
+  - `rclone` **no necesita permiso de listar** para subir: con una clave limitada a un bucket usa solo
+    `writeFiles` (resuelto en T-37; se reconfirma con la clave real en T-36, y si hiciera falta se agrega
+    únicamente `listFiles`).
   - Nunca recibe permiso de borrado.
+  - Los buckets y las claves se crean con `infra/respaldo/crear-bucket.sh` y los comandos de
+    `infra/README.md`.
 - **Latido:** si la tarea falla, no se envía el aviso a healthchecks.io y el administrador recibe
   una alerta (RNF-12).
+- **Temporizadores:** las unidades de systemd están en `infra/systemd/` y su instalación en `infra/README.md`.
 
 ### 8.3 Prueba de restauración mensual
 

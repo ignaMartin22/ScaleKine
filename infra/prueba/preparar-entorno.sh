@@ -44,7 +44,7 @@ SCALEKINE_BASES=$base
 SCALEKINE_MIGRACIONES_CREATEDB=false
 E
 # Claves age de prueba, generadas con la propia imagen `respaldo`.
-docker run --rm --entrypoint age-keygen scalekine-respaldo 2> "$dir/age-publica.txt" > "$dir/age-privada.txt"
+docker run --rm --entrypoint age-keygen "${IMAGEN_RESPALDO:-scalekine-respaldo:local}" 2> "$dir/age-publica.txt" > "$dir/age-privada.txt"
 destinatario=$(sed -n 's/^Public key: //p' "$dir/age-publica.txt")
 cat > "$dir/.env.respaldo" <<E
 DATABASE_URL_RESPALDO=postgresql://scalekine_respaldo:$cr@$host:5432/$base

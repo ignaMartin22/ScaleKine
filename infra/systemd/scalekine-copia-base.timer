@@ -1,0 +1,10 @@
+# Domingos a las 04:00 hora argentina (la copia diaria corre a las 03:30). SOLO perfil económico.
+[Unit]
+Description=Scalekine - copia base semanal, domingos 04:00 hora argentina
+
+[Timer]
+OnCalendar=Sun *-*-* 04:00 America/Argentina/Buenos_Aires
+Persistent=true
+
+[Install]
+WantedBy=timers.target

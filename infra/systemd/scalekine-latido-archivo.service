@@ -1,0 +1,14 @@
+# Latido del archivo continuo (docs/despliegue.md §11). SOLO perfil económico.
+# LATIDO_ARCHIVO_URL vive en /opt/scalekine/.env.latido (permisos 600, propiedad de deploy).
+[Unit]
+Description=Scalekine - latido del archivo continuo del registro de transacciones
+Requires=docker.service
+After=docker.service network-online.target
+
+[Service]
+Type=oneshot
+User=deploy
+WorkingDirectory=/opt/scalekine
+EnvironmentFile=/opt/scalekine/.env.latido
+ExecStart=/opt/scalekine/infra/latido-archivo.sh
+TimeoutStartSec=5min

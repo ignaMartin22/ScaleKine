@@ -1,0 +1,13 @@
+# Copia externa diaria (docs/despliegue.md §8.2). Instalar según infra/README.md.
+[Unit]
+Description=Scalekine - copia externa diaria (pg_dump, age, B2)
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=deploy
+WorkingDirectory=/opt/scalekine
+ExecStart=/usr/bin/docker compose -f docker-compose.prod.yml run --rm respaldo
+TimeoutStartSec=2h
