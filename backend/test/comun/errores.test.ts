@@ -67,6 +67,60 @@ describe('manejo centralizado de errores (RNF-10)', () => {
     expect(res.status).toBe(404);
     expect(res.body.error.codigo).toBe('no_encontrado');
   });
+
+  it('un error del cliente que Express ya clasificó (4xx) conserva su estado y no se registra como fallo', async () => {
+    const router = Router();
+    router.get('/cliente', () => {
+      throw Object.assign(new Error('detalle interno del parser'), { status: 415, type: 'encoding.unsupported' });
+    });
+    const { app, texto } = appDePrueba([router]);
+    const res = await request(app).get('/api/cliente');
+
+    expect(res.status).toBe(415);
+    expect(res.body).toEqual({ error: { codigo: 'peticion_invalida', mensaje: 'La petición no es válida.' } });
+    expect(res.text).not.toContain('detalle interno');
+    expect(texto()).not.toContain('error no controlado');
+  });
+
+  it('un error genérico con status 4xx (404, 403) sigue siendo un fallo interno y se registra', async () => {
+    const router = Router();
+    router.get('/otro-404', () => {
+      throw Object.assign(new Error('detalle'), { status: 404 });
+    });
+    router.get('/otro-403', () => {
+      throw Object.assign(new Error('detalle'), { statusCode: 403 });
+    });
+    const { app, texto } = appDePrueba([router]);
+
+    for (const ruta of ['/api/otro-404', '/api/otro-403']) {
+      const res = await request(app).get(ruta);
+      expect(res.status).toBe(500);
+      expect(res.body.error.codigo).toBe('error_interno');
+    }
+    expect(texto().match(/error no controlado/g)).toHaveLength(2);
+  });
+
+  it('el URIError de Express al decodificar un parámetro responde 400', async () => {
+    const router = Router();
+    router.get('/x/:id', (_req, res) => {
+      res.end();
+    });
+    const { app } = appDePrueba([router]);
+    const res = await request(app).get('/api/x/%E0%A4%A');
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.codigo).toBe('peticion_invalida');
+  });
+
+  it('un error con status 5xx sigue siendo un fallo interno', async () => {
+    const router = Router();
+    router.get('/servidor', () => {
+      throw Object.assign(new Error('detalle'), { status: 503 });
+    });
+    const { app } = appDePrueba([router]);
+
+    expect((await request(app).get('/api/servidor')).body.error.codigo).toBe('error_interno');
+  });
 });
 
 describe('errores de Prisma en el log (RNF-08)', () => {

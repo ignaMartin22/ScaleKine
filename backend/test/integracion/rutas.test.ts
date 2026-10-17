@@ -9,15 +9,7 @@ import { crearExigirSesionConPasos, pasosAdmitidosPor } from '../../src/modulos/
 import { crearRutas } from '../../src/rutas.js';
 import { appDePrueba, ENTORNO_PRUEBA } from '../ayudantes.js';
 import { db } from './base.js';
-
-/** Lo mínimo que se lee de las capas de un router de Express 5. */
-interface CapaExpress {
-  handle: unknown;
-  route?: { path: string; methods: Record<string, boolean>; stack: { handle: unknown }[] };
-}
-interface RouterInspeccionable {
-  stack: CapaExpress[];
-}
+import { capasDeSubRouter, pilaDeApp, type CapaExpress, type RouterInspeccionable } from './enumerarRutas.js';
 
 /** `_all` es como Express 5 marca una ruta de `router.all()`, que también acepta escrituras. */
 const METODOS_DE_ESCRITURA = ['post', 'put', 'patch', 'delete', '_all'];
@@ -41,20 +33,7 @@ const ESCRITURAS_DE_LA_PROPIA_SESION = [
 
 const comoInspeccionable = (router: Router) => router as unknown as RouterInspeccionable;
 
-/**
- * Capas de la app completa, no solo de sus routers: así también se detecta un `app.use(variante)`.
- * En Express 5 la pila de la app está en `app.router.stack`. Limitación: una variante envuelta en un
- * closure propio (otro handler que la llama por dentro) no se reconoce, porque la guardiana
- * identifica los handlers por referencia.
- */
-const pilaDeApp = (app: unknown): CapaExpress[] => (app as { router: RouterInspeccionable }).router.stack;
 const pilaDeLaApi = (rutas: Router[]): CapaExpress[] => pilaDeApp(appDePrueba(rutas).app);
-
-/** Si la capa es un sub-router, sus capas. */
-function capasDeSubRouter(capa: CapaExpress): CapaExpress[] | undefined {
-  const stack = (capa.handle as Partial<RouterInspeccionable> | undefined)?.stack;
-  return Array.isArray(stack) ? stack : undefined;
-}
 
 /** Rutas de escritura que ningún handler de su stack autoriza, como `MÉTODO /ruta`. */
 function escriturasSinAutorizacion(capas: CapaExpress[]): string[] {

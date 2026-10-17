@@ -2,7 +2,7 @@ import express, { type Express, type Router } from 'express';
 import type { Logger } from 'pino';
 import type { Configuracion } from './comun/configuracion.js';
 import type { Reloj } from './comun/reloj.js';
-import { manejadorErrores, rutaNoEncontrada } from './comun/errores.js';
+import { ErrorNegocio, manejadorErrores, rutaNoEncontrada } from './comun/errores.js';
 import { registroDePeticiones } from './comun/logger.js';
 import { cabecerasDeSeguridad, sinCache, verificarOrigen } from './comun/seguridad.js';
 
@@ -25,7 +25,19 @@ export function crearApp({ config, logger, reloj, rutas = [] }: Dependencias): E
   app.use(cabecerasDeSeguridad());
   app.use('/api', sinCache());
   app.use(verificarOrigen(config.origenFrontend));
-  app.use(express.json({ limit: '100kb' }));
+  const leerJson = express.json({ limit: '100kb' });
+  app.use((req, res, next) => {
+    leerJson(req, res, (err?: unknown) => {
+      // Un cuerpo comprimido que no se puede descomprimir llega como un error 4xx sin `type`: es del
+      // cliente (400), no un fallo interno. Los demás errores del parser los clasifica el manejador.
+      const { status, type } = (err ?? {}) as { status?: unknown; type?: unknown };
+      if (err && type === undefined && status === 400) {
+        next(new ErrorNegocio('peticion_invalida', 'La petición no es válida.', 400));
+        return;
+      }
+      next(err);
+    });
+  });
 
   // Chequeo de disponibilidad del monitor externo (despliegue.md §11): no devuelve datos.
   app.get('/api/salud', (_req, res) => {
